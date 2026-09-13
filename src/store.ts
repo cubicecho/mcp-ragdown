@@ -18,6 +18,14 @@ export interface FileState {
   chunks: number;
 }
 
+export interface DocumentInfo {
+  path: string;
+  title: string;
+  mtimeMs: number;
+  size: number;
+  chunks: number;
+}
+
 export interface FileUpdate {
   path: string;
   hash: string;
@@ -158,6 +166,26 @@ export class Store {
       }
     }
     return files;
+  }
+
+  /** Every indexed file with its title, for listing rather than diffing. */
+  async documents(): Promise<DocumentInfo[]> {
+    const rows = await this.table.query().select(["path", "title", "mtime_ms", "size"]).toArray();
+    const docs = new Map<string, DocumentInfo>();
+    for (const row of rows as Pick<Row, "path" | "title" | "mtime_ms" | "size">[]) {
+      const doc = docs.get(row.path);
+      if (doc) doc.chunks++;
+      else {
+        docs.set(row.path, {
+          path: row.path,
+          title: row.title,
+          mtimeMs: row.mtime_ms,
+          size: row.size,
+          chunks: 1,
+        });
+      }
+    }
+    return [...docs.values()].sort((a, b) => a.path.localeCompare(b.path));
   }
 
   /**

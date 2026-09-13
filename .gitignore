@@ -6,3 +6,4 @@ data
 docs
 coverage
 *.log
+web/dist

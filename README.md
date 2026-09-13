@@ -38,8 +38,9 @@ claude mcp add --transport http ragdown http://localhost:3300/mcp \
   --header "Authorization: Bearer $RAGDOWN_TOKEN"
 ```
 
-The first index of a large folder takes minutes; searches answer from what is indexed so far. For
-the context hook against the container, see [Claude Code setup](#claude-code-setup). Images are
+The first index of a large folder takes minutes; searches answer from what is indexed so far. Open
+http://localhost:3300 for the web UI: the indexed files, each rendered beside the list. For the
+context hook against the container, see [Claude Code setup](#claude-code-setup). Images are
 published for `linux/amd64` and `linux/arm64` to Docker Hub and `ghcr.io/cubicecho/mcp-ragdown`.
 
 ### Without Docker
@@ -157,13 +158,20 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 `node src/cli.ts <command>`: `stdio` (the MCP server Claude Code launches), `serve` (HTTP, what
 the image runs), `hook`, `index [--full]`, `search <query>` and `stats`.
 
-`serve` exposes three routes:
+`serve` exposes these routes:
 
 | Route | Auth | |
 | --- | --- | --- |
 | `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. |
 | `/mcp` | bearer | Streamable HTTP MCP, stateless. |
 | `POST /api/context` | bearer | `{prompt, session_id}` → `{context}`, what a remote hook asks for. |
+| `GET /api/docs` | bearer | The indexed files: `path`, `title`, `mtime_ms`, `size`, `chunks`. |
+| `GET /api/doc?path=` | bearer | One indexed file's text, read from disk. 404 for a file the index does not hold. |
+| `GET /*` | none | The web UI from `web/dist`, with `index.html` for any other path. |
+
+The web UI asks for the token once and keeps it in the browser's local storage. Its static files
+hold no notes, so they need none; everything it shows comes from the bearer routes. It is built by
+`npm run build` (the image does this) and only `serve` serves it.
 
 ## Design
 
@@ -237,7 +245,12 @@ For faster indexing, switch the embedder to a GPU-backed `openai:<model>` endpoi
 
 ```bash
 npm run typecheck && npm run lint && npm test
+npm run build            # the web UI, into web/dist
+npm run dev:web          # Vite on :5173, proxying /api to a `serve` on :3000
 ```
+
+The web UI in `web/` is React, TanStack Query and Router, Tailwind and shadcn components from the
+[cubeui](https://cubicecho.github.io/cubeui) registry (`npx shadcn add @cubeui/<name>` from `web/`).
 
 The tests run against real LanceDB, the real socket and the MCP SDK's in-memory transport. They use
 the `hash` embedder, so they need no model download.
