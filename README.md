@@ -41,7 +41,7 @@ claude mcp add --transport http ragdown http://localhost:3300/mcp \
 The first index of a large folder takes minutes; searches answer from what is indexed so far. Open
 http://localhost:3300 for the web UI: the indexed files, each rendered beside the list. For the
 context hook against the container, see [Claude Code setup](#claude-code-setup). Images are
-published for `linux/amd64` and `linux/arm64` to Docker Hub and `ghcr.io/cubicecho/mcp-ragdown`.
+published for `linux/amd64` to Docker Hub and `ghcr.io/cubicecho/mcp-ragdown`.
 
 ### Without Docker
 
