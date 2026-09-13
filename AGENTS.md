@@ -22,7 +22,7 @@ docker build -t mcp-ragdown .
 ```
 
 CI (`.github/workflows/ci.yml`) runs lint, typecheck and tests, and boots the image. Release
-(`release.yml`) runs semantic-release on main and pushes a multi-arch image to GHCR and Docker Hub;
+(`release.yml`) runs semantic-release on main and pushes an amd64 image to GHCR and Docker Hub;
 the Docker Hub credentials are organisation secrets, never files in this repo.
 
 Run typecheck (server and web), lint and test before every commit.

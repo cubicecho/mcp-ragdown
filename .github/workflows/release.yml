@@ -118,11 +118,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Needed for the arm64 half of the build below.
-      - name: Set up QEMU
-        if: steps.publish.outputs.go == 'true'
-        uses: docker/setup-qemu-action@v4
-
       - name: Set up Docker Buildx
         if: steps.publish.outputs.go == 'true'
         uses: docker/setup-buildx-action@v4
@@ -133,11 +128,9 @@ jobs:
         with:
           context: .
           push: true
-          # Built on amd64 runners, so arm64 comes out of QEMU emulation and the
-          # job takes several times longer. Worth it: half the people running an
-          # MCP server locally are on an Apple Silicon machine, and a
-          # single-arch image fails there with an exec-format error.
-          platforms: linux/amd64,linux/arm64
+          # amd64 only for now: arm64 needs QEMU on these runners and takes several
+          # times longer. Tracked in #2.
+          platforms: linux/amd64
           tags: ${{ steps.targets.outputs.tags }}
           # Shares a cache with the CI build of the same Dockerfile.
           cache-from: type=gha
