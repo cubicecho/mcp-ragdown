@@ -7,7 +7,7 @@ import { errorMessage } from "./errors.ts";
 import { formatHit } from "./format.ts";
 import { Indexer, type SyncReport } from "./indexer.ts";
 import { claimSocket, request } from "./primary.ts";
-import { type Hit, Store } from "./store.ts";
+import { type DocumentInfo, type Hit, Store } from "./store.ts";
 
 /** How often a reader checks whether the primary has gone and it should take over. */
 const TAKEOVER_INTERVAL_MS = 30_000;
@@ -137,6 +137,24 @@ export class Ragdown {
       total_lines: lines.length,
       text: lines.slice(start - 1, end).join("\n"),
     };
+  }
+
+  /** The files the index knows about, with their titles, sorted by path. */
+  async documents(): Promise<DocumentInfo[]> {
+    return this.store.documents();
+  }
+
+  /**
+   * Read a file for the web UI: like `readDoc`, but only a file the index holds, so a browser
+   * cannot read whatever else happens to sit in the docs folder.
+   *
+   * @throws with `status: 404` for a path the index does not know.
+   */
+  async readIndexedDoc(path: string) {
+    if (!(await this.store.files()).has(path)) {
+      throw Object.assign(new Error(`not an indexed document: ${path}`), { status: 404 });
+    }
+    return this.readDoc(path);
   }
 
   /**

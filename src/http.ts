@@ -1,13 +1,30 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { extname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import type { Config } from "./config.ts";
+import { type Config, isInside } from "./config.ts";
 import type { Ragdown } from "./engine.ts";
 import { errorMessage } from "./errors.ts";
 import { createMcpServer, SERVER_NAME, VERSION } from "./server.ts";
 
 /** A prompt is a few kilobytes; anything near this is not a hook or an MCP message. */
 const MAX_BODY_BYTES = 1024 * 1024;
+
+/** Where `npm run build` puts the web UI. Absent in a checkout that never built it. */
+export const WEB_DIR = fileURLToPath(new URL("../web/dist", import.meta.url));
+
+const CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
+  ".woff2": "font/woff2",
+  ".json": "application/json",
+};
 
 /**
  * The HTTP face of the server, for running it in a container:
@@ -17,14 +34,20 @@ const MAX_BODY_BYTES = 1024 * 1024;
  *   state lives in the shared `Ragdown`.
  * - `POST /api/context` — what the hook asks the unix socket for, for a hook on another machine
  *   or outside the container (`RAGDOWN_URL`).
+ * - `GET /api/docs` and `GET /api/doc?path=` — the indexed files and one file's text, for the web UI.
+ * - Anything else under `GET` — the web UI from `webDir`, when it has been built.
  *
- * `/mcp` and `/api/context` need `Authorization: Bearer $RAGDOWN_TOKEN` unless
- * `SECURE_LOCAL_NET=true`. Plain `node:http` rather than Express: three routes do not need a
- * framework.
+ * Everything under `/api` but status, and `/mcp`, needs `Authorization: Bearer $RAGDOWN_TOKEN`
+ * unless `SECURE_LOCAL_NET=true`. The UI's static files do not: they hold no notes. Plain
+ * `node:http` rather than Express: a handful of routes do not need a framework.
  */
-export function createHttpServer(ready: Promise<Ragdown>, config: Config): Server {
+export function createHttpServer(
+  ready: Promise<Ragdown>,
+  config: Config,
+  webDir: string = WEB_DIR,
+): Server {
   return createServer((req, res) => {
-    handle(ready, config, req, res).catch((error: unknown) => {
+    handle(ready, config, webDir, req, res).catch((error: unknown) => {
       const status = (error as { status?: number }).status ?? 500;
       if (status >= 500) console.error(`[http] ${req.method} ${req.url}: ${errorMessage(error)}`);
       if (!res.headersSent) json(res, status, { error: errorMessage(error) });
@@ -48,6 +71,7 @@ export function assertAuthConfigured(config: Config): void {
 async function handle(
   ready: Promise<Ragdown>,
   config: Config,
+  webDir: string,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -60,17 +84,52 @@ async function handle(
       name: SERVER_NAME,
       version: VERSION,
       ready: rag !== undefined,
+      auth_required: !config.http.secureLocalNet,
       ...(rag ? await rag.stats(false) : {}),
     });
     return;
   }
 
-  if (path !== "/mcp" && path !== "/api/context") {
+  const api = path === "/mcp" || path.startsWith("/api/");
+  if (!api) {
+    if (req.method === "GET" || req.method === "HEAD") await serveWeb(webDir, path, res);
+    else json(res, 404, { error: "Not found" });
+    return;
+  }
+  if (!API_ROUTES.has(path)) {
     json(res, 404, { error: "Not found" });
     return;
   }
   if (!authorized(config, req.headers.authorization)) {
     json(res, 401, { error: "Unauthorized" });
+    return;
+  }
+
+  if (path === "/api/docs" || path === "/api/doc") {
+    if (req.method !== "GET") {
+      json(res, 405, { error: "Method not allowed" });
+      return;
+    }
+    const rag = await ready;
+    if (path === "/api/docs") {
+      const docs = await rag.documents();
+      json(res, 200, {
+        docs: docs.map((doc) => ({
+          path: doc.path,
+          title: doc.title,
+          mtime_ms: doc.mtimeMs,
+          size: doc.size,
+          chunks: doc.chunks,
+        })),
+      });
+      return;
+    }
+    const docPath = new URL(req.url ?? "/", "http://localhost").searchParams.get("path");
+    if (!docPath) {
+      json(res, 400, { error: "path is required" });
+      return;
+    }
+    json(res, 200, await rag.readIndexedDoc(docPath));
     return;
   }
 
@@ -102,6 +161,37 @@ async function handle(
   });
   await server.connect(transport);
   await transport.handleRequest(req, res, req.method === "POST" ? await readJson(req) : undefined);
+}
+
+const API_ROUTES = new Set(["/mcp", "/api/context", "/api/docs", "/api/doc"]);
+
+/**
+ * A file from the built UI, or its `index.html` for any path that is not one, so a reload on a
+ * client-side route still lands in the app. Hashed assets are cached for good; the page never is.
+ */
+async function serveWeb(webDir: string, path: string, res: ServerResponse): Promise<void> {
+  const root = resolve(webDir);
+  let file = join(root, "index.html");
+  try {
+    file = resolve(root, `.${decodeURIComponent(path)}`);
+  } catch {
+    // A malformed escape is not a file; the app answers it.
+  }
+  if (!isInside(root, file) || !(await stat(file).catch(() => undefined))?.isFile()) {
+    file = join(root, "index.html");
+  }
+  const body = await readFile(file).catch(() => undefined);
+  if (!body) {
+    json(res, 404, { error: "The web UI is not built: run npm run build" });
+    return;
+  }
+  const immutable = isInside(join(root, "assets"), file);
+  res
+    .writeHead(200, {
+      "content-type": CONTENT_TYPES[extname(file)] ?? "application/octet-stream",
+      "cache-control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
+    })
+    .end(body);
 }
 
 function authorized(config: Config, header: string | undefined): boolean {

@@ -31,7 +31,18 @@ RUN node --input-type=module -e ' \
   env.cacheDir = "/models"; \
   await pipeline("feature-extraction", "Xenova/bge-small-en-v1.5", { dtype: "q8" });'
 
-# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+# ── Stage 2: web UI ───────────────────────────────────────────────────────────
+# Needs the dev dependencies (Vite, React, Tailwind); only the built files leave this stage.
+FROM node:26-slim AS web
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts && npm cache clean --force
+COPY web ./web
+RUN npm run build
+
+# ── Stage 3: runtime ──────────────────────────────────────────────────────────
 # No build step: Node 26 runs the TypeScript in src/ directly by type stripping.
 FROM node:26-slim
 
@@ -41,6 +52,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /models /models
 COPY package.json ./
 COPY src ./src
+COPY --from=web /app/web/dist ./web/dist
 
 ENV NODE_ENV=production
 # Mount the Markdown folder here. Read-write if agents should be able to save notes

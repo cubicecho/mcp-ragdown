@@ -10,6 +10,7 @@ docs
 # VCS, tests, local config
 .git
 coverage
+web/dist
 .env
 .env.local
 *.log

@@ -1,4 +1,6 @@
+import { mkdir, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -20,7 +22,11 @@ async function serve(env: Record<string, string>) {
   const rag = await Ragdown.start(t.config);
   closers.push(() => rag.close());
   await rag.sync(false);
-  const server = createHttpServer(Promise.resolve(rag), t.config);
+  const webDir = join(t.root, "web");
+  await mkdir(join(webDir, "assets"), { recursive: true });
+  await writeFile(join(webDir, "index.html"), "<!doctype html><title>ragdown</title>");
+  await writeFile(join(webDir, "assets", "app-1.js"), "console.log(1)");
+  const server = createHttpServer(Promise.resolve(rag), t.config, webDir);
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   closers.push(() => new Promise((done) => server.close(() => done())));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -36,7 +42,9 @@ describe("HTTP server", () => {
 
   it("serves status openly and guards /mcp and /api/context with the token", async () => {
     const t = await serve({ RAGDOWN_TOKEN: "secret" });
-    const status = await (await fetch(`${t.url}/api/status`)).json();
+    const status = (await (await fetch(`${t.url}/api/status`)).json()) as {
+      auth_required: boolean;
+    };
     expect(status).toMatchObject({ name: "ragdown", ready: true, files: 1, chunks: 1 });
 
     const post = (path: string, token?: string) =>
@@ -51,10 +59,49 @@ describe("HTTP server", () => {
     expect((await post("/api/context")).status).toBe(401);
     expect((await post("/api/context", "wrong")).status).toBe(401);
     expect((await post("/mcp", "wrong")).status).toBe(401);
-    expect((await fetch(`${t.url}/nope`)).status).toBe(404);
+    expect((await fetch(`${t.url}/api/nope`)).status).toBe(404);
 
     const answered = await post("/api/context", "secret");
     expect(((await answered.json()) as { context: string }).context).toContain("ops/backups.md");
+  });
+
+  it("lists indexed docs and reads one, behind the token", async () => {
+    const t = await serve({ RAGDOWN_TOKEN: "secret" });
+    await t.write("stray.txt", "not markdown");
+    const get = (path: string, token = "secret") =>
+      fetch(`${t.url}${path}`, { headers: { authorization: `Bearer ${token}` } });
+
+    expect((await get("/api/docs", "wrong")).status).toBe(401);
+    expect(await (await get("/api/docs")).json()).toMatchObject({
+      docs: [{ path: "ops/backups.md", title: "Backups", chunks: 1 }],
+    });
+
+    const doc = (await (await get("/api/doc?path=ops%2Fbackups.md")).json()) as { text: string };
+    expect(doc).toMatchObject({ path: "ops/backups.md", total_lines: 5 });
+    expect(doc.text).toContain("pg_restore");
+
+    expect((await get("/api/doc?path=stray.txt")).status).toBe(404);
+    expect((await get("/api/doc?path=..%2F..%2Fetc%2Fpasswd")).status).toBe(404);
+    expect((await get("/api/doc")).status).toBe(400);
+  });
+
+  it("serves the web UI, falling back to index.html for app routes", async () => {
+    const t = await serve({ SECURE_LOCAL_NET: "true" });
+    const status = (await (await fetch(`${t.url}/api/status`)).json()) as {
+      auth_required: boolean;
+    };
+    expect(status.auth_required).toBe(false);
+
+    const asset = await fetch(`${t.url}/assets/app-1.js`);
+    expect(asset.headers.get("content-type")).toContain("text/javascript");
+    expect(asset.headers.get("cache-control")).toContain("immutable");
+
+    for (const path of ["/", "/docs/somewhere", "/%E0", "/../../etc/passwd"]) {
+      const page = await fetch(`${t.url}${path}`);
+      expect(page.status).toBe(200);
+      expect(await page.text()).toContain("<title>ragdown</title>");
+    }
+    expect((await fetch(`${t.url}/api/nope`)).status).toBe(404);
   });
 
   it("answers MCP tool calls over Streamable HTTP", async () => {
