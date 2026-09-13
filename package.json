@@ -1,0 +1,35 @@
+{
+  "name": "mcp-ragdown",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RAG over a folder of Markdown files, exposed over MCP, with a Claude Code hook that injects related notes into every prompt",
+  "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
+  "bin": {
+    "ragdown": "src/cli.ts"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --watch src/cli.ts stdio",
+    "start": "node --env-file-if-exists=.env src/cli.ts stdio",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "@lancedb/lancedb": "^0.38.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "apache-arrow": "^18.1.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.12",
+    "@types/node": "^26.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

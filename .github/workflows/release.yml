@@ -1,0 +1,144 @@
+# Tags a release and pushes the image to GHCR and Docker Hub.
+#
+# ghcr.io needs no setup at all: the GITHUB_TOKEN this workflow already has can
+# push to it. Docker Hub is optional — set DOCKERHUB_USERNAME (the account that
+# owns <user>/mcp-ragdown) and DOCKERHUB_TOKEN (an access token for it, not the
+# password) to publish there as well; with neither set those steps are skipped
+# and the release still goes out to GHCR.
+#
+# The organisation shares both, but an organisation secret on the free plan
+# reaches public repositories only. A private fork gets them empty, which is the
+# case the skip below exists to survive.
+#
+# Versions come from the commit log, so a release only happens when commits say
+# what changed — `feat:` for a minor, `fix:` for a patch, `BREAKING CHANGE:` in
+# a body for a major. Anything else releases nothing, which is why the manual
+# trigger below exists: it publishes the current main under a version you name,
+# without waiting for the history to become conventional.
+name: Release
+
+on:
+  # Never in parallel with the tests: CI has to have passed on this commit.
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish as, e.g. 0.1.0 (no tag or release notes are created)'
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  release:
+    # A red CI run must not become a published image.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The commit CI actually tested, not whatever main has drifted to.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          # semantic-release reads the whole log to work out the next version.
+          fetch-depth: 0
+          # It authenticates with GITHUB_TOKEN itself; the checkout credentials
+          # would only shadow that.
+          persist-credentials: false
+
+      - name: Semantic release
+        id: semantic
+        if: github.event_name == 'workflow_run'
+        uses: cycjimmy/semantic-release-action@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # One answer for both triggers, so every step below gates on one thing.
+      - name: Decide whether to publish
+        id: publish
+        run: |
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=${{ steps.semantic.outputs.new_release_published }}" >> "$GITHUB_OUTPUT"
+            echo "version=${{ steps.semantic.outputs.new_release_version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GitHub Container Registry
+        if: steps.publish.outputs.go == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Docker Hub is optional, so an absent credential skips it rather than
+      # being fatal. Logging in unconditionally turned an empty
+      # DOCKERHUB_USERNAME into "Username and password required", which took the
+      # image build down with it and left GHCR unpublished on a release that
+      # needed no setup at all.
+      - name: Work out where the image can go
+        id: targets
+        if: steps.publish.outputs.go == 'true'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          VERSION: ${{ steps.publish.outputs.version }}
+        run: |
+          # ghcr.io rejects an uppercase path; the owner half of the repo name is
+          # free to have one, so it is lowercased here rather than assumed.
+          repo=$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          {
+            echo 'tags<<TAGS_EOF'
+            echo "ghcr.io/${repo}:latest"
+            echo "ghcr.io/${repo}:${VERSION}"
+            if [ -n "$DOCKERHUB_USERNAME" ]; then
+              echo "${DOCKERHUB_USERNAME}/mcp-ragdown:latest"
+              echo "${DOCKERHUB_USERNAME}/mcp-ragdown:${VERSION}"
+            fi
+            echo TAGS_EOF
+          } >> "$GITHUB_OUTPUT"
+
+          if [ -n "$DOCKERHUB_USERNAME" ]; then
+            echo 'dockerhub=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'dockerhub=false' >> "$GITHUB_OUTPUT"
+            echo 'DOCKERHUB_USERNAME is not set — publishing to GHCR only.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Log in to Docker Hub
+        if: steps.targets.outputs.dockerhub == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Needed for the arm64 half of the build below.
+      - name: Set up QEMU
+        if: steps.publish.outputs.go == 'true'
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        if: steps.publish.outputs.go == 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push
+        if: steps.publish.outputs.go == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          # Built on amd64 runners, so arm64 comes out of QEMU emulation and the
+          # job takes several times longer. Worth it: half the people running an
+          # MCP server locally are on an Apple Silicon machine, and a
+          # single-arch image fails there with an exec-format error.
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.targets.outputs.tags }}
+          # Shares a cache with the CI build of the same Dockerfile.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

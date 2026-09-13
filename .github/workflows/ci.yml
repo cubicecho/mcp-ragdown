@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to a branch makes the first run's answer worthless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: npm
+
+      - run: npm ci
+
+      # Formatting, lint, and import order in one pass. `ci` differs from
+      # `npm run lint` only in never writing fixes.
+      - name: Lint
+        run: npx biome ci .
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Real LanceDB in temp dirs with the hash embedder: no model download, no
+      # services. There is no build step; Node runs src/ by type stripping.
+      - name: Test
+        run: npm test
+
+  # The image is only pushed from main, so without this a broken Dockerfile
+  # would first be noticed by a release. Builds, does not push.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          load: true
+          tags: mcp-ragdown:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Boots on a one-file folder and waits for `ready: true`, which checks that
+      # the baked-in model loads offline, that LanceDB's native binary runs, and
+      # that the unprivileged `node` user can write the index to /data.
+      - name: The container boots, indexes and answers
+        run: |
+          mkdir -p ci-docs
+          printf '# Backups\n\n## Restore\n\nRun pg_restore twice.\n' > ci-docs/backups.md
+          docker run -d --name mcp-ragdown-ci -p 3000:3000 \
+            -v "$PWD/ci-docs:/docs:ro" \
+            -e RAGDOWN_READ_ONLY=true \
+            -e SECURE_LOCAL_NET=true \
+            mcp-ragdown:ci
+          for _ in $(seq 1 60); do
+            if curl -fsS localhost:3000/api/status | grep -q '"chunks":1'; then
+              echo 'server indexed and answered'
+              curl -fsS localhost:3000/api/status
+              exit 0
+            fi
+            sleep 1
+          done
+          echo '::error::the container never indexed the folder on :3000'
+          exit 1
+
+      - name: Logs, if it did not
+        if: failure()
+        run: docker logs mcp-ragdown-ci || true

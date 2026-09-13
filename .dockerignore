@@ -1,0 +1,21 @@
+# Dependencies (reinstalled inside the image)
+node_modules
+**/node_modules
+
+# Runtime state — never bake an index or someone's notes into the image
+data
+docs
+.ragdown
+
+# VCS, tests, local config
+.git
+coverage
+.env
+.env.local
+*.log
+.claude
+
+# Docker files themselves
+Dockerfile
+docker-compose.yml
+.dockerignore
