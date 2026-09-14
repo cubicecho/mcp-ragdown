@@ -38,9 +38,11 @@ Run typecheck (server and web), lint and test before every commit.
 - `src/store.ts`: the LanceDB table, the meta file, and hybrid search (dense + FTS, RRF).
 - `src/indexer.ts`: diff sync, the single-flight sync queue, and the watcher.
 - `src/primary.ts`: the unix-socket lock and request protocol (newline-delimited JSON).
-- `src/engine.ts`: `Ragdown`. Primary/reader roles, recall, per-session hook context, notes.
+- `src/engine.ts`: `Ragdown`. Primary/reader roles, the store, syncs, the session memory.
+- `src/scope.ts`: `Scope`, the notes as one endpoint sees them (the root, or `/mcp/<folder>`):
+  recall, hook context, reading and writing notes, stats. Paths in and out are scope-relative.
 - `src/server.ts`: MCP tools, including `ragdown_context` for hooks.
-- `src/http.ts`: `serve` — `/mcp`, and `/api/status`, `/api/docs`, `/api/doc` for the UI, with
+- `src/http.ts`: `serve` — `/mcp` and `/mcp/<folder>`, and `/api/status`, `/api/docs`, `/api/doc` for the UI, with
   bearer auth, and the built web UI for every other `GET`.
 - `web/`: the web UI (React, TanStack Query/Router, Tailwind, cubeui/shadcn). Its own tsconfig;
   `components/ui` and the cubeui shells are registry-generated, so prefer re-adding to hand edits.

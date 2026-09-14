@@ -5,6 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { Ragdown } from "./engine.ts";
+import { Scope } from "./scope.ts";
 import { createMcpServer } from "./server.ts";
 import { tempSetup } from "./testing.ts";
 
@@ -24,7 +25,7 @@ async function connect(env: Record<string, string> = {}) {
   closers.push(() => rag.close());
   await rag.sync(false);
 
-  const server = createMcpServer(Promise.resolve(rag), t.config.readOnly);
+  const server = createMcpServer(Promise.resolve(new Scope(rag)), t.config.readOnly);
   const client = new Client({ name: "test", version: "0" });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverSide), client.connect(clientSide)]);

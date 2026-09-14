@@ -68,6 +68,33 @@ Claude calls `ragdown_recall` and `ragdown_read_doc` itself when the notes might
 instructions tell it to. There is no hook command to wire into Claude Code: automatic per-prompt
 context needs a client whose hooks call MCP tools, such as min-agent.
 
+## Scopes: one folder per project or agent
+
+`/mcp` serves the whole folder. `/mcp/<folder>` serves the same tools with `<folder>` as the root,
+so each agent can get its own project's notes and nothing else:
+
+```bash
+claude mcp add --transport http notes-alpha http://localhost:3300/mcp/projects/alpha \
+  --header "Authorization: Bearer $RAGDOWN_TOKEN"
+```
+
+On a scope:
+
+- `ragdown_recall` and `ragdown_context` search only files under the folder, and `path_prefix`
+  narrows further inside it.
+- Every path in and out is relative to the folder: `backups.md`, not `projects/alpha/backups.md`.
+  `ragdown_read_doc` refuses a path that leaves it.
+- `ragdown_remember` writes into the folder itself. `RAGDOWN_NOTES_DIR` applies to `/mcp` only.
+- `ragdown_stats` counts the folder's files and chunks, and `ragdown_context`'s per-session memory
+  is kept separately for each scope.
+- `ragdown_reindex` still syncs everything: all scopes share one index, one model and one watcher.
+
+Any folder the indexer walks is a scope, with nothing to configure. A missing folder, a file, a
+symlink or a dot-folder is a 404, so create the folder before pointing an agent at it.
+
+A scope keeps an agent focused, not out: the token that opens `/mcp/projects/alpha` also opens
+`/mcp`.
+
 ## Hooks in min-agent
 
 A min-agent hook calls a tool on a connected MCP server,
@@ -78,7 +105,7 @@ so ragdown needs nothing beyond its MCP endpoint. Add a server under **Settings 
   "id": "ragdown",
   "label": "Notes",
   "transport": "http",
-  "url": "http://localhost:3300/mcp",
+  "url": "http://localhost:3300/mcp",   // or /mcp/<folder> for one project's notes
   // Stored as-is: min-agent does not expand env vars. Leave empty with SECURE_LOCAL_NET=true.
   "headers": { "Authorization": "Bearer <RAGDOWN_TOKEN>" },
   // The model has ragdown_recall; the context tool is for the hook only.
@@ -127,7 +154,7 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `RAGDOWN_THREADS` | half the cores | ONNX Runtime threads for `bge-small`. |
 | `RAGDOWN_WATCH` | `true` | Watch the folder; without a watcher, sync on start and on `ragdown_reindex` only. |
 | `RAGDOWN_READ_ONLY` | `false` | Hide the write tools. |
-| `RAGDOWN_NOTES_DIR` | `notes` | Where `ragdown_remember` writes. Must be inside the docs folder. |
+| `RAGDOWN_NOTES_DIR` | `notes` | Where `ragdown_remember` writes on `/mcp` (a scope writes into its own folder). Must be inside the docs folder. |
 | `RAGDOWN_TEXT_LIMIT` | `2000` | Characters per hit in text output. Every cut names the `ragdown_read_doc` call that returns the rest. |
 | `RAGDOWN_HOOK_TOP_K` | `4` | `ragdown_context`: most sections per prompt. |
 | `RAGDOWN_HOOK_MIN_SCORE` | `0.7` | `ragdown_context`: lowest cosine similarity returned. |
@@ -147,6 +174,7 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 | --- | --- | --- |
 | `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. |
 | `/mcp` | bearer | Streamable HTTP MCP, stateless. |
+| `/mcp/<folder>` | bearer | The same, scoped to one folder. 404 for a folder that is not one. See [Scopes](#scopes-one-folder-per-project-or-agent). |
 | `GET /api/docs` | bearer | The indexed files: `path`, `title`, `mtime_ms`, `size`, `chunks`. |
 | `GET /api/doc?path=` | bearer | One indexed file's text, read from disk. 404 for a file the index does not hold. |
 | `GET /*` | none | The web UI from `web/dist`, with `index.html` for any other path. |

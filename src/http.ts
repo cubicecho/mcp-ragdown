@@ -7,6 +7,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { type Config, isInside } from "./config.ts";
 import type { Ragdown } from "./engine.ts";
 import { errorMessage } from "./errors.ts";
+import { openScope, Scope } from "./scope.ts";
 import { createMcpServer, SERVER_NAME, VERSION } from "./server.ts";
 
 /** An MCP message is a few kilobytes; anything near this is not one. */
@@ -31,12 +32,13 @@ const CONTENT_TYPES: Record<string, string> = {
  *
  * - `GET /api/status` — unauthenticated liveness, with the index size once the model is loaded.
  * - `/mcp` — Streamable HTTP MCP, stateless: a fresh `McpServer` per request, since every piece of
- *   state lives in the shared `Ragdown`.
+ *   state lives in the shared `Ragdown`. `/mcp/<folder>` is the same server scoped to one folder of
+ *   the docs, which its tools treat as the root (`scope.ts`); a folder that is not one is a 404.
  * - `GET /api/docs` and `GET /api/doc?path=` — the indexed files and one file's text, for the web UI.
  * - Anything else under `GET` — the web UI from `webDir`, when it has been built.
  *
  * Agents and hooks use `/mcp` only; the `/api` routes exist for the UI and the health check.
- * Everything under `/api` but status, and `/mcp`, needs `Authorization: Bearer $RAGDOWN_TOKEN`
+ * Everything under `/api` but status, and `/mcp[/<folder>]`, needs `Authorization: Bearer $RAGDOWN_TOKEN`
  * unless `SECURE_LOCAL_NET=true`. The UI's static files do not: they hold no notes. Plain
  * `node:http` rather than Express: a handful of routes do not need a framework.
  */
@@ -89,13 +91,14 @@ async function handle(
     return;
   }
 
-  const api = path === "/mcp" || path.startsWith("/api/");
+  const mcp = path === "/mcp" || path.startsWith("/mcp/");
+  const api = mcp || path.startsWith("/api/");
   if (!api) {
     if (req.method === "GET" || req.method === "HEAD") await serveWeb(webDir, path, res);
     else json(res, 404, { error: "Not found" });
     return;
   }
-  if (!API_ROUTES.has(path)) {
+  if (!mcp && !API_ROUTES.has(path)) {
     json(res, 404, { error: "Not found" });
     return;
   }
@@ -128,13 +131,18 @@ async function handle(
       json(res, 400, { error: "path is required" });
       return;
     }
-    json(res, 200, await rag.readIndexedDoc(docPath));
+    json(res, 200, await new Scope(rag).readIndexedDoc(docPath));
     return;
   }
 
   // Every method, not only POST: clients open a GET for the SSE stream and send DELETE to end a
   // session, and a 404 for those looks like a broken server.
-  const server = createMcpServer(ready, config.readOnly);
+  const scope = await ready.then((rag) => openScope(rag, scopeDir(path)));
+  if (!scope) {
+    json(res, 404, { error: "Not found: no such folder in the docs" });
+    return;
+  }
+  const server = createMcpServer(Promise.resolve(scope), config.readOnly);
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
@@ -147,7 +155,17 @@ async function handle(
   await transport.handleRequest(req, res, req.method === "POST" ? await readJson(req) : undefined);
 }
 
-const API_ROUTES = new Set(["/mcp", "/api/docs", "/api/doc"]);
+const API_ROUTES = new Set(["/api/docs", "/api/doc"]);
+
+/** The folder in `/mcp/<folder>`, decoded; empty for `/mcp`. A malformed escape names no folder. */
+function scopeDir(path: string): string {
+  const rest = path.slice("/mcp".length);
+  try {
+    return decodeURIComponent(rest);
+  } catch {
+    return "/.";
+  }
+}
 
 /**
  * A file from the built UI, or its `index.html` for any path that is not one, so a reload on a
