@@ -24,16 +24,16 @@ export interface Config {
   textLimit: number;
   http: {
     port: number;
-    /** Bearer token for `/mcp` and `/api/context`; null when unset. */
+    /** Bearer token for `/mcp` and the web UI's `/api` routes; null when unset. */
     token: string | null;
     /** `SECURE_LOCAL_NET=true`: no auth at all, for a trusted network. */
     secureLocalNet: boolean;
   };
+  /** Defaults for `ragdown_context`, which a hook calls before each turn. */
   hook: {
     topK: number;
     minScore: number;
     maxChars: number;
-    timeoutMs: number;
   };
 }
 
@@ -61,8 +61,8 @@ export function loadConfig(env: Env = process.env): Config {
   // into the folder itself, where the watcher would see its own index churn.
   const key = createHash("sha256").update(docsDir).digest("hex").slice(0, 16);
   const dataDir = resolve(expandHome(env.RAGDOWN_DATA_DIR ?? join(cacheRoot, key)));
-  // Beside the index, so the hook and the server find the same socket from the docs path alone,
-  // whatever else differs between their environments. A unix socket path is capped near 104 bytes,
+  // Beside the index, so every server on the same folder finds the same socket from the docs path
+  // alone, whatever else differs between their environments. A unix socket path is capped near 104 bytes,
   // though, so a long data dir moves it to the temp dir under a name derived from the data dir.
   let socketPath = join(dataDir, "primary.sock");
   if (Buffer.byteLength(socketPath) > 100) {
@@ -97,28 +97,7 @@ export function loadConfig(env: Env = process.env): Config {
       topK: int(env, "RAGDOWN_HOOK_TOP_K", 4),
       minScore: num(env, "RAGDOWN_HOOK_MIN_SCORE", 0.7),
       maxChars: int(env, "RAGDOWN_HOOK_MAX_CHARS", 6000),
-      timeoutMs: int(env, "RAGDOWN_HOOK_TIMEOUT_MS", 5000),
     },
-  };
-}
-
-/** Where the hook sends prompts when the server runs elsewhere, e.g. in a container. */
-export interface RemoteHookConfig {
-  url: string;
-  token: string | null;
-  timeoutMs: number;
-}
-
-/**
- * The hook's configuration when `RAGDOWN_URL` is set, or undefined when it is not. A remote hook
- * needs no docs folder of its own: the server that has one answers.
- */
-export function loadRemoteHookConfig(env: Env = process.env): RemoteHookConfig | undefined {
-  if (!env.RAGDOWN_URL) return undefined;
-  return {
-    url: env.RAGDOWN_URL.replace(/\/+$/, ""),
-    token: env.RAGDOWN_TOKEN || null,
-    timeoutMs: int(env, "RAGDOWN_HOOK_TIMEOUT_MS", 5000),
   };
 }
 

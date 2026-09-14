@@ -6,7 +6,6 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { Ragdown } from "./engine.ts";
-import { runRemoteHook } from "./hook.ts";
 import { assertAuthConfigured, createHttpServer } from "./http.ts";
 import { tempSetup } from "./testing.ts";
 
@@ -40,7 +39,7 @@ describe("HTTP server", () => {
     expect(() => assertAuthConfigured(t.config)).toThrow(/RAGDOWN_TOKEN/);
   });
 
-  it("serves status openly and guards /mcp and /api/context with the token", async () => {
+  it("serves status openly and guards /mcp with the token", async () => {
     const t = await serve({ RAGDOWN_TOKEN: "secret" });
     const status = (await (await fetch(`${t.url}/api/status`)).json()) as {
       auth_required: boolean;
@@ -54,15 +53,13 @@ describe("HTTP server", () => {
           "content-type": "application/json",
           ...(token ? { authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ prompt: "how do I restore postgres?", session_id: "s" }),
+        body: "{}",
       });
-    expect((await post("/api/context")).status).toBe(401);
-    expect((await post("/api/context", "wrong")).status).toBe(401);
+    expect((await post("/mcp")).status).toBe(401);
     expect((await post("/mcp", "wrong")).status).toBe(401);
+    // The hook route is gone: hooks call ragdown_context over /mcp.
+    expect((await post("/api/context", "secret")).status).toBe(404);
     expect((await fetch(`${t.url}/api/nope`)).status).toBe(404);
-
-    const answered = await post("/api/context", "secret");
-    expect(((await answered.json()) as { context: string }).context).toContain("ops/backups.md");
   });
 
   it("lists indexed docs and reads one, behind the token", async () => {
@@ -122,20 +119,21 @@ describe("HTTP server", () => {
     expect(hits[0]).toMatchObject({ path: "ops/backups.md", heading: "Backups › Restore" });
   });
 
-  it("feeds a remote hook", async () => {
+  it("keeps ragdown_context's per-session memory across stateless HTTP requests", async () => {
     const t = await serve({ SECURE_LOCAL_NET: "true" });
-    const event = {
-      hook_event_name: "UserPromptSubmit",
-      session_id: "s",
-      prompt: "how do I restore postgres?",
+    const contextFor = async () => {
+      // A fresh client per call, as a hook runner would reconnect; the server keeps no MCP session.
+      const client = new Client({ name: "hook", version: "0" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(`${t.url}/mcp`)));
+      closers.push(() => client.close());
+      const result = (await client.callTool({
+        name: "ragdown_context",
+        arguments: { prompt: "how do I restore postgres?", session_id: "min-agent:1" },
+      })) as CallToolResult;
+      const first = result.content[0];
+      return first?.type === "text" ? first.text : "";
     };
-    const output = await runRemoteHook(event, { url: t.url, token: null, timeoutMs: 5000 });
-    expect(JSON.parse(output ?? "{}").hookSpecificOutput.additionalContext).toContain(
-      "ops/backups.md",
-    );
-    // Same session: already injected, so nothing new.
-    expect(
-      await runRemoteHook(event, { url: t.url, token: null, timeoutMs: 5000 }),
-    ).toBeUndefined();
+    expect(await contextFor()).toContain("ops/backups.md");
+    expect(await contextFor()).toBe("");
   });
 });

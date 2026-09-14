@@ -42,6 +42,7 @@ describe("MCP server", () => {
   it("lists the write tools only when writable", async () => {
     const writable = await connect();
     expect((await writable.client.listTools()).tools.map((t) => t.name).sort()).toEqual([
+      "ragdown_context",
       "ragdown_read_doc",
       "ragdown_recall",
       "ragdown_reindex",
@@ -50,6 +51,7 @@ describe("MCP server", () => {
     ]);
     const readOnly = await connect({ RAGDOWN_READ_ONLY: "true" });
     expect((await readOnly.client.listTools()).tools.map((t) => t.name).sort()).toEqual([
+      "ragdown_context",
       "ragdown_read_doc",
       "ragdown_recall",
       "ragdown_stats",
@@ -72,6 +74,20 @@ describe("MCP server", () => {
       (await t.call("ragdown_recall", { query: "pg_restore", format: "json" })).text,
     );
     expect(json.hits[0]).toMatchObject({ path: "ops/backups.md", heading: "Backups › Restore" });
+  });
+
+  it("returns hook context once per session, and empty text when there is none", async () => {
+    const t = await connect();
+    const args = { prompt: "how do I run pg_restore on backups?", session_id: "min-agent:1" };
+    const first = await t.call("ragdown_context", args);
+    expect(first.isError).toBe(false);
+    expect(first.text).toMatch(/^<ragdown-context /);
+    expect(first.text).toContain("ops/backups.md");
+    expect(await t.call("ragdown_context", { ...args, top_k: 1 })).toMatchObject({
+      isError: false,
+      text: expect.not.stringContaining("Backups › Restore"),
+    });
+    expect((await t.call("ragdown_context", { prompt: "ok" })).text).toBe("");
   });
 
   it("reads files by line range and refuses paths outside the folder", async () => {

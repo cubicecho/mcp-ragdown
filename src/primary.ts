@@ -4,9 +4,9 @@ import { dirname } from "node:path";
 import { errorMessage } from "./errors.ts";
 
 /**
- * One process per index is the primary: it writes the index, watches the folder and answers the
- * hook. Every other process against the same index — a second Claude Code window, a CLI search — is
- * a reader that forwards writes to it.
+ * One process per index is the primary: it writes the index and watches the folder. Every other
+ * server on the same index — a second Claude Code window's stdio server, say — is a reader that
+ * forwards syncs to it.
  *
  * Holding the unix socket *is* the lock, so the lock and the endpoint cannot disagree, and a
  * crashed primary leaves nothing that blocks the next one: a socket file nobody listens on is
@@ -18,7 +18,7 @@ import { errorMessage } from "./errors.ts";
 export type Handler = (request: Record<string, unknown>) => Promise<unknown>;
 
 /** Raised when there is no primary to talk to, as distinct from a primary that failed. */
-export class NoPrimaryError extends Error {}
+class NoPrimaryError extends Error {}
 
 /**
  * Try to become the primary.
