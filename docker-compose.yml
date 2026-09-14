@@ -13,7 +13,7 @@ services:
       # The index. Without it every restart re-embeds the whole folder.
       - ragdown-data:/data
     environment:
-      # Bearer token for /mcp and /api/context (`openssl rand -hex 32`). The server
+      # Bearer token for /mcp and the web UI's /api routes (`openssl rand -hex 32`). The server
       # refuses to start with neither this nor SECURE_LOCAL_NET=true.
       RAGDOWN_TOKEN: ${RAGDOWN_TOKEN:-}
       SECURE_LOCAL_NET: ${SECURE_LOCAL_NET:-false}

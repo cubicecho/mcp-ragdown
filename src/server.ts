@@ -9,8 +9,8 @@ export const SERVER_NAME = "ragdown";
 export const VERSION = "0.1.0";
 
 /**
- * The MCP surface. Tool names are `ragdown_*`, after zeromem's `zeromem_*`: recall, read, remember,
- * stats, plus reindex. Under `RAGDOWN_READ_ONLY` the two write tools are not listed at all — an
+ * The MCP surface, and the only way an agent or a hook reaches the notes. Tool names are `ragdown_*`,
+ * after zeromem's `zeromem_*`: recall, read, remember, stats, plus reindex and context (for hooks). Under `RAGDOWN_READ_ONLY` the two write tools are not listed at all — an
  * agent should never see a tool it cannot call.
  *
  * @param ready resolves to the engine once the model is loaded. Taking a promise lets the stdio
@@ -57,6 +57,45 @@ export function createMcpServer(ready: Promise<Ragdown>, readOnly: boolean): Mcp
         return args.format === "json"
           ? { hits: hits.map(hitJson) }
           : formatHits(hits, args.max_chars ?? rag.config.textLimit);
+      }),
+  );
+
+  server.registerTool(
+    "ragdown_context",
+    {
+      title: "Context for a prompt",
+      description:
+        "For hooks that run before a turn: the notes related to a user prompt, as a ready-to-inject <ragdown-context> block, or empty text when nothing is similar enough. Unlike ragdown_recall it filters by min_score, skips short prompts and slash commands, and never returns a section twice for the same session_id.",
+      inputSchema: {
+        prompt: z.string().describe("The user's prompt, verbatim"),
+        session_id: z
+          .string()
+          .optional()
+          .describe("Stable id of the conversation; sections already returned for it are skipped"),
+        top_k: z.number().int().min(1).max(50).optional().describe("Default RAGDOWN_HOOK_TOP_K"),
+        min_score: z
+          .number()
+          .min(0)
+          .max(1)
+          .optional()
+          .describe("Lowest cosine similarity to include. Default RAGDOWN_HOOK_MIN_SCORE"),
+        max_chars: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe("Most characters in the block. Default RAGDOWN_HOOK_MAX_CHARS"),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    (args) =>
+      run(ready, async (rag) => {
+        const context = await rag.context(args.prompt, args.session_id || undefined, {
+          topK: args.top_k,
+          minScore: args.min_score,
+          maxChars: args.max_chars,
+        });
+        return context ?? "";
       }),
   );
 

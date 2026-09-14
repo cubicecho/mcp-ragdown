@@ -14,19 +14,16 @@ const TAKEOVER_INTERVAL_MS = 30_000;
 /** Sessions whose injected chunks are remembered; past this the oldest is forgotten. */
 const MAX_SESSIONS = 200;
 
-export interface StartOptions {
-  /** Readers only: never claim the socket, never index. For one-off CLI reads. */
-  readerOnly?: boolean;
-  /**
-   * Primary only: start syncing and watching at once (default). `index` turns it off so the report
-   * it prints is the sync it asked for, not a no-op queued behind the real one.
-   */
-  background?: boolean;
+/** Per-call overrides of the `RAGDOWN_HOOK_*` defaults for `context`. */
+export interface ContextOptions {
+  topK?: number;
+  minScore?: number;
+  maxChars?: number;
 }
 
 /**
  * The running server's state: the embedder, the index, and — when this process is the primary —
- * the indexer and the socket. The MCP tools, the hook and the CLI all go through here.
+ * the indexer and the socket. Every MCP tool and the web UI's routes go through here.
  */
 export class Ragdown {
   readonly config: Config;
@@ -35,7 +32,7 @@ export class Ragdown {
   private indexer: Indexer | undefined;
   private socket: Server | undefined;
   private takeover: NodeJS.Timeout | undefined;
-  /** Chunk ids already injected into each session, so the hook does not repeat itself. */
+  /** Chunk ids already returned by `context` for each session, so a hook does not repeat itself. */
   private readonly injected = new Map<string, Set<string>>();
 
   private constructor(config: Config, embedder: Embedder, store: Store) {
@@ -52,15 +49,14 @@ export class Ragdown {
    * Load the embedder, claim the primary role if it is free, open the index and — as primary —
    * start the first sync and the watcher. Resolves before that first sync finishes.
    */
-  static async start(config: Config, options: StartOptions = {}): Promise<Ragdown> {
+  static async start(config: Config): Promise<Ragdown> {
     const embedder = await createEmbedder(config);
-    let socket: Server | undefined;
     let pending: Ragdown | undefined;
     const handler = (req: Record<string, unknown>) => {
       if (!pending) throw new Error("the primary is still starting");
       return pending.handle(req);
     };
-    if (!options.readerOnly) socket = await claimSocket(config.socketPath, handler);
+    const socket = await claimSocket(config.socketPath, handler);
 
     const store = socket
       ? await Store.open(config.dataDir, embedder, true)
@@ -69,8 +65,8 @@ export class Ragdown {
     pending = ragdown;
     if (store.rebuiltBecause)
       console.error(`[ragdown] rebuilding the index: ${store.rebuiltBecause}`);
-    if (socket) ragdown.becomePrimary(socket, options.background ?? true);
-    else if (!options.readerOnly) ragdown.watchForTakeover(handler);
+    if (socket) ragdown.becomePrimary(socket);
+    else ragdown.watchForTakeover(handler);
     return ragdown;
   }
 
@@ -85,12 +81,18 @@ export class Ragdown {
   }
 
   /**
-   * The context block the hook injects for a prompt, or undefined when nothing is similar enough.
-   * Chunks already injected into the same session are left out, so a long conversation about one
-   * topic pays for each note once.
+   * The context block a hook injects for a prompt (`ragdown_context`), or undefined when nothing is
+   * similar enough. Chunks already returned for the same session are left out, so a long
+   * conversation about one topic pays for each note once.
    */
-  async context(prompt: string, sessionId?: string): Promise<string | undefined> {
-    const { topK, minScore, maxChars } = this.config.hook;
+  async context(
+    prompt: string,
+    sessionId?: string,
+    options: ContextOptions = {},
+  ): Promise<string | undefined> {
+    const topK = options.topK ?? this.config.hook.topK;
+    const minScore = options.minScore ?? this.config.hook.minScore;
+    const maxChars = options.maxChars ?? this.config.hook.maxChars;
     const trimmed = prompt.trim();
     // A slash command or a one-word reply ("yes", "go on") has nothing to retrieve on.
     if (trimmed.length < 12 || trimmed.startsWith("/")) return undefined;
@@ -231,12 +233,6 @@ export class Ragdown {
 
   private async handle(req: Record<string, unknown>): Promise<unknown> {
     switch (req.op) {
-      case "context":
-        return {
-          context:
-            (await this.context(String(req.prompt ?? ""), stringOrUndefined(req.session_id))) ??
-            null,
-        };
       case "sync":
         return this.sync(req.full === true);
       default:
@@ -244,15 +240,13 @@ export class Ragdown {
     }
   }
 
-  private becomePrimary(socket: Server, background = true): void {
+  private becomePrimary(socket: Server): void {
     this.socket = socket;
     this.indexer = new Indexer(this.config.docsDir, this.store, this.embedder);
-    if (background) {
-      void this.indexer.sync().catch((error: unknown) => {
-        console.error(`[ragdown] first sync failed: ${errorMessage(error)}`);
-      });
-      if (this.config.watch) this.indexer.watch();
-    }
+    void this.indexer.sync().catch((error: unknown) => {
+      console.error(`[ragdown] first sync failed: ${errorMessage(error)}`);
+    });
+    if (this.config.watch) this.indexer.watch();
     console.error(`[ragdown] primary for ${this.config.docsDir} (index: ${this.config.dataDir})`);
   }
 
@@ -321,8 +315,4 @@ function slug(title: string): string {
       .replace(/^-+|-+$/g, "")
       .slice(0, 60) || "note"
   );
-}
-
-function stringOrUndefined(value: unknown): string | undefined {
-  return typeof value === "string" && value !== "" ? value : undefined;
 }

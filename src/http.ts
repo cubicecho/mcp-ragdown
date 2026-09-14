@@ -9,7 +9,7 @@ import type { Ragdown } from "./engine.ts";
 import { errorMessage } from "./errors.ts";
 import { createMcpServer, SERVER_NAME, VERSION } from "./server.ts";
 
-/** A prompt is a few kilobytes; anything near this is not a hook or an MCP message. */
+/** An MCP message is a few kilobytes; anything near this is not one. */
 const MAX_BODY_BYTES = 1024 * 1024;
 
 /** Where `npm run build` puts the web UI. Absent in a checkout that never built it. */
@@ -32,11 +32,10 @@ const CONTENT_TYPES: Record<string, string> = {
  * - `GET /api/status` — unauthenticated liveness, with the index size once the model is loaded.
  * - `/mcp` — Streamable HTTP MCP, stateless: a fresh `McpServer` per request, since every piece of
  *   state lives in the shared `Ragdown`.
- * - `POST /api/context` — what the hook asks the unix socket for, for a hook on another machine
- *   or outside the container (`RAGDOWN_URL`).
  * - `GET /api/docs` and `GET /api/doc?path=` — the indexed files and one file's text, for the web UI.
  * - Anything else under `GET` — the web UI from `webDir`, when it has been built.
  *
+ * Agents and hooks use `/mcp` only; the `/api` routes exist for the UI and the health check.
  * Everything under `/api` but status, and `/mcp`, needs `Authorization: Bearer $RAGDOWN_TOKEN`
  * unless `SECURE_LOCAL_NET=true`. The UI's static files do not: they hold no notes. Plain
  * `node:http` rather than Express: a handful of routes do not need a framework.
@@ -133,21 +132,6 @@ async function handle(
     return;
   }
 
-  if (path === "/api/context") {
-    if (req.method !== "POST") {
-      json(res, 405, { error: "Method not allowed" });
-      return;
-    }
-    const body = (await readJson(req)) as { prompt?: unknown; session_id?: unknown };
-    const rag = await ready;
-    const context = await rag.context(
-      typeof body.prompt === "string" ? body.prompt : "",
-      typeof body.session_id === "string" && body.session_id ? body.session_id : undefined,
-    );
-    json(res, 200, { context: context ?? null });
-    return;
-  }
-
   // Every method, not only POST: clients open a GET for the SSE stream and send DELETE to end a
   // session, and a 404 for those looks like a broken server.
   const server = createMcpServer(ready, config.readOnly);
@@ -163,7 +147,7 @@ async function handle(
   await transport.handleRequest(req, res, req.method === "POST" ? await readJson(req) : undefined);
 }
 
-const API_ROUTES = new Set(["/mcp", "/api/context", "/api/docs", "/api/doc"]);
+const API_ROUTES = new Set(["/mcp", "/api/docs", "/api/doc"]);
 
 /**
  * A file from the built UI, or its `index.html` for any path that is not one, so a reload on a
