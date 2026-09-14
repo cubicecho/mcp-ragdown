@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Ragdown } from "./engine.ts";
+import { Scope } from "./scope.ts";
 import { tempSetup } from "./testing.ts";
 
 const closers: (() => Promise<void>)[] = [];
@@ -18,34 +19,34 @@ async function setup() {
   const primary = await Ragdown.start(t.config);
   closers.push(() => primary.close());
   await primary.sync(false);
-  return { ...t, primary };
+  return { ...t, primary, root: new Scope(primary) };
 }
 
 describe("Ragdown", () => {
   it("builds hook context and never repeats a chunk within a session", async () => {
-    const { primary } = await setup();
+    const { root } = await setup();
     const prompt = "how do I restore postgres snapshots?";
 
-    const context = await primary.context(prompt, "s1");
+    const context = await root.context(prompt, "s1");
     expect(context).toMatch(/^<ragdown-context source=".*docs">/);
     expect(context).toContain("ops/backups.md");
 
-    const again = await primary.context(prompt, "s1");
+    const again = await root.context(prompt, "s1");
     for (const block of context?.match(/ops\/backups\.md:\d+-\d+/g) ?? []) {
       expect(again ?? "").not.toContain(block);
     }
     // A different session starts fresh.
-    expect(await primary.context(prompt, "s2")).toContain("ops/backups.md");
+    expect(await root.context(prompt, "s2")).toContain("ops/backups.md");
   });
 
   it("adds nothing for short prompts, slash commands or a threshold nothing reaches", async () => {
-    const { primary } = await setup();
-    expect(await primary.context("yes")).toBeUndefined();
-    expect(await primary.context("/compact restore postgres snapshots")).toBeUndefined();
+    const { root } = await setup();
+    expect(await root.context("yes")).toBeUndefined();
+    expect(await root.context("/compact restore postgres snapshots")).toBeUndefined();
     expect(
-      await primary.context("how do I restore postgres snapshots?", undefined, { minScore: 1 }),
+      await root.context("how do I restore postgres snapshots?", undefined, { minScore: 1 }),
     ).toBeUndefined();
-    const one = await primary.context("how do I restore postgres snapshots?", undefined, {
+    const one = await root.context("how do I restore postgres snapshots?", undefined, {
       topK: 1,
     });
     expect(one?.match(/similarity/g)).toHaveLength(1);

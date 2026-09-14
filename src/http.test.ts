@@ -29,7 +29,7 @@ async function serve(env: Record<string, string>) {
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   closers.push(() => new Promise((done) => server.close(() => done())));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return { ...t, url };
+  return { ...t, rag, url };
 }
 
 describe("HTTP server", () => {
@@ -117,6 +117,38 @@ describe("HTTP server", () => {
     const first = result.content[0];
     const hits = JSON.parse(first?.type === "text" ? first.text : "{}").hits;
     expect(hits[0]).toMatchObject({ path: "ops/backups.md", heading: "Backups › Restore" });
+  });
+
+  it("scopes /mcp/<folder> to that folder, and 404s a folder that is not one", async () => {
+    const t = await serve({ SECURE_LOCAL_NET: "true" });
+    await t.write("notes/kafka.md", "# Kafka\n\nRetention on postgres is seven days.");
+    await t.rag.sync(false);
+    const recall = async (path: string) => {
+      const client = new Client({ name: "test", version: "0" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(`${t.url}${path}`)));
+      closers.push(() => client.close());
+      const result = (await client.callTool({
+        name: "ragdown_recall",
+        arguments: { query: "postgres", format: "json" },
+      })) as CallToolResult;
+      const first = result.content[0];
+      return JSON.parse(first?.type === "text" ? first.text : "{}").hits.map(
+        (hit: { path: string }) => hit.path,
+      );
+    };
+    expect((await recall("/mcp")).sort()).toEqual(["notes/kafka.md", "ops/backups.md"]);
+    expect(await recall("/mcp/notes")).toEqual(["kafka.md"]);
+    expect(await recall("/mcp/ops/")).toEqual(["backups.md"]);
+
+    const post = (path: string) =>
+      fetch(`${t.url}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+    for (const path of ["/mcp/nope", "/mcp/ops/backups.md", "/mcp/%2E%2E", "/mcp/%E0"]) {
+      expect((await post(path)).status, path).toBe(404);
+    }
   });
 
   it("keeps ragdown_context's per-session memory across stateless HTTP requests", async () => {

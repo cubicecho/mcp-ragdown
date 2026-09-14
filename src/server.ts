@@ -1,9 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import type { Ragdown } from "./engine.ts";
 import { errorMessage } from "./errors.ts";
 import { formatHits, hitJson } from "./format.ts";
+import type { Scope } from "./scope.ts";
 
 export const SERVER_NAME = "ragdown";
 export const VERSION = "0.1.0";
@@ -13,11 +13,12 @@ export const VERSION = "0.1.0";
  * after zeromem's `zeromem_*`: recall, read, remember, stats, plus reindex and context (for hooks). Under `RAGDOWN_READ_ONLY` the two write tools are not listed at all — an
  * agent should never see a tool it cannot call.
  *
- * @param ready resolves to the engine once the model is loaded. Taking a promise lets the stdio
+ * @param ready resolves to the scope — the folder these tools treat as the root — once the model is
+ *   loaded. Taking a promise lets the stdio
  *   transport connect first, so a client's handshake never waits on the model; a call made before
  *   then waits instead.
  */
-export function createMcpServer(ready: Promise<Ragdown>, readOnly: boolean): McpServer {
+export function createMcpServer(ready: Promise<Scope>, readOnly: boolean): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: VERSION },
     {
@@ -174,8 +175,8 @@ export function createMcpServer(ready: Promise<Ragdown>, readOnly: boolean): Mcp
 
 /** A tool failure is a result the model can read, never a transport error. */
 async function run(
-  ready: Promise<Ragdown>,
-  body: (rag: Ragdown) => Promise<unknown>,
+  ready: Promise<Scope>,
+  body: (rag: Scope) => Promise<unknown>,
 ): Promise<CallToolResult> {
   try {
     const result = await body(await ready);

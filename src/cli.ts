@@ -47,17 +47,22 @@ async function main(): Promise<void> {
 }
 
 async function stdio(config: Config): Promise<void> {
-  const [{ StdioServerTransport }, { Ragdown }, { createMcpServer }] = await Promise.all([
-    import("@modelcontextprotocol/sdk/server/stdio.js"),
-    import("./engine.ts"),
-    import("./server.ts"),
-  ]);
+  const [{ StdioServerTransport }, { Ragdown }, { Scope }, { createMcpServer }] = await Promise.all(
+    [
+      import("@modelcontextprotocol/sdk/server/stdio.js"),
+      import("./engine.ts"),
+      import("./scope.ts"),
+      import("./server.ts"),
+    ],
+  );
   const ready = Ragdown.start(config);
   // Logged here; each tool call awaits the same promise and reports the failure as its result.
   ready.catch((error: unknown) =>
     console.error(`[ragdown] startup failed: ${errorMessage(error)}`),
   );
-  const server = createMcpServer(ready, config.readOnly);
+  const scope = ready.then((rag) => new Scope(rag));
+  scope.catch(() => undefined);
+  const server = createMcpServer(scope, config.readOnly);
   await server.connect(new StdioServerTransport());
   console.error(`[ragdown] stdio ready (docs: ${config.docsDir})`);
 

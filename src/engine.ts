@@ -1,29 +1,18 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import type { Server } from "node:net";
-import { dirname, relative, resolve } from "node:path";
-import { type Config, isInside } from "./config.ts";
+import type { Config } from "./config.ts";
 import { createEmbedder, type Embedder } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
-import { formatHit } from "./format.ts";
 import { Indexer, type SyncReport } from "./indexer.ts";
 import { claimSocket, request } from "./primary.ts";
-import { type DocumentInfo, type Hit, Store } from "./store.ts";
+import { SessionMemory } from "./scope.ts";
+import { type DocumentInfo, type FileState, type Hit, Store } from "./store.ts";
 
 /** How often a reader checks whether the primary has gone and it should take over. */
 const TAKEOVER_INTERVAL_MS = 30_000;
-/** Sessions whose injected chunks are remembered; past this the oldest is forgotten. */
-const MAX_SESSIONS = 200;
-
-/** Per-call overrides of the `RAGDOWN_HOOK_*` defaults for `context`. */
-export interface ContextOptions {
-  topK?: number;
-  minScore?: number;
-  maxChars?: number;
-}
-
 /**
  * The running server's state: the embedder, the index, and — when this process is the primary —
- * the indexer and the socket. Every MCP tool and the web UI's routes go through here.
+ * the indexer and the socket. The tools and routes reach it through a `Scope` (`scope.ts`), which
+ * narrows it to one folder.
  */
 export class Ragdown {
   readonly config: Config;
@@ -32,8 +21,8 @@ export class Ragdown {
   private indexer: Indexer | undefined;
   private socket: Server | undefined;
   private takeover: NodeJS.Timeout | undefined;
-  /** Chunk ids already returned by `context` for each session, so a hook does not repeat itself. */
-  private readonly injected = new Map<string, Set<string>>();
+  /** Chunk ids already returned by `ragdown_context` for each session, so a hook does not repeat itself. */
+  readonly sessions = new SessionMemory();
 
   private constructor(config: Config, embedder: Embedder, store: Store) {
     this.config = config;
@@ -74,71 +63,10 @@ export class Ragdown {
    * Search the notes. Never waits for a sync: the first index of a large folder takes minutes, and
    * a partial answer (what is indexed so far) beats a hook that times out.
    *
-   * @param pathPrefix limits the search to files under this path, relative to the docs folder.
+   * @param pathPrefix limits the search to paths starting with this, relative to the docs folder.
    */
   async recall(query: string, topK: number, pathPrefix?: string): Promise<Hit[]> {
     return this.store.search(query, topK, pathPrefix);
-  }
-
-  /**
-   * The context block a hook injects for a prompt (`ragdown_context`), or undefined when nothing is
-   * similar enough. Chunks already returned for the same session are left out, so a long
-   * conversation about one topic pays for each note once.
-   */
-  async context(
-    prompt: string,
-    sessionId?: string,
-    options: ContextOptions = {},
-  ): Promise<string | undefined> {
-    const topK = options.topK ?? this.config.hook.topK;
-    const minScore = options.minScore ?? this.config.hook.minScore;
-    const maxChars = options.maxChars ?? this.config.hook.maxChars;
-    const trimmed = prompt.trim();
-    // A slash command or a one-word reply ("yes", "go on") has nothing to retrieve on.
-    if (trimmed.length < 12 || trimmed.startsWith("/")) return undefined;
-
-    const seen = sessionId ? this.sessionSeen(sessionId) : new Set<string>();
-    const hits = (await this.recall(trimmed, topK * 2))
-      .filter((hit) => hit.similarity >= minScore && !seen.has(hit.id))
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, topK);
-    if (hits.length === 0) return undefined;
-
-    const blocks: string[] = [];
-    let used = 0;
-    for (const hit of hits) {
-      const block = formatHit(hit, Math.min(this.config.textLimit, maxChars));
-      if (blocks.length > 0 && used + block.length > maxChars) break;
-      blocks.push(block);
-      used += block.length;
-      seen.add(hit.id);
-    }
-    return [
-      `<ragdown-context source="${this.config.docsDir}">`,
-      "Excerpts from the user's Markdown notes that look related to this prompt, found by search, not chosen by the user.",
-      "They may be irrelevant or out of date. Use ragdown_read_doc for the whole file before relying on a fragment.",
-      "",
-      blocks.join("\n\n"),
-      "</ragdown-context>",
-    ].join("\n");
-  }
-
-  /**
-   * Read a file from the docs folder: the source, not the index, so it is current even mid-sync.
-   * Never clipped — it is what a clipped hit points at.
-   */
-  async readDoc(path: string, startLine?: number, endLine?: number) {
-    const full = this.resolveDoc(path);
-    const lines = (await readFile(full, "utf8")).split(/\r?\n/);
-    const start = Math.max(1, startLine ?? 1);
-    const end = Math.min(lines.length, endLine ?? lines.length);
-    return {
-      path: relative(this.config.docsDir, full),
-      start_line: start,
-      end_line: end,
-      total_lines: lines.length,
-      text: lines.slice(start - 1, end).join("\n"),
-    };
   }
 
   /** The files the index knows about, with their titles, sorted by path. */
@@ -146,54 +74,9 @@ export class Ragdown {
     return this.store.documents();
   }
 
-  /**
-   * Read a file for the web UI: like `readDoc`, but only a file the index holds, so a browser
-   * cannot read whatever else happens to sit in the docs folder.
-   *
-   * @throws with `status: 404` for a path the index does not know.
-   */
-  async readIndexedDoc(path: string) {
-    if (!(await this.store.files()).has(path)) {
-      throw Object.assign(new Error(`not an indexed document: ${path}`), { status: 404 });
-    }
-    return this.readDoc(path);
-  }
-
-  /**
-   * Write a new note under the notes folder and index it before returning.
-   *
-   * @param name file name without extension; defaults to the date and a slug of the title. An
-   *   existing file is never overwritten: a numeric suffix is added instead.
-   */
-  async remember(title: string, content: string, tags: string[] = [], name?: string) {
-    const date = new Date().toISOString().slice(0, 10);
-    const base = name ?? `${date}-${slug(title)}`;
-    const front = [
-      "---",
-      `title: ${JSON.stringify(title)}`,
-      `date: ${date}`,
-      ...(tags.length > 0 ? [`tags: [${tags.map((t) => JSON.stringify(t)).join(", ")}]`] : []),
-      "---",
-      "",
-    ].join("\n");
-    const body = `${front}${content.trimEnd()}\n`;
-
-    let full = "";
-    for (let n = 1; ; n++) {
-      full = resolve(this.config.notesDir, `${base}${n === 1 ? "" : `-${n}`}.md`);
-      if (!isInside(this.config.notesDir, full)) {
-        throw new Error(`note name escapes the notes folder: ${base}`);
-      }
-      await mkdir(dirname(full), { recursive: true });
-      try {
-        await writeFile(full, body, { flag: "wx" });
-        break;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      }
-    }
-    const sync = await this.sync(false);
-    return { path: relative(this.config.docsDir, full), sync };
+  /** Every indexed file's path, relative to the docs folder, and its state. */
+  async files(): Promise<Map<string, FileState>> {
+    return this.store.files();
   }
 
   /** Sync (or with `full`, rebuild) the index — here when primary, on the primary otherwise. */
@@ -265,30 +148,6 @@ export class Ragdown {
     }, TAKEOVER_INTERVAL_MS);
     this.takeover.unref();
   }
-
-  private sessionSeen(sessionId: string): Set<string> {
-    let seen = this.injected.get(sessionId);
-    if (seen) {
-      // Re-insert so Map order is least-recently-used first.
-      this.injected.delete(sessionId);
-    } else {
-      seen = new Set();
-      if (this.injected.size >= MAX_SESSIONS) {
-        const oldest = this.injected.keys().next().value;
-        if (oldest !== undefined) this.injected.delete(oldest);
-      }
-    }
-    this.injected.set(sessionId, seen);
-    return seen;
-  }
-
-  private resolveDoc(path: string): string {
-    const full = resolve(this.config.docsDir, path);
-    if (!isInside(this.config.docsDir, full)) {
-      throw new Error(`path is outside the docs folder: ${path}`);
-    }
-    return full;
-  }
 }
 
 /**
@@ -304,15 +163,4 @@ async function openAsReader(dataDir: string, embedder: Embedder): Promise<Store>
       await new Promise((done) => setTimeout(done, 500));
     }
   }
-}
-
-function slug(title: string): string {
-  return (
-    title
-      .toLowerCase()
-      .normalize("NFKD")
-      .replace(/[^\p{L}\p{N}]+/gu, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 60) || "note"
-  );
 }
