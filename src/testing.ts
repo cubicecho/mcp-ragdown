@@ -28,7 +28,9 @@ export async function tempSetup(env: Record<string, string> = {}) {
       await mkdir(dirname(join(docsDir, path)), { recursive: true });
       await writeFile(join(docsDir, path), text);
     },
-    cleanup: () => rm(root, { recursive: true, force: true }),
+    // LanceDB can still be writing an index file as the test ends, and removing a directory it is
+    // filling fails with ENOTEMPTY. The retries wait it out instead of failing the test.
+    cleanup: () => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }),
   };
 }
 
