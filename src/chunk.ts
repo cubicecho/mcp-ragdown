@@ -7,8 +7,9 @@ import { basename, extname } from "node:path";
 export const CHUNKER_VERSION = 2;
 
 /**
- * 1500 characters is roughly 350–450 tokens of prose: under bge-small's 512-token window with room
- * for the heading line, and still one idea's worth of text rather than a whole page.
+ * 1500 characters is roughly 350–450 tokens of prose: inside the window of every embedder here —
+ * 512 tokens for the smallest of them — with room for the heading line, and still one idea's worth
+ * of text rather than a whole page.
  */
 export const MAX_CHUNK_CHARS = 1500;
 

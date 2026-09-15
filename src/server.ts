@@ -32,7 +32,7 @@ export function createMcpServer(ready: Promise<Scope>, readOnly: boolean): McpSe
     {
       title: "Search notes",
       description:
-        "Hybrid (semantic + keyword) search over the user's Markdown notes. Returns the most relevant sections with file path, line range, heading breadcrumb and cosine similarity (above ~0.7 is usually on topic). Use it before answering anything the notes may cover; follow up with ragdown_read_doc for the surrounding text.",
+        "Hybrid (semantic + keyword) search over the user's Markdown notes. Returns the most relevant sections with file path, line range, heading breadcrumb and cosine similarity (above ~0.8 is usually on topic). Use it before answering anything the notes may cover; follow up with ragdown_read_doc for the surrounding text.",
       inputSchema: {
         query: z.string().min(1).describe("What to look for, as a question or keywords"),
         top_k: z.number().int().min(1).max(50).default(8),

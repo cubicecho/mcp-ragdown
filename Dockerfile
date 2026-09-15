@@ -23,13 +23,14 @@ RUN rm -rf node_modules/@lancedb/lancedb/node_modules \
   && arch="$(node -p process.arch)" \
   && find . -mindepth 3 -maxdepth 3 ! -name "$arch" -exec rm -rf {} +
 
-# The embedding model (~35 MB) is baked in, so the container starts offline and the
+# The default embedding model (~50 MB) is baked in, so the container starts offline and the
 # first start does not stall on a download. The same call the server makes, so the
-# cache layout is exactly what it will look for.
+# cache layout is exactly what it will look for. Setting RAGDOWN_EMBEDDER to any other
+# model downloads it on first start instead.
 RUN node --input-type=module -e ' \
   const { env, pipeline } = await import("@huggingface/transformers"); \
   env.cacheDir = "/models"; \
-  await pipeline("feature-extraction", "Xenova/bge-small-en-v1.5", { dtype: "q8" });'
+  await pipeline("feature-extraction", "onnx-community/granite-embedding-small-english-r2-ONNX", { dtype: "q8" });'
 
 # ── Stage 2: web UI ───────────────────────────────────────────────────────────
 # Needs the dev dependencies (Vite, React, Tailwind); only the built files leave this stage.

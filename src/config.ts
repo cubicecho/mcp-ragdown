@@ -80,7 +80,7 @@ export function loadConfig(env: Env = process.env): Config {
     dataDir,
     modelsDir: resolve(expandHome(env.RAGDOWN_MODELS ?? join(cacheRoot, "models"))),
     socketPath,
-    embedder: env.RAGDOWN_EMBEDDER ?? "bge-small",
+    embedder: env.RAGDOWN_EMBEDDER ?? "granite-small",
     threads: int(env, "RAGDOWN_THREADS", 0),
     embeddingUrl: env.RAGDOWN_EMBEDDING_URL ?? "https://api.openai.com/v1",
     embeddingApiKey: env.RAGDOWN_EMBEDDING_API_KEY,
@@ -95,7 +95,9 @@ export function loadConfig(env: Env = process.env): Config {
     },
     hook: {
       topK: int(env, "RAGDOWN_HOOK_TOP_K", 4),
-      minScore: num(env, "RAGDOWN_HOOK_MIN_SCORE", 0.7),
+      // Calibrated for the default embedder; cosine is on each model's own scale, so a different
+      // `RAGDOWN_EMBEDDER` needs a different number. The README's embedder table pairs them.
+      minScore: num(env, "RAGDOWN_HOOK_MIN_SCORE", 0.8),
       maxChars: int(env, "RAGDOWN_HOOK_MAX_CHARS", 6000),
     },
   };
