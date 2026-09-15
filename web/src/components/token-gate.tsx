@@ -1,9 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { KeyRound } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
+import { CardLayout } from "@/components/card-layout";
+import { FormField } from "@/components/form-field";
+import { PasswordInput } from "@/components/password-input";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { setToken, useNeedsAuth } from "@/lib/auth";
 
 /**
@@ -28,31 +29,38 @@ export function TokenGate({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-full items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <KeyRound className="size-4" aria-hidden /> Token required
-          </CardTitle>
-          <CardDescription>
-            This server was started with <code>RAGDOWN_TOKEN</code>. Enter it to read the index.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={submit} className="flex flex-col gap-3">
-            <Input
-              type="password"
-              aria-label="Token"
-              placeholder="Bearer token"
-              autoFocus
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
+      <form onSubmit={submit} className="w-full max-w-sm">
+        <CardLayout
+          icon={<KeyRound aria-hidden />}
+          title="Token required"
+          description={
+            <>
+              This server was started with <code>RAGDOWN_TOKEN</code>. Enter it to read the index.
+            </>
+          }
+          content={
+            <FormField
+              label="Token"
+              control={
+                <PasswordInput
+                  placeholder="Bearer token"
+                  autoComplete="current-password"
+                  autoFocus
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                  showLabel="Show token"
+                  hideLabel="Hide token"
+                />
+              }
             />
+          }
+          footerActions={
             <Button type="submit" disabled={!value.trim()}>
               Unlock
             </Button>
-          </form>
-        </CardContent>
-      </Card>
+          }
+        />
+      </form>
     </div>
   );
 }
