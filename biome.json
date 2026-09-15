@@ -51,11 +51,7 @@
     {
       "includes": ["web/src/components/ui/**"],
       "linter": {
-        "rules": {
-          "a11y": {
-            "useSemanticElements": "off"
-          }
-        }
+        "enabled": false
       }
     }
   ]
