@@ -8,8 +8,10 @@ layout follows mcp-zeromem, but the memory here is your Markdown files, not conv
 Everything an agent or a hook does goes through MCP. There is no hook command and no hook HTTP
 route; the only other routes feed the web UI.
 
-Everything runs locally: the default embedder is `bge-small-en-v1.5` on ONNX Runtime. The Docker
-image has the model baked in; outside Docker it is downloaded once (about 35 MB) on first start.
+Everything runs locally: the default embedder is `granite-embedding-small-english-r2` on ONNX
+Runtime. The Docker image has the model baked in; outside Docker it is downloaded once (about
+50 MB) on first start. Two others are a setting away — see
+[Choosing an embedder](#choosing-an-embedder).
 
 ## Quick start
 
@@ -149,15 +151,15 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `RAGDOWN_DOCS_DIR` | — | The Markdown folder, walked recursively. Dot-folders and `node_modules` are skipped, and symlinks are not followed. Indexes `.md`, `.markdown` and `.mdx`. |
 | `RAGDOWN_DATA_DIR` | `~/.cache/ragdown/<hash of docs dir>` | The index. Deleting it only costs a rebuild. |
 | `RAGDOWN_MODELS` | `~/.cache/ragdown/models` | Model cache, shared by every folder. |
-| `RAGDOWN_EMBEDDER` | `bge-small` | `bge-small`, `openai:<model>` (any OpenAI-compatible `/embeddings` endpoint, such as Ollama or llama.cpp), or `hash` (tests only). |
+| `RAGDOWN_EMBEDDER` | `granite-small` | A local model — `granite-small`, `bge-small` or `embeddinggemma` — or `openai:<model>` (any OpenAI-compatible `/embeddings` endpoint, such as Ollama or llama.cpp), or `hash` (tests only). See [Choosing an embedder](#choosing-an-embedder). |
 | `RAGDOWN_EMBEDDING_URL` / `_API_KEY` | OpenAI | For `openai:<model>`. |
-| `RAGDOWN_THREADS` | half the cores | ONNX Runtime threads for `bge-small`. |
+| `RAGDOWN_THREADS` | half the cores | ONNX Runtime threads for the local model. |
 | `RAGDOWN_WATCH` | `true` | Watch the folder; without a watcher, sync on start and on `ragdown_reindex` only. |
 | `RAGDOWN_READ_ONLY` | `false` | Hide the write tools. |
 | `RAGDOWN_NOTES_DIR` | `notes` | Where `ragdown_remember` writes on `/mcp` (a scope writes into its own folder). Must be inside the docs folder. |
 | `RAGDOWN_TEXT_LIMIT` | `2000` | Characters per hit in text output. Every cut names the `ragdown_read_doc` call that returns the rest. |
 | `RAGDOWN_HOOK_TOP_K` | `4` | `ragdown_context`: most sections per prompt. |
-| `RAGDOWN_HOOK_MIN_SCORE` | `0.7` | `ragdown_context`: lowest cosine similarity returned. |
+| `RAGDOWN_HOOK_MIN_SCORE` | `0.8` | `ragdown_context`: lowest cosine similarity returned. Calibrated for the default embedder; another one needs another number. |
 | `RAGDOWN_HOOK_MAX_CHARS` | `6000` | `ragdown_context`: most characters per prompt. |
 | `PORT` | `3000` | `serve` only. The HTTP port. |
 | `RAGDOWN_TOKEN` | — | `serve` only. The bearer token `/mcp` and the web UI's `/api` routes require. |
@@ -188,22 +190,50 @@ hold no notes, so they need none; everything it shows comes from the bearer rout
 **Chunks follow headings.** Every heading starts a section, and the section's breadcrumb
 (`Backups › Restore`) is part of what gets embedded. That is how a paragraph that only says "run it
 twice" is found by a question about restoring backups. A section longer than 1,500 characters
-(about 400 tokens, well inside bge's 512) is packed paragraph by paragraph. Fenced code blocks are
+(about 400 tokens, inside the window of every embedder here) is packed paragraph by paragraph. Fenced code blocks are
 never split. Line numbers refer to the original file, so a hit is always one `ragdown_read_doc`
 call away from its surroundings.
 
 **Hybrid retrieval.** Dense cosine search finds a paragraph that answers the question in different
 words. BM25 full-text search finds an exact error string or flag name that an embedding blurs.
-Both return a pool, and reciprocal rank fusion (k = 60) merges them. Ranking uses the fused score.
+Both read the chunk with its breadcrumb in front, so a table of settings is still findable by the
+name of the service its heading names and never repeats. Indexing the body alone cost 22 points of
+top-1 recall on a benchmark of 210 questions, and left the fused ranking below dense search on its
+own. Both return a pool, and reciprocal rank fusion (k = 60) merges them. Ranking uses the fused score.
 Filtering uses cosine similarity, because a fused score is not comparable across queries.
 
-**Calibrating `MIN_SCORE`.** On a 1,900-chunk corpus of engineering notes with bge-small:
+**Choosing an embedder.** `RAGDOWN_EMBEDDER` picks one of three local models. They were measured on
+the same benchmark — 30 generated runbooks, 210 questions with a known answering section, identical
+chunks throughout — so only the model differs. Top-1 is how often the right section ranked first;
+the timings are one 8-thread laptop CPU indexing that corpus and embedding one query.
 
-- On-topic questions scored their best hits at 0.73–0.79.
-- Unrelated prompts ("weather in Paris", "pasta recipe") peaked at 0.53–0.57.
-- Generic coding requests ("refactor this to async/await") reached 0.62–0.68.
+| `RAGDOWN_EMBEDDER` | Model | Dim | Top-1 | Recall@5 | Index | Per query | `MIN_SCORE` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `granite-small` (default) | granite-embedding-small-english-r2 | 384 | 85.7% | 100% | 3.6 s | 9 ms | `0.8` |
+| `bge-small` | bge-small-en-v1.5 | 384 | 82.9% | 100% | 3.5 s | 9 ms | `0.7` |
+| `embeddinggemma` | embeddinggemma-300m | 768 | 91.0% | 100% | 33 s | 260 ms | `0.6` |
 
-0.7 injects on-topic notes and skips the rest. Other embedders need their own threshold.
+`granite-small` is the default because it costs what `bge-small` costs — same dimensions, same
+index, 9 ms a query — and was ahead of it on every measure here, though on 210 questions that gap
+alone is not significant (p = 0.41). `embeddinggemma` is a real jump and a significant one
+(p < 0.001), but 260 ms is paid on every search, and a hook searches every turn. Being the default
+is also why `granite-small` is the model baked into the Docker image; the other two download on
+first start. gte-small, snowflake-arctic-embed-s, mxbai-embed-xsmall, bge-base, granite's 149M
+model and arctic-embed-m were measured too and beat the default on nothing — bigger was not better.
+
+**Changing the model rebuilds the index, and `RAGDOWN_HOOK_MIN_SCORE` has to move with it.** Cosine
+is on each model's own scale, not a shared one. On the same corpus, the weakest on-topic question
+and the strongest unrelated prompt ("weather in Paris", "a recipe for carbonara") scored:
+
+| | on-topic (10th percentile) | unrelated (worst case) |
+| --- | --- | --- |
+| `granite-small` | 0.86 | 0.75 |
+| `bge-small` | 0.70 | 0.60 |
+| `embeddinggemma` | 0.68 | 0.53 |
+
+The last column of the table above is the value that separates the two for each model. Borrow
+another model's number and the hook either injects a pasta recipe into every prompt or drops the
+notes that answer the question.
 
 **The index is derived data.** `meta.json` records the embedder and chunker version, and a
 mismatch drops and rebuilds the index instead of migrating it. Syncs are diffs:

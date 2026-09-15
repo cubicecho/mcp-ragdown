@@ -19,40 +19,95 @@ export interface Embedder {
  */
 export async function createEmbedder(config: Config): Promise<Embedder> {
   const spec = config.embedder;
-  if (spec === "bge-small") return BgeEmbedder.load(config.modelsDir, config.threads);
+  const local = LOCAL_MODELS[spec];
+  if (local) return LocalEmbedder.load(local, config.modelsDir, config.threads);
   if (spec === "hash") return new HashEmbedder();
   if (spec.startsWith("openai:")) {
     return OpenAiEmbedder.probe(config.embeddingUrl, spec.slice(7), config.embeddingApiKey);
   }
-  throw new Error(`RAGDOWN_EMBEDDER must be bge-small, hash or openai:<model>, got "${spec}"`);
+  throw new Error(
+    `RAGDOWN_EMBEDDER must be ${Object.keys(LOCAL_MODELS).join(", ")}, hash or openai:<model>, got "${spec}"`,
+  );
+}
+
+/** One local ONNX model: everything that differs between them, and nothing that does not. */
+interface LocalModel {
+  /** Recorded in the index, so changing a model's weights or pooling means changing this. */
+  name: string;
+  /** Hugging Face repo, which must carry ONNX weights transformers.js can load. */
+  repo: string;
+  dtype: "q8" | "fp32";
+  /** How the token vectors become one vector. Wrong here costs more accuracy than the model gains. */
+  pooling: "cls" | "mean";
+  /** The retrieval instruction the model was trained with; empty for a symmetric model. */
+  queryPrefix: string;
+  /** Some models want passages marked too; most do not. */
+  docPrefix: string;
 }
 
 /**
- * BAAI/bge-small-en-v1.5, int8-quantised, on ONNX Runtime via transformers.js.
+ * The local models: the default, the smaller one it replaced, and one that is more accurate again
+ * for 25× the query latency. gte-small, arctic-embed-s, mxbai-embed-xsmall, bge-base, granite's own
+ * 149M model and arctic-embed-m were measured too and beat the default on nothing; the README has
+ * the numbers, and the recall and the threshold that go with each of these three.
+ */
+const LOCAL_MODELS: Record<string, LocalModel> = {
+  "granite-small": {
+    name: "granite-embedding-small-english-r2-q8",
+    repo: "onnx-community/granite-embedding-small-english-r2-ONNX",
+    dtype: "q8",
+    pooling: "cls",
+    queryPrefix: "",
+    docPrefix: "",
+  },
+  "bge-small": {
+    name: "bge-small-en-v1.5-q8",
+    repo: "Xenova/bge-small-en-v1.5",
+    dtype: "q8",
+    pooling: "cls",
+    queryPrefix: "Represent this sentence for searching relevant passages: ",
+    docPrefix: "",
+  },
+  // 300M parameters and 768 dimensions: the most accurate of these and about 25× the query
+  // latency, which a hook pays on every turn. Its prefixes are part of the model, not decoration.
+  embeddinggemma: {
+    name: "embeddinggemma-300m-q8",
+    repo: "onnx-community/embeddinggemma-300m-ONNX",
+    dtype: "q8",
+    pooling: "mean",
+    queryPrefix: "task: search result | query: ",
+    docPrefix: "title: none | text: ",
+  },
+};
+
+/**
+ * A sentence-transformers model, int8-quantised, on ONNX Runtime via transformers.js.
  *
  * The forward pass is all of the cost and runs in ORT's native kernels (tokenizing is about 1 ms a
  * chunk), so a Rust port would call the same C++ and index no faster. What does help is below:
  * fewer threads than cores, and batches of similar length.
  */
-class BgeEmbedder implements Embedder {
-  readonly name = "bge-small-en-v1.5-q8";
-  readonly dim = 384;
-  /** bge's documented retrieval instruction; passages are embedded without it. */
-  static readonly QUERY_PREFIX = "Represent this sentence for searching relevant passages: ";
+class LocalEmbedder implements Embedder {
+  readonly name: string;
+  readonly dim: number;
   static readonly BATCH = 16;
 
+  private readonly model: LocalModel;
   private readonly extract: FeatureExtractor;
 
-  private constructor(extract: FeatureExtractor) {
+  private constructor(model: LocalModel, extract: FeatureExtractor, dim: number) {
+    this.model = model;
+    this.name = model.name;
     this.extract = extract;
+    this.dim = dim;
   }
 
   /** @param threads ORT intra-op threads; 0 picks half the logical cores. */
-  static async load(modelsDir: string, threads: number): Promise<BgeEmbedder> {
+  static async load(model: LocalModel, modelsDir: string, threads: number): Promise<LocalEmbedder> {
     const { pipeline, env } = await import("@huggingface/transformers");
     env.cacheDir = modelsDir;
-    const extract = await pipeline("feature-extraction", "Xenova/bge-small-en-v1.5", {
-      dtype: "q8",
+    const extract = (await pipeline("feature-extraction", model.repo, {
+      dtype: model.dtype,
       session_options: {
         // Measured on an 8-thread i9-13900H: 4 threads embed faster than 8. Past the physical
         // performance cores, extra threads land on hyperthreads and efficiency cores and every
@@ -60,23 +115,27 @@ class BgeEmbedder implements Embedder {
         intraOpNumThreads: threads || Math.max(1, Math.floor(availableParallelism() / 2)),
         interOpNumThreads: 1,
       },
-    });
-    return new BgeEmbedder(extract as unknown as FeatureExtractor);
+    })) as unknown as FeatureExtractor;
+    // Asked rather than configured: a dimension that disagreed with the weights would only show up
+    // as silently wrong search results.
+    const probe = await extract([""], { pooling: model.pooling, normalize: true });
+    return new LocalEmbedder(model, extract, probe.data.length);
   }
 
   async embed(texts: string[], kind: "query" | "document"): Promise<Float32Array[]> {
-    const inputs = kind === "query" ? texts.map((t) => BgeEmbedder.QUERY_PREFIX + t) : texts;
+    const prefix = kind === "query" ? this.model.queryPrefix : this.model.docPrefix;
+    const inputs = prefix ? texts.map((text) => prefix + text) : texts;
     // A batch is padded to its longest member and attention grows with the square of length, so
     // one 400-token chunk in a batch of 40-token ones makes the whole batch cost 400 tokens each.
     // Batching in length order keeps the padding near zero.
     const lengths = inputs.map((text) => text.length);
     const order = lengths.map((_, i) => i).sort((a, b) => (lengths[a] ?? 0) - (lengths[b] ?? 0));
     const out = new Array<Float32Array>(inputs.length);
-    for (let i = 0; i < order.length; i += BgeEmbedder.BATCH) {
-      const indices = order.slice(i, i + BgeEmbedder.BATCH);
+    for (let i = 0; i < order.length; i += LocalEmbedder.BATCH) {
+      const indices = order.slice(i, i + LocalEmbedder.BATCH);
       const tensor = await this.extract(
         indices.map((index) => inputs[index] ?? ""),
-        { pooling: "cls", normalize: true },
+        { pooling: this.model.pooling, normalize: true },
       );
       indices.forEach((index, row) => {
         out[index] = tensor.data.slice(row * this.dim, (row + 1) * this.dim);
@@ -89,7 +148,7 @@ class BgeEmbedder implements Embedder {
 // transformers.js's pipeline types are a union over every task; this is the one shape used here.
 type FeatureExtractor = (
   texts: string[],
-  options: { pooling: "cls"; normalize: boolean },
+  options: { pooling: "cls" | "mean"; normalize: boolean },
 ) => Promise<{ data: Float32Array }>;
 
 /**
