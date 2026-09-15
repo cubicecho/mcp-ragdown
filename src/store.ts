@@ -2,11 +2,17 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as lancedb from "@lancedb/lancedb";
 import { Field, FixedSizeList, Float32, Float64, Int32, Schema, Utf8 } from "apache-arrow";
-import { CHUNKER_VERSION, type Chunk } from "./chunk.ts";
+import { CHUNKER_VERSION, type Chunk, embeddingText } from "./chunk.ts";
 import type { Embedder } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
 
 const TABLE = "chunks";
+/**
+ * Bumped whenever the table's columns or indexes change, so an index built by the old layout is
+ * rebuilt rather than queried with columns it does not have. Separate from `CHUNKER_VERSION`: the
+ * chunks may be unchanged and still be stored differently.
+ */
+const INDEX_VERSION = 1;
 /** Reciprocal-rank-fusion constant; 60 is the value from the original RRF paper and rarely worth tuning. */
 const RRF_K = 60;
 
@@ -55,6 +61,7 @@ interface Meta {
   embedder: string;
   dim: number;
   chunker_version: number;
+  index_version: number;
 }
 
 interface Row {
@@ -67,6 +74,8 @@ interface Row {
   title: string;
   heading: string;
   text: string;
+  /** What the full-text index sees: the breadcrumb and the text, as `embeddingText` builds it. */
+  search_text: string;
   line_start: number;
   line_end: number;
   /** Written as a number array; read back as an Arrow vector. */
@@ -113,6 +122,7 @@ export class Store {
       embedder: embedder.name,
       dim: embedder.dim,
       chunker_version: CHUNKER_VERSION,
+      index_version: INDEX_VERSION,
     };
     const metaPath = join(dataDir, "meta.json");
     const existing = await readMeta(metaPath);
@@ -126,6 +136,8 @@ export class Store {
         rebuiltBecause = `the embedder changed from ${existing.embedder} to ${wanted.embedder}`;
       } else if (existing.chunker_version !== wanted.chunker_version) {
         rebuiltBecause = `the chunker changed from v${existing.chunker_version} to v${wanted.chunker_version}`;
+      } else if (existing.index_version !== wanted.index_version) {
+        rebuiltBecause = `the index layout changed from v${existing.index_version ?? 0} to v${wanted.index_version}`;
       }
     }
     if (rebuiltBecause && !writable) {
@@ -139,7 +151,7 @@ export class Store {
         throw new Error("the index does not exist yet; start the primary server first");
       if (names.includes(TABLE)) await db.dropTable(TABLE);
       const table = await db.createEmptyTable(TABLE, schema(embedder.dim));
-      await table.createIndex("text", { config: lancedb.Index.fts() });
+      await table.createIndex("search_text", { config: lancedb.Index.fts() });
       await writeAtomic(metaPath, `${JSON.stringify(wanted, null, 2)}\n`);
       return new Store(dataDir, table, embedder, rebuiltBecause);
     }
@@ -207,6 +219,9 @@ export class Store {
         title: chunk.title,
         heading: chunk.heading,
         text: chunk.text,
+        // Lexical search sees the breadcrumb the embedder sees: a table of settings says
+        // "Replicas | 2 | 12" and never names the service its heading names.
+        search_text: embeddingText(chunk),
         line_start: chunk.lineStart,
         line_end: chunk.lineEnd,
         vector: Array.from(u.vectors[i] ?? []),
@@ -232,6 +247,10 @@ export class Store {
    * rank. Lexical search is what finds an exact error string or flag name that an embedding blurs;
    * dense search is what finds the paragraph that answers a question in other words.
    *
+   * Both retrievers read the chunk with its breadcrumb (`search_text`). Matching BM25 on the body
+   * alone loses every chunk that never repeats its own subject — a table of settings, a list of
+   * steps — and a lexical ranking that bad drags the fused one below dense search on its own.
+   *
    * @param pathPrefix limits both retrievers to files under this relative path.
    */
   async search(query: string, limit: number, pathPrefix?: string): Promise<Hit[]> {
@@ -247,7 +266,7 @@ export class Store {
     let lexicalRows: Row[] = [];
     if (/[\p{L}\p{N}]/u.test(query)) {
       try {
-        let lexical = this.table.search(query, "fts", "text");
+        let lexical = this.table.search(query, "fts", "search_text");
         if (where) lexical = lexical.where(where);
         lexicalRows = (await lexical.limit(pool).toArray()) as Row[];
       } catch (error) {
@@ -317,6 +336,7 @@ function schema(dim: number): Schema {
     new Field("title", new Utf8(), false),
     new Field("heading", new Utf8(), false),
     new Field("text", new Utf8(), false),
+    new Field("search_text", new Utf8(), false),
     new Field("line_start", new Int32(), false),
     new Field("line_end", new Int32(), false),
     new Field("vector", new FixedSizeList(dim, new Field("item", new Float32(), true)), false),

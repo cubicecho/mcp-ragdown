@@ -90,6 +90,24 @@ describe("Indexer", () => {
     }
   });
 
+  it("matches a chunk lexically on words only its heading has", async () => {
+    const t = await setup();
+    // The table names no service and repeats no heading word: only the breadcrumb says what it is.
+    await t.write(
+      "kestrel.md",
+      "# Kestrel Ingest\n\n## Configuration\n\n| Setting | Staging | Production |\n|---|---|---|\n| Replicas | 2 | 12 |\n",
+    );
+    await t.write(
+      "other.md",
+      "# Osprey Gateway\n\n## Configuration\n\n| Setting | Value |\n|---|---|\n| Replicas | 3 |\n",
+    );
+    await t.indexer.sync();
+
+    const [hit] = await t.store.search("Kestrel Ingest configuration replicas", 5);
+    expect(hit?.path).toBe("kestrel.md");
+    expect(hit?.sources).toContain("lexical");
+  });
+
   it("rebuilds the index when the embedder changes", async () => {
     const t = await setup();
     await t.write("a.md", "text");
