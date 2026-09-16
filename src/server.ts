@@ -80,6 +80,14 @@ export function createMcpServer(ready: Promise<Scope>, readOnly: boolean): McpSe
           .max(1)
           .optional()
           .describe("Lowest cosine similarity to include. Default RAGDOWN_HOOK_MIN_SCORE"),
+        min_ratio: z
+          .number()
+          .min(0)
+          .max(1)
+          .optional()
+          .describe(
+            "Lowest share of the best hit's similarity a hit may have and still be included; 0 keeps every hit above min_score. Default RAGDOWN_HOOK_MIN_RATIO",
+          ),
         max_chars: z
           .number()
           .int()
@@ -94,6 +102,7 @@ export function createMcpServer(ready: Promise<Scope>, readOnly: boolean): McpSe
         const context = await rag.context(args.prompt, args.session_id || undefined, {
           topK: args.top_k,
           minScore: args.min_score,
+          minRatio: args.min_ratio,
           maxChars: args.max_chars,
         });
         return context ?? "";
@@ -137,7 +146,7 @@ export function createMcpServer(ready: Promise<Scope>, readOnly: boolean): McpSe
       {
         title: "Write a note",
         description:
-          "Save something worth keeping (a decision, a fix, a how-to) as a new Markdown note in the notes folder, indexed immediately so later searches find it. Never overwrites an existing file.",
+          "Save something worth keeping (a decision, a fix, a how-to) as a new Markdown note in the notes folder, indexed immediately so later searches find it. Never overwrites an existing file. When this note replaces an earlier one, pass that note's path as supersedes so searches stop returning the old version.",
         inputSchema: {
           title: z.string().min(1),
           content: z
@@ -151,10 +160,26 @@ export function createMcpServer(ready: Promise<Scope>, readOnly: boolean): McpSe
             .describe(
               "File name under the notes folder, without .md; defaults to <date>-<title-slug>",
             ),
+          supersedes: z
+            .array(z.string())
+            .optional()
+            .describe(
+              "Paths of notes this one replaces, as returned by ragdown_recall. They stay on disk and ragdown_read_doc still opens them, but search and hook context skip them. Use it when a fact changed, not when you are merely writing about the same topic.",
+            ),
+          session_id: z
+            .string()
+            .optional()
+            .describe("Stable id of the conversation, recorded in the note's frontmatter"),
         },
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
-      (args) => run(ready, (rag) => rag.remember(args.title, args.content, args.tags, args.name)),
+      (args) =>
+        run(ready, (rag) =>
+          rag.remember(args.title, args.content, args.tags, args.name, {
+            supersedes: args.supersedes,
+            sessionId: args.session_id,
+          }),
+        ),
     );
 
     server.registerTool(

@@ -33,6 +33,8 @@ export interface Config {
   hook: {
     topK: number;
     minScore: number;
+    /** Lowest share of the best hit's similarity a hit may have and still be injected; 0 disables. */
+    minRatio: number;
     maxChars: number;
   };
 }
@@ -98,6 +100,11 @@ export function loadConfig(env: Env = process.env): Config {
       // Calibrated for the default embedder; cosine is on each model's own scale, so a different
       // `RAGDOWN_EMBEDDER` needs a different number. The README's embedder table pairs them.
       minScore: num(env, "RAGDOWN_HOOK_MIN_SCORE", 0.8),
+      // A relative floor under the absolute one: a hit far below the best is a distractor even
+      // when it clears `minScore`. Unlike `minScore` this is a ratio, so it carries across models.
+      // Measured on the benchmark corpus: 0.96 matched an ungated hook's recall exactly while
+      // injecting a third fewer chunks, and 0.95 sits on the flat part of that curve.
+      minRatio: ratio(env, "RAGDOWN_HOOK_MIN_RATIO", 0.95),
       maxChars: int(env, "RAGDOWN_HOOK_MAX_CHARS", 6000),
     },
   };
@@ -125,6 +132,12 @@ function num(env: Env, name: string, fallback: number): number {
   if (raw === undefined || raw === "") return fallback;
   const value = Number(raw);
   if (!Number.isFinite(value)) throw new Error(`${name} must be a number, got "${raw}"`);
+  return value;
+}
+
+function ratio(env: Env, name: string, fallback: number): number {
+  const value = num(env, name, fallback);
+  if (value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1, got "${value}"`);
   return value;
 }
 

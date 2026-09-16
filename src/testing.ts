@@ -17,7 +17,10 @@ export async function tempSetup(env: Record<string, string> = {}) {
     RAGDOWN_MODELS: join(root, "models"),
     RAGDOWN_EMBEDDER: "hash",
     RAGDOWN_WATCH: "false",
+    // The hash embedder's cosines are not on the real models' scale, so both hook thresholds are
+    // relaxed here; the tests that care about them pass their own.
     RAGDOWN_HOOK_MIN_SCORE: "0.2",
+    RAGDOWN_HOOK_MIN_RATIO: "0",
     ...env,
   });
   return {

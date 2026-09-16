@@ -127,7 +127,7 @@ describe("MCP server", () => {
 
     const written = await readFile(join(t.docsDir, "notes/kafka.md"), "utf8");
     expect(written).toMatch(
-      /^---\ntitle: "Kafka retention"\ndate: \d{4}-\d{2}-\d{2}\ntags: \["ops"\]\n---\nRetention is seven days.\n$/,
+      /^---\ntitle: "Kafka retention"\ndate: \d{4}-\d{2}-\d{2}\ntags: \["ops"\]\ncreated_by: ragdown_remember\n---\nRetention is seven days.\n$/,
     );
 
     const hits = JSON.parse(

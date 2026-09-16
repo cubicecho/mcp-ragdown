@@ -79,6 +79,32 @@ describe("Scope", () => {
     expect(await beta?.context(prompt, "s1")).toContain("backups.md:");
   });
 
+  it("gates hook context on each hit's share of the best similarity", async () => {
+    const t = await setup();
+    const alpha = await openScope(t.rag, "projects/alpha");
+    if (!alpha) throw new Error("no scope");
+    const prompt = "how do I restore postgres?";
+
+    // The gate is a ratio, so the cut is derived from the similarities this embedder actually
+    // gives rather than hard-coded: the second band's share of the best is the only interesting
+    // point on the curve, and either side of it must fall on a different number of chunks.
+    const ranked = (await alpha.recall(prompt, 8))
+      .filter((hit) => hit.similarity >= t.config.hook.minScore)
+      .sort((a, b) => b.similarity - a.similarity);
+    const bands = [...new Set(ranked.map((hit) => hit.similarity))];
+    expect(bands.length).toBeGreaterThan(1);
+    const cut = (bands[1] as number) / (bands[0] as number);
+
+    const count = (block: string | undefined) => block?.match(/\.md:/g)?.length ?? 0;
+    expect(count(await alpha.context(prompt, undefined, { minRatio: 0 }))).toBe(ranked.length);
+    expect(count(await alpha.context(prompt, undefined, { minRatio: cut }))).toBe(ranked.length);
+    expect(count(await alpha.context(prompt, undefined, { minRatio: cut + 1e-6 }))).toBe(
+      ranked.filter((hit) => hit.similarity === bands[0]).length,
+    );
+    // Even the strictest ratio keeps the best hit: the gate trims a result, it never empties one.
+    expect(count(await alpha.context(prompt, undefined, { minRatio: 1 }))).toBeGreaterThan(0);
+  });
+
   it("opens only folders the indexer would walk", async () => {
     const t = await setup();
     await mkdir(join(t.docsDir, ".hidden"));
@@ -87,5 +113,49 @@ describe("Scope", () => {
     for (const dir of ["missing", "backups.md", ".hidden", "linked", "projects/..", "../docs"]) {
       expect(await openScope(t.rag, dir), dir).toBeUndefined();
     }
+  });
+});
+
+describe("superseding a note", () => {
+  it("hides the replaced note from search, keeps it on disk, and records provenance", async () => {
+    const t = await setup();
+    const root = new Scope(t.rag);
+    await t.write("notes/embedder.md", "# Embedder\n\nThe embedder is bge-small.");
+    await t.rag.sync(false);
+    expect((await root.recall("which embedder", 10)).map((h) => h.path)).toContain(
+      "notes/embedder.md",
+    );
+
+    const note = await root.remember(
+      "Embedder",
+      "The embedder is granite-small.",
+      [],
+      "embedder-v2",
+      { supersedes: ["notes/embedder.md"], sessionId: "session-1" },
+    );
+    expect(note.supersedes).toEqual(["notes/embedder.md"]);
+
+    const written = await readFile(join(t.docsDir, "notes/embedder-v2.md"), "utf8");
+    // A sibling, so the path is relative to the note's own folder.
+    expect(written).toContain('supersedes: ["embedder.md"]');
+    expect(written).toContain("created_by: ragdown_remember");
+    expect(written).toContain('session: "session-1"');
+
+    const paths = (await root.recall("which embedder", 10)).map((hit) => hit.path);
+    expect(paths).toContain("notes/embedder-v2.md");
+    expect(paths).not.toContain("notes/embedder.md");
+    // Superseded is not deleted: the file is still there and still readable.
+    expect((await root.readDoc("notes/embedder.md")).text).toContain("bge-small");
+  });
+
+  it("refuses a supersedes path that names no note in the folder", async () => {
+    const t = await setup();
+    const root = new Scope(t.rag);
+    await expect(
+      root.remember("X", "body", [], "x", { supersedes: ["notes/missing.md"] }),
+    ).rejects.toThrow(/names no note/);
+    await expect(
+      root.remember("X", "body", [], "x", { supersedes: ["../outside.md"] }),
+    ).rejects.toThrow(/outside/);
   });
 });
