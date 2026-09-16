@@ -327,3 +327,8 @@ The web UI in `web/` is React, TanStack Query and Router, Tailwind and shadcn co
 
 The tests run against real LanceDB, the real socket, and MCP over the SDK's in-memory transport and
 real HTTP. They use the `hash` embedder, so they need no model download.
+
+The numbers quoted in [Design](#design) come from [`scripts/bench`](scripts/bench/README.md) — the
+embedder comparison, the threshold and drop-off sweeps, the RRF check, and the retrieval and
+answer-accuracy runs against a synthetic corpus. They are too slow for CI and some need a local LLM,
+so they are run by hand; that README says how, and what each one found.

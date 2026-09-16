@@ -7,7 +7,17 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["src/**", "web/**", "*.ts", "*.json", "!.claude", "!web/dist"]
+    "includes": [
+      "src/**",
+      "web/**",
+      "scripts/**",
+      "*.ts",
+      "*.json",
+      "!.claude",
+      "!web/dist",
+      "!scripts/bench/corpus",
+      "!scripts/bench/*.json"
+    ]
   },
   "formatter": {
     "enabled": true,
