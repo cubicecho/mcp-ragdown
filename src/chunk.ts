@@ -1,4 +1,4 @@
-import { basename, extname } from "node:path";
+import { basename, extname, posix } from "node:path";
 
 /**
  * Bumped whenever chunk boundaries or the embedded text change, so an existing index built by the
@@ -117,16 +117,68 @@ export function breadcrumb(title: string, heading: string): string {
   return heading.startsWith(`${title} › `) ? heading : `${title} › ${heading}`;
 }
 
-function readFrontmatter(lines: string[]): { title: string | undefined; bodyStart: number } {
-  if (lines[0]?.trim() !== "---") return { title: undefined, bodyStart: 0 };
-  const end = lines.findIndex((line, i) => i > 0 && /^(---|\.\.\.)\s*$/.test(line));
-  if (end === -1) return { title: undefined, bodyStart: 0 };
-  let title: string | undefined;
-  for (const line of lines.slice(1, end)) {
-    const match = /^title:\s*(.+?)\s*$/.exec(line);
-    if (match?.[1]) title = match[1].replace(/^(["'])(.*)\1$/, "$2");
+/**
+ * The notes this one replaces, as paths relative to the docs root.
+ *
+ * A path in the frontmatter is relative to the note's own folder, the way a Markdown link is, so a
+ * sibling note is just its file name. One that climbs out of the docs folder is dropped rather than
+ * followed: the frontmatter is data from a file, not a path the server should trust.
+ */
+export function readSupersedes(source: string, relPath: string): string[] {
+  const { supersedes } = readFrontmatter(source.replace(/\r\n?/g, "\n").split("\n"));
+  const dir = posix.dirname(relPath.replaceAll("\\", "/"));
+  const out: string[] = [];
+  for (const entry of supersedes) {
+    const relative = entry.replaceAll("\\", "/");
+    // Checked before the join, which would otherwise turn `/etc/passwd` into `notes/etc/passwd`.
+    if (posix.isAbsolute(relative)) continue;
+    const path = posix.normalize(posix.join(dir === "." ? "" : dir, relative));
+    if (path === ".." || path.startsWith("../")) continue;
+    out.push(path);
   }
-  return { title, bodyStart: end + 1 };
+  return out;
+}
+
+function readFrontmatter(lines: string[]): {
+  title: string | undefined;
+  supersedes: string[];
+  bodyStart: number;
+} {
+  if (lines[0]?.trim() !== "---") return { title: undefined, supersedes: [], bodyStart: 0 };
+  const end = lines.findIndex((line, i) => i > 0 && /^(---|\.\.\.)\s*$/.test(line));
+  if (end === -1) return { title: undefined, supersedes: [], bodyStart: 0 };
+  let title: string | undefined;
+  const supersedes: string[] = [];
+  const front = lines.slice(1, end);
+  for (let i = 0; i < front.length; i++) {
+    const line = front[i] ?? "";
+    const titleMatch = /^title:\s*(.+?)\s*$/.exec(line);
+    if (titleMatch?.[1]) title = unquote(titleMatch[1]);
+    const superMatch = /^supersedes:\s*(.*)$/.exec(line);
+    if (!superMatch) continue;
+    const inline = (superMatch[1] ?? "").trim();
+    if (inline) {
+      // `supersedes: old.md`, or `supersedes: [old.md, "older.md"]`.
+      const items = inline.startsWith("[") ? inline.slice(1).replace(/]\s*$/, "") : inline;
+      for (const item of items.split(",")) {
+        const value = unquote(item.trim());
+        if (value) supersedes.push(value);
+      }
+      continue;
+    }
+    // The block form: `- old.md` lines until something that is not a list item.
+    for (let j = i + 1; j < front.length; j++) {
+      const item = /^\s*-\s*(.+?)\s*$/.exec(front[j] ?? "");
+      if (!item?.[1]) break;
+      supersedes.push(unquote(item[1]));
+      i = j;
+    }
+  }
+  return { title, supersedes, bodyStart: end + 1 };
+}
+
+function unquote(value: string): string {
+  return value.replace(/^(["'])(.*)\1$/, "$2");
 }
 
 type Piece = Pick<Chunk, "text" | "lineStart" | "lineEnd">;

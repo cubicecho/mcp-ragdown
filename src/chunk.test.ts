@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { breadcrumb, chunkMarkdown, embeddingText } from "./chunk.ts";
+import { breadcrumb, chunkMarkdown, embeddingText, readSupersedes } from "./chunk.ts";
 
 describe("chunkMarkdown", () => {
   it("scopes chunks by heading with a breadcrumb and original line numbers", () => {
@@ -82,5 +82,39 @@ describe("breadcrumb", () => {
 
   it("leads the embedded text", () => {
     expect(embeddingText({ title: "T", heading: "T › H", text: "body" })).toBe("T › H\n\nbody");
+  });
+});
+
+describe("readSupersedes", () => {
+  const front = (body: string) => `---\ntitle: New\n${body}\n---\n\n# New\n\nText.`;
+
+  it("reads the scalar, inline-list and block-list forms", () => {
+    expect(readSupersedes(front("supersedes: old.md"), "notes/new.md")).toEqual(["notes/old.md"]);
+    expect(readSupersedes(front(`supersedes: [old.md, "older.md"]`), "notes/new.md")).toEqual([
+      "notes/old.md",
+      "notes/older.md",
+    ]);
+    expect(readSupersedes(front("supersedes:\n  - old.md\n  - older.md"), "new.md")).toEqual([
+      "old.md",
+      "older.md",
+    ]);
+  });
+
+  it("resolves paths against the note's own folder, like a Markdown link", () => {
+    expect(readSupersedes(front("supersedes: ../ops/old.md"), "notes/new.md")).toEqual([
+      "ops/old.md",
+    ]);
+    // A path that climbs out of the docs folder is data from a file, not a path to follow.
+    expect(readSupersedes(front("supersedes: ../../escape.md"), "notes/new.md")).toEqual([]);
+    expect(readSupersedes(front("supersedes: /etc/passwd"), "notes/new.md")).toEqual([]);
+  });
+
+  it("is empty without frontmatter, and leaves the body alone", () => {
+    expect(readSupersedes("# New\n\nsupersedes: old.md", "new.md")).toEqual([]);
+    expect(readSupersedes(front("tags: [a]"), "new.md")).toEqual([]);
+    // The block list stops at the next key rather than eating it.
+    expect(readSupersedes(front("supersedes:\n  - old.md\ntags: [a]"), "new.md")).toEqual([
+      "old.md",
+    ]);
   });
 });

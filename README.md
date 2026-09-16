@@ -133,11 +133,11 @@ middle. A hook that fails or takes longer than min-agent's 3 seconds only loses 
 
 | Tool | What it does |
 | --- | --- |
-| `ragdown_context` | For hooks: the sections related to a `prompt` as a `<ragdown-context>` block, or empty text. Filters by similarity, skips short prompts and slash commands, and never repeats a section for the same `session_id`. Takes `top_k`, `min_score` and `max_chars` to override the `RAGDOWN_HOOK_*` defaults. |
+| `ragdown_context` | For hooks: the sections related to a `prompt` as a `<ragdown-context>` block, or empty text. Filters by similarity, skips short prompts and slash commands, and never repeats a section for the same `session_id`. Takes `top_k`, `min_score`, `min_ratio` and `max_chars` to override the `RAGDOWN_HOOK_*` defaults. |
 | `ragdown_recall` | Hybrid search. Returns path, line range, heading breadcrumb and similarity for each hit. Takes `top_k`, `path_prefix`, `format: text\|json` and `max_chars`. |
 | `ragdown_read_doc` | Reads a file, or a line range of one, straight from disk. Never clipped. |
 | `ragdown_stats` | Folder, index size, embedder, role (primary or reader), whether a sync is running, and the last sync. |
-| `ragdown_remember` | Writes a new note (with frontmatter) under `RAGDOWN_NOTES_DIR` and indexes it before returning. Never overwrites a file. |
+| `ragdown_remember` | Writes a new note (with frontmatter) under `RAGDOWN_NOTES_DIR` and indexes it before returning. Never overwrites a file. `supersedes` lists the notes this one replaces, which search then skips; `session_id` is recorded as provenance. |
 | `ragdown_reindex` | Syncs now; `full: true` re-embeds everything. |
 
 The two write tools are not listed when `RAGDOWN_READ_ONLY=true`.
@@ -160,6 +160,7 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `RAGDOWN_TEXT_LIMIT` | `2000` | Characters per hit in text output. Every cut names the `ragdown_read_doc` call that returns the rest. |
 | `RAGDOWN_HOOK_TOP_K` | `4` | `ragdown_context`: most sections per prompt. |
 | `RAGDOWN_HOOK_MIN_SCORE` | `0.8` | `ragdown_context`: lowest cosine similarity returned. Calibrated for the default embedder; another one needs another number. |
+| `RAGDOWN_HOOK_MIN_RATIO` | `0.95` | `ragdown_context`: lowest share of the best hit's similarity a hit may have and still be injected; `0` disables it. Being a ratio, it carries across embedders as `MIN_SCORE` does not. See [Design](#design). |
 | `RAGDOWN_HOOK_MAX_CHARS` | `6000` | `ragdown_context`: most characters per prompt. |
 | `PORT` | `3000` | `serve` only. The HTTP port. |
 | `RAGDOWN_TOKEN` | — | `serve` only. The bearer token `/mcp` and the web UI's `/api` routes require. |
@@ -234,6 +235,45 @@ and the strongest unrelated prompt ("weather in Paris", "a recipe for carbonara"
 The last column of the table above is the value that separates the two for each model. Borrow
 another model's number and the hook either injects a pasta recipe into every prompt or drops the
 notes that answer the question.
+
+**A second, relative gate under that one.** `RAGDOWN_HOOK_MIN_RATIO` drops a hit scoring less than
+0.95 of the best hit for the same prompt, whatever `MIN_SCORE` let through. An absolute floor
+answers "is this on topic at all"; the ratio answers "is this as on topic as the thing I already
+found", and a chunk far below the best one is a distractor that costs accuracy, not just tokens.
+Being a ratio it also survives a change of embedder, which `MIN_SCORE` does not. On the same
+benchmark (`granite-small`, `min_score` 0.8, `top_k` 4, 210 questions plus 10 unrelated prompts):
+
+| ratio | recall | chunks/prompt | off-topic chunks |
+| --- | --- | --- | --- |
+| `1.00` | 84.3% | 1.00 | 0.16 |
+| `0.98` | 94.8% | 1.62 | 0.67 |
+| `0.96` | 99.0% | 2.67 | 1.68 |
+| `0.95` (default) | 99.0% | 3.17 | 2.18 |
+| `0` (off) | 99.0% | 3.99 | 3.00 |
+
+Recall is flat from 0.96 down, so the default sits one step below the knee rather than on it: 0.95
+keeps everything an ungated hook found while still cutting a fifth of the injected chunks.
+
+**Superseding a note.** A note whose frontmatter lists `supersedes:` hides the notes it names from
+search and from hook context. Nothing is deleted or rewritten — the old file stays on disk and
+`ragdown_read_doc` still opens it — but a fact that changed stops coming back as confident prose
+next to its replacement.
+
+```markdown
+---
+title: "Embedder"
+date: 2026-09-15
+supersedes: ["2025-04-02-embedder.md"]
+created_by: ragdown_remember
+---
+```
+
+Paths are relative to the note's own folder, the way a Markdown link is, and one that climbs out of
+the docs folder is ignored: frontmatter is data from a file, not a path the server should follow.
+`ragdown_remember` writes the field for you from its `supersedes` argument and refuses a path that
+names no note, so an agent that gets it wrong hears about it instead of believing it replaced
+something. It also records `created_by: ragdown_remember` and the `session_id`, so a later reader —
+person or model — can tell an agent's note from one the user wrote.
 
 **The index is derived data.** `meta.json` records the embedder and chunker version, and a
 mismatch drops and rebuilds the index instead of migrating it. Syncs are diffs:

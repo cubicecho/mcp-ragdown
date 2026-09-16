@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { type Dirent, type FSWatcher, watch } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { chunkMarkdown, embeddingText } from "./chunk.ts";
+import { chunkMarkdown, embeddingText, readSupersedes } from "./chunk.ts";
 import type { Embedder } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
 import type { FileUpdate, Store } from "./store.ts";
@@ -165,7 +165,15 @@ export class Indexer {
       if (known) report.updated++;
       else report.added++;
       report.chunks += chunks.length;
-      batch.push({ path, hash, mtimeMs, size, chunks, vectors: [] });
+      batch.push({
+        path,
+        hash,
+        mtimeMs,
+        size,
+        chunks,
+        vectors: [],
+        supersedes: readSupersedes(source, path),
+      });
       batchChunks += chunks.length;
       if (batchChunks >= BATCH_CHUNKS) await flush();
     }

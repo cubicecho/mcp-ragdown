@@ -12,7 +12,7 @@ const TABLE = "chunks";
  * rebuilt rather than queried with columns it does not have. Separate from `CHUNKER_VERSION`: the
  * chunks may be unchanged and still be stored differently.
  */
-const INDEX_VERSION = 1;
+const INDEX_VERSION = 2;
 /** Reciprocal-rank-fusion constant; 60 is the value from the original RRF paper and rarely worth tuning. */
 const RRF_K = 60;
 
@@ -39,6 +39,8 @@ export interface FileUpdate {
   size: number;
   chunks: Chunk[];
   vectors: Float32Array[];
+  /** Paths, relative to the docs root, this file's frontmatter says it replaces. */
+  supersedes: string[];
 }
 
 export interface Hit {
@@ -76,6 +78,8 @@ interface Row {
   text: string;
   /** What the full-text index sees: the breadcrumb and the text, as `embeddingText` builds it. */
   search_text: string;
+  /** The file's `supersedes` frontmatter, newline-separated; the same on every row of a file. */
+  supersedes: string;
   line_start: number;
   line_end: number;
   /** Written as a number array; read back as an Arrow vector. */
@@ -94,6 +98,8 @@ export class Store {
   readonly rebuiltBecause: string | undefined;
   private readonly table: lancedb.Table;
   private readonly embedder: Embedder;
+  /** `supersededPaths`, until the next `apply` makes it stale. */
+  private superseded: Set<string> | undefined;
 
   private constructor(
     dataDir: string,
@@ -222,12 +228,32 @@ export class Store {
         // Lexical search sees the breadcrumb the embedder sees: a table of settings says
         // "Replicas | 2 | 12" and never names the service its heading names.
         search_text: embeddingText(chunk),
+        supersedes: u.supersedes.join("\n"),
         line_start: chunk.lineStart,
         line_end: chunk.lineEnd,
         vector: Array.from(u.vectors[i] ?? []),
       })),
     );
     if (rows.length > 0) await this.table.add(rows as unknown as Record<string, unknown>[]);
+    this.superseded = undefined;
+  }
+
+  /**
+   * Every path some other note's frontmatter replaces, so search can leave the old one out. Cached
+   * because it is read on every search and changes only when the index does; the scan reads one
+   * column of the few rows that name anything, not the table.
+   */
+  async supersededPaths(): Promise<Set<string>> {
+    if (this.superseded) return this.superseded;
+    const rows = (await this.table
+      .query()
+      .where("supersedes <> ''")
+      .select(["supersedes"])
+      .toArray()) as Pick<Row, "supersedes">[];
+    const paths = new Set<string>();
+    for (const row of rows) for (const path of row.supersedes.split("\n")) paths.add(path);
+    this.superseded = paths;
+    return paths;
   }
 
   /**
@@ -251,13 +277,25 @@ export class Store {
    * alone loses every chunk that never repeats its own subject — a table of settings, a list of
    * steps — and a lexical ranking that bad drags the fused one below dense search on its own.
    *
+   * A note another note's frontmatter supersedes is left out: a replaced fact that still reads as
+   * confident prose is worse than no hit at all. The file stays on disk and `readDoc` still opens it.
+   *
    * @param pathPrefix limits both retrievers to files under this relative path.
    */
   async search(query: string, limit: number, pathPrefix?: string): Promise<Hit[]> {
     const [queryVector] = await this.embedder.embed([query], "query");
     if (!queryVector) return [];
     const pool = Math.max(limit * 4, 20);
-    const where = pathPrefix ? `starts_with(path, ${sqlString(pathPrefix)})` : undefined;
+    // Superseded notes are filtered here rather than after fusion, so a replaced note cannot take
+    // up the pool a current one would have filled.
+    const superseded = await this.supersededPaths();
+    const clauses = [
+      ...(pathPrefix ? [`starts_with(path, ${sqlString(pathPrefix)})`] : []),
+      ...(superseded.size > 0
+        ? [`path NOT IN (${[...superseded].map(sqlString).join(", ")})`]
+        : []),
+    ];
+    const where = clauses.length > 0 ? clauses.join(" AND ") : undefined;
 
     let dense = this.table.vectorSearch(queryVector).distanceType("cosine");
     if (where) dense = dense.where(where);
@@ -337,6 +375,7 @@ function schema(dim: number): Schema {
     new Field("heading", new Utf8(), false),
     new Field("text", new Utf8(), false),
     new Field("search_text", new Utf8(), false),
+    new Field("supersedes", new Utf8(), false),
     new Field("line_start", new Int32(), false),
     new Field("line_end", new Int32(), false),
     new Field("vector", new FixedSizeList(dim, new Field("item", new Float32(), true)), false),
