@@ -15,6 +15,11 @@ const TABLE = "chunks";
 const INDEX_VERSION = 2;
 /** Reciprocal-rank-fusion constant; 60 is the value from the original RRF paper and rarely worth tuning. */
 const RRF_K = 60;
+/**
+ * Chunks below which no vector index is built. A folder of notes is nowhere near it, and under it
+ * the flat scan wins anyway: measured at 10k chunks the index is twice as fast, at 1k it is noise.
+ */
+const VECTOR_INDEX_MIN_ROWS = 10_000;
 
 /** What the index remembers about a file, to decide on the next sync whether it changed. */
 export interface FileState {
@@ -66,6 +71,10 @@ interface Meta {
   index_version: number;
 }
 
+/** The columns a `Hit` is built from: everything a search reads except the vector. */
+const HIT_COLUMNS = ["id", "path", "title", "heading", "text", "line_start", "line_end"] as const;
+type HitRow = Pick<Row, (typeof HIT_COLUMNS)[number]>;
+
 interface Row {
   id: string;
   path: string;
@@ -100,6 +109,8 @@ export class Store {
   private readonly embedder: Embedder;
   /** `supersededPaths`, until the next `apply` makes it stale. */
   private superseded: Set<string> | undefined;
+  /** Whether the table has a vector index, so `compact` asks the table only until it does. */
+  private vectorIndexed = false;
 
   private constructor(
     dataDir: string,
@@ -259,9 +270,44 @@ export class Store {
   /**
    * Fold the small files the adds and deletes left behind, bring the full-text index up to date and
    * delete old table versions. The one-minute grace keeps a reader mid-query on its version.
+   *
+   * `optimize` also folds new chunks into the vector index, if there is one; rows it has not reached
+   * yet are still scanned, so a search never misses a chunk that is in the table.
    */
   async compact(): Promise<void> {
     await this.table.optimize({ cleanupOlderThan: new Date(Date.now() - 60_000) });
+    await this.ensureVectorIndex();
+  }
+
+  /**
+   * Build the vector index once the table is big enough to want one, and never before: under
+   * `VECTOR_INDEX_MIN_ROWS` a flat scan is the faster answer and an exact one.
+   *
+   * IVF-flat, because it stores the vectors themselves rather than a quantisation of them: measured
+   * over 10k and 100k chunks it returns exactly what the flat scan returns, two to five times
+   * faster, and builds in about a second. The quantised indexes are faster again at 100k and lose
+   * 5-20% of the true neighbours, which is a bad trade for a hook that injects four chunks.
+   */
+  private async ensureVectorIndex(): Promise<void> {
+    if (this.vectorIndexed) return;
+    try {
+      const indices = await this.table.listIndices();
+      if (indices.some((index) => index.columns.includes("vector"))) {
+        this.vectorIndexed = true;
+        return;
+      }
+      const rows = await this.table.countRows();
+      if (rows < VECTOR_INDEX_MIN_ROWS) return;
+      console.error(`[store] building the vector index over ${rows} chunks`);
+      await this.table.createIndex("vector", {
+        config: lancedb.Index.ivfFlat({ distanceType: "cosine" }),
+      });
+      this.vectorIndexed = true;
+    } catch (error) {
+      // The index is an optimisation; a flat scan still answers every query. Trying again on the
+      // next sync costs a `listIndices` call.
+      console.error(`[store] could not build the vector index: ${errorMessage(error)}`);
+    }
   }
 
   async count(): Promise<number> {
@@ -297,16 +343,23 @@ export class Store {
     ];
     const where = clauses.length > 0 ? clauses.join(" AND ") : undefined;
 
-    let dense = this.table.vectorSearch(queryVector).distanceType("cosine");
+    // The dense side asks for `_distance` and leaves the vector column behind: for a cosine search
+    // the distance is 1 - similarity, so a vector per row would be copied out only to recompute a
+    // number the search already knows. The lexical side still reads it, since a chunk only BM25
+    // found has no distance and its similarity is what the hook gates on.
+    let dense = this.table
+      .vectorSearch(queryVector)
+      .distanceType("cosine")
+      .select([...HIT_COLUMNS, "_distance"]);
     if (where) dense = dense.where(where);
-    const denseRows = (await dense.limit(pool).toArray()) as (Row & { _distance: number })[];
+    const denseRows = (await dense.limit(pool).toArray()) as (HitRow & { _distance: number })[];
 
-    let lexicalRows: Row[] = [];
+    let lexicalRows: (HitRow & { vector: unknown })[] = [];
     if (/[\p{L}\p{N}]/u.test(query)) {
       try {
         let lexical = this.table.search(query, "fts", "search_text");
         if (where) lexical = lexical.where(where);
-        lexicalRows = (await lexical.limit(pool).toArray()) as Row[];
+        lexicalRows = (await lexical.limit(pool).toArray()) as (HitRow & { vector: unknown })[];
       } catch (error) {
         // A query the full-text parser rejects still has a dense answer; losing half the ranking
         // is better than failing the call.
@@ -314,28 +367,38 @@ export class Store {
       }
     }
 
-    const fused = new Map<string, { row: Row; score: number; sources: Hit["sources"] }>();
-    const addRanked = (rows: Row[], source: "dense" | "lexical") => {
+    const fused = new Map<
+      string,
+      { row: HitRow; score: number; similarity: number; sources: Hit["sources"] }
+    >();
+    const addRanked = <T extends HitRow>(
+      rows: T[],
+      source: "dense" | "lexical",
+      similarityOf: (row: T) => number,
+    ) => {
       rows.forEach((row, rank) => {
-        const entry = fused.get(row.id) ?? { row, score: 0, sources: [] };
+        const entry = fused.get(row.id) ?? {
+          row,
+          score: 0,
+          similarity: similarityOf(row),
+          sources: [],
+        };
         entry.score += 1 / (RRF_K + rank + 1);
         entry.sources.push(source);
         fused.set(row.id, entry);
       });
     };
-    addRanked(denseRows, "dense");
-    addRanked(lexicalRows, "lexical");
+    addRanked(denseRows, "dense", (row) => 1 - row._distance);
+    addRanked(lexicalRows, "lexical", (row) => cosine(queryVector, row.vector));
 
     return [...fused.values()]
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
-      .map(({ row, score, sources }) =>
-        toHit(row, score, cosine(queryVector, row.vector), sources),
-      );
+      .map(({ row, score, similarity, sources }) => toHit(row, score, similarity, sources));
   }
 }
 
-function toHit(row: Row, score: number, similarity: number, sources: Hit["sources"]): Hit {
+function toHit(row: HitRow, score: number, similarity: number, sources: Hit["sources"]): Hit {
   return {
     id: row.id,
     path: row.path,
