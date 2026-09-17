@@ -20,7 +20,19 @@ describe("Store", () => {
     const embedder: Embedder = new HashEmbedder();
     const store = await Store.open(t.config.dataDir, embedder, true);
 
-    const markdown = "# Cache\n\nRedis eviction policy is allkeys-lru.";
+    const markdown = [
+      "# Cache",
+      "",
+      "Redis eviction policy is allkeys-lru.",
+      "",
+      "## Failover",
+      "",
+      "Sentinel promotes the replica after 30 seconds.",
+      "",
+      "## Backups",
+      "",
+      "A nightly dump lands in the archive bucket.",
+    ].join("\n");
     const chunks = chunkMarkdown(markdown, "cache.md");
     const vectors = await embedder.embed(chunks.map(embeddingText), "document");
     await store.apply(
@@ -29,14 +41,20 @@ describe("Store", () => {
     );
 
     const query = "redis eviction policy";
-    const [hit] = await store.search(query, 5);
+    const hits = await store.search(query, 5);
     const [queryVector] = await embedder.embed([query], "query");
-    // The dense side reads `_distance` instead of the stored vector, so the two must still agree.
-    expect(hit?.similarity).toBeCloseTo(
-      dot(queryVector as Float32Array, vectors[0] as Float32Array),
-      5,
-    );
-    expect(hit?.sources).toContain("dense");
+    expect(hits.length).toBeGreaterThan(1);
+    // The dense side reads `_distance` rather than the stored vector and the lexical side the vector
+    // itself, so the two must agree no matter which one reached a chunk first.
+    for (const hit of hits) {
+      const i = chunks.findIndex((chunk) => chunk.heading === hit.heading);
+      expect(hit.similarity).toBeCloseTo(
+        dot(queryVector as Float32Array, vectors[i] as Float32Array),
+        5,
+      );
+    }
+    expect(hits.some((hit) => hit.sources.includes("dense"))).toBe(true);
+    expect(hits.some((hit) => hit.sources.includes("lexical"))).toBe(true);
   });
 
   it("builds no vector index for a folder of notes", async () => {

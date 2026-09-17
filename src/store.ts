@@ -74,6 +74,12 @@ interface Meta {
 /** The columns a `Hit` is built from: everything a search reads except the vector. */
 const HIT_COLUMNS = ["id", "path", "title", "heading", "text", "line_start", "line_end"] as const;
 type HitRow = Pick<Row, (typeof HIT_COLUMNS)[number]>;
+/**
+ * A row from either retriever, carrying the cosine of the query and the chunk. Each side works it
+ * out from what it has — the dense one from `_distance`, the lexical one from the stored vector —
+ * so fusion never has to ask where a row came from.
+ */
+type ScoredRow = HitRow & { similarity: number };
 
 interface Row {
   id: string;
@@ -353,13 +359,21 @@ export class Store {
       .select([...HIT_COLUMNS, "_distance"]);
     if (where) dense = dense.where(where);
     const denseRows = (await dense.limit(pool).toArray()) as (HitRow & { _distance: number })[];
+    const denseScored: ScoredRow[] = denseRows.map(({ _distance, ...row }) => ({
+      ...row,
+      similarity: 1 - _distance,
+    }));
 
-    let lexicalRows: (HitRow & { vector: unknown })[] = [];
+    let lexicalScored: ScoredRow[] = [];
     if (/[\p{L}\p{N}]/u.test(query)) {
       try {
         let lexical = this.table.search(query, "fts", "search_text");
         if (where) lexical = lexical.where(where);
-        lexicalRows = (await lexical.limit(pool).toArray()) as (HitRow & { vector: unknown })[];
+        const rows = (await lexical.limit(pool).toArray()) as (HitRow & { vector: unknown })[];
+        lexicalScored = rows.map(({ vector, ...row }) => ({
+          ...row,
+          similarity: cosine(queryVector, vector),
+        }));
       } catch (error) {
         // A query the full-text parser rejects still has a dense answer; losing half the ranking
         // is better than failing the call.
@@ -367,38 +381,29 @@ export class Store {
       }
     }
 
-    const fused = new Map<
-      string,
-      { row: HitRow; score: number; similarity: number; sources: Hit["sources"] }
-    >();
-    const addRanked = <T extends HitRow>(
-      rows: T[],
-      source: "dense" | "lexical",
-      similarityOf: (row: T) => number,
-    ) => {
+    // Each row already carries its own similarity, so which retriever reaches an id first decides
+    // nothing: the two agree to floating-point noise, both being the cosine of the query and that
+    // chunk.
+    const fused = new Map<string, { row: ScoredRow; score: number; sources: Hit["sources"] }>();
+    const addRanked = (rows: ScoredRow[], source: "dense" | "lexical") => {
       rows.forEach((row, rank) => {
-        const entry = fused.get(row.id) ?? {
-          row,
-          score: 0,
-          similarity: similarityOf(row),
-          sources: [],
-        };
+        const entry = fused.get(row.id) ?? { row, score: 0, sources: [] };
         entry.score += 1 / (RRF_K + rank + 1);
         entry.sources.push(source);
         fused.set(row.id, entry);
       });
     };
-    addRanked(denseRows, "dense", (row) => 1 - row._distance);
-    addRanked(lexicalRows, "lexical", (row) => cosine(queryVector, row.vector));
+    addRanked(denseScored, "dense");
+    addRanked(lexicalScored, "lexical");
 
     return [...fused.values()]
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
-      .map(({ row, score, similarity, sources }) => toHit(row, score, similarity, sources));
+      .map(({ row, score, sources }) => toHit(row, score, sources));
   }
 }
 
-function toHit(row: HitRow, score: number, similarity: number, sources: Hit["sources"]): Hit {
+function toHit(row: ScoredRow, score: number, sources: Hit["sources"]): Hit {
   return {
     id: row.id,
     path: row.path,
@@ -408,7 +413,7 @@ function toHit(row: HitRow, score: number, similarity: number, sources: Hit["sou
     lineStart: row.line_start,
     lineEnd: row.line_end,
     score,
-    similarity,
+    similarity: row.similarity,
     sources,
   };
 }
