@@ -42,6 +42,9 @@ resumes by re-running the same command.
 | `rrf.ts` | embedder | Whether RRF buries an exact lexical hit the dense side missed, over k ∈ {60, 20, 10, 0}. Probes are tokens that occur in exactly one chunk, so they are exact identifiers by construction. |
 | `selective.ts` | embedder | Adding context to `embeddingText` only where a chunk cannot say what it is about (repeated leaf heading, breadcrumb sandwich, selective title). |
 | `frontmatter.ts` | LLM, embedder | Derived front matter at index time: deterministic headings, an LLM document summary, and a per-chunk context sentence (Anthropic Contextual Retrieval). |
+| `scale.ts` | — | Not a benchmark: the shared parts of the two below. The corpus embedded as the server would, its vectors jittered and replicated to any N, exact brute-force ground truth, recall\@k, and `interleaved()`, which times variants round-robin so load drift lands on all of them alike. |
+| `qdrant.ts` | embedder, a local Qdrant | Whether a separate vector server beats the embedded table: the real pipeline (embed, dense, FTS) against Qdrant on the same 210 chunks, then jittered to 1k/10k/100k, top-10 unfiltered and with a 10% payload filter, recall against brute force. |
+| `lance-tuning.ts` | embedder | The LanceDB knobs, one table per variant: selected columns, distance type, `readConsistencyInterval`, prefilter against postfilter, scalar indexes on the filter column, and the vector index types (IVF-flat, HNSW-SQ, IVF-PQ) across `nprobes`/`ef`. |
 
 ## What they found
 
@@ -89,3 +92,47 @@ under context pressure. The `retrieved` column is the gates doing their job — 
 
 `selective.ts` and `frontmatter.ts` both came back flat, so neither shipped; the breadcrumb prefix
 in `embeddingText` is all the context a chunk gets.
+
+`qdrant.ts` says a vector server is not worth the process. Qdrant is genuinely faster, and at 100k
+it is not close — but at the size a notes folder actually is, the win is about a millisecond next to
+the ~6 ms the query embedding costs, and it is paid for with a second process, a lost BM25 side
+(fusion would have to be rebuilt by hand) and a compression workaround. Top-10, p50 ms / recall:
+
+```
+N        lance flat      lance hnsw-sq    qdrant default    qdrant exact
+1000     2.58 / 1.000     —                1.17 / 1.000      1.20 / 1.000
+10000    9.89 / 1.000     2.07 / 0.911     1.28 / 1.000      1.34 / 1.000
+100000  72.59 / 1.000    19.29 / 0.719     1.33 / 0.989      4.54 / 1.000
+```
+
+The workaround is in the script: `fetch` asks for gzip/br, Qdrant compresses any response over a few
+KB, and the write pattern that produces waits out a 40 ms delayed ACK. `accept-encoding: identity`
+takes a 44 ms p50 back to 1.5 ms. Anything talking to Qdrant from Node has to know that.
+
+`lance-tuning.ts` is where the two changes in `store.ts` came from, and it also closed off three
+knobs that looked promising. Only compare within a group: variants are interleaved, so drift moves a
+whole group together.
+
+Selecting without the vector column is free and costs nothing to recall — at corpus size it is most
+of the dense search, because 210 vectors get copied out of Arrow only to recompute a number
+`_distance` already holds (dense 5.89 → 4.62 ms p50, FTS 5.61 → 3.67). `distanceType("dot")` and
+`readConsistencyInterval` unset are both inside the noise, so neither changed.
+
+IVF-flat is exact and twice as fast at 10k, for a one-second build — that is the whole case for
+building it there and not before. HNSW-SQ and IVF-PQ are faster still at 100k but pay recall the
+hook cannot afford, and IVF-PQ's build is 95 s:
+
+```
+N=10000 unfiltered      p50   recall   build      N=100000            p50   recall    build
+flat (shipped)        10.18    1.000       —      flat              54.03    1.000        —
+ivf-flat nprobes 20    5.90    1.000    156ms     ivf-flat          24.28    1.000    1.0 s
+hnsw-sq ef 60          4.84    0.966    989ms     hnsw-sq ef 60      9.24    0.891   62.8 s
+ivf-pq refine 10      19.81    0.982    2414ms    ivf-pq refine 10  40.15    0.801   95.5 s
+```
+
+The filter findings were the surprise, and all three say leave the scoped search alone. A scalar
+index on the filter column makes a *filtered flat* search 4.5–8× slower (13.1 → 58.9 ms at 10k,
+73.7 → 613 ms at 100k, btree and bitmap alike), because the flat path is already one scan and the
+index only adds work; `folder = 'f3'` is no faster than the shipped `starts_with(path, ...)`; and
+`postfilter()` is slightly faster only because it is wrong — it filters the top-k it already picked,
+so recall falls to 0.10. Hence: no index on `path`, prefilter, and the vector index built lazily.
