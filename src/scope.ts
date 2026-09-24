@@ -1,8 +1,20 @@
-import { lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join, posix, relative, resolve, sep } from "node:path";
 import { isInside } from "./config.ts";
 import type { Ragdown } from "./engine.ts";
 import { formatHit } from "./format.ts";
+import { MARKDOWN } from "./indexer.ts";
 import type { Hit } from "./store.ts";
 
 /** Sessions whose returned chunks are remembered; past this the oldest is forgotten. */
@@ -233,6 +245,107 @@ export class Scope {
         : {}),
       sync,
     };
+  }
+
+  /**
+   * Write a Markdown file at `path`, creating its folders, and index it before returning. For the
+   * web UI's upload: unlike `remember`, the caller names the file and the text is written as given.
+   *
+   * @param overwrite replace an existing file; without it, an existing file is refused.
+   * @throws with `status: 400` for a path the indexer would not index (see `resolveWritable`), and
+   *   `409` for an existing file without `overwrite`, or a folder where the file would go.
+   */
+  async writeDoc(path: string, text: string, overwrite = false) {
+    const { full, relPath } = await this.resolveWritable(path, true);
+    const existing = await lstat(full).catch(() => undefined);
+    if (existing && !existing.isFile()) {
+      throw Object.assign(new Error(`not a file: ${path}`), { status: 409 });
+    }
+    if (existing && !overwrite) {
+      throw Object.assign(new Error(`already exists: ${path}`), { status: 409 });
+    }
+    if (existing) {
+      // Written beside it and renamed over it: a sync never reads half a file. The dot name keeps
+      // the indexer and the watcher off the temp file.
+      const temp = join(dirname(full), `.${randomUUID()}.tmp`);
+      try {
+        await writeFile(temp, text);
+        await rename(temp, full);
+      } catch (error) {
+        await rm(temp, { force: true });
+        throw error;
+      }
+    } else {
+      try {
+        await writeFile(full, text, { flag: "wx" });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        throw Object.assign(new Error(`already exists: ${path}`), { status: 409 });
+      }
+    }
+    return { path: relPath, created: !existing, sync: await this.rag.sync(false) };
+  }
+
+  /**
+   * Delete a Markdown file and drop it from the index before returning.
+   *
+   * @throws with `status: 400` for a path the indexer would not index, and `404` for no such file.
+   */
+  async deleteDoc(path: string) {
+    const { full, relPath } = await this.resolveWritable(path, false);
+    if (!(await lstat(full).catch(() => undefined))?.isFile()) {
+      throw Object.assign(new Error(`no such document: ${path}`), { status: 404 });
+    }
+    await unlink(full);
+    return { path: relPath, sync: await this.rag.sync(false) };
+  }
+
+  /**
+   * Resolve a path a client wants to write or delete, relative to the scope. Refused with a 400
+   * unless the indexer would index a file there: a Markdown extension, no dot-segment or
+   * `node_modules`, inside the folder, and no symlink or file on the way — the indexer does not
+   * follow symlinks, and a write through one could land outside the docs. Resolved against the
+   * folder's real path, as `openScope` does.
+   *
+   * @param create make the missing folders on the way.
+   */
+  private async resolveWritable(path: string, create: boolean) {
+    const invalid = (why: string) => Object.assign(new Error(`${why}: ${path}`), { status: 400 });
+    const posixPath = path.replaceAll("\\", "/");
+    if (!posixPath || posix.isAbsolute(posixPath) || /^[a-z]:/i.test(posixPath)) {
+      throw invalid("path must be relative to the docs folder");
+    }
+    const segments = posix
+      .normalize(posixPath)
+      .split("/")
+      .filter((segment) => segment && segment !== ".");
+    if (segments.length === 0 || segments.includes("..")) {
+      throw invalid("path is outside the docs folder");
+    }
+    if (segments.some((s) => s.startsWith(".") || s === "node_modules" || s.includes("\0"))) {
+      throw invalid("path names a folder or file the index skips");
+    }
+    if (!MARKDOWN.test(segments.at(-1) ?? "")) {
+      throw invalid("only Markdown files (.md, .markdown, .mdx) can be written");
+    }
+
+    const root = await realpath(this.root);
+    let current = root;
+    for (const segment of segments.slice(0, -1)) {
+      current = join(current, segment);
+      let info = await lstat(current).catch(() => undefined);
+      if (!info && create) {
+        await mkdir(current).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "EEXIST") throw error;
+        });
+        info = await lstat(current);
+      }
+      if (!info) break;
+      if (!info.isDirectory()) throw invalid("a folder on the path is a file or a symlink");
+    }
+    const full = join(root, ...segments);
+    if (!isInside(root, full)) throw invalid("path is outside the docs folder");
+    return { full, relPath: segments.join("/") };
   }
 
   /** Sync (or with `full`, rebuild) the whole index: there is one, shared by every scope. */
