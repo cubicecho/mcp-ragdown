@@ -1,4 +1,4 @@
-# Point DOCS at your Markdown folder, set RAGDOWN_TOKEN, and `docker compose up -d`.
+# Point DOCS at a directory of folders (one per top-level directory), set RAGDOWN_TOKEN, and `docker compose up -d`.
 services:
   ragdown:
     image: vantreeseba/mcp-ragdown:latest
@@ -7,13 +7,13 @@ services:
       # host:container — change the left side only.
       - '3300:3000'
     volumes:
-      # The folder to index. Writable so agents can save notes with ragdown_remember;
+      # The folders to index. Writable so agents can save notes with ragdown_remember;
       # append `:ro` and set RAGDOWN_READ_ONLY=true to forbid that.
       - ${DOCS:-./docs}:/docs
       # The index. Without it every restart re-embeds the whole folder.
       - ragdown-data:/data
     environment:
-      # Bearer token for /mcp and the web UI's /api routes (`openssl rand -hex 32`). The server
+      # Bearer token for /mcp/<folder> and the web UI's /api routes (`openssl rand -hex 32`). The server
       # refuses to start with neither this nor SECURE_LOCAL_NET=true.
       RAGDOWN_TOKEN: ${RAGDOWN_TOKEN:-}
       SECURE_LOCAL_NET: ${SECURE_LOCAL_NET:-false}
