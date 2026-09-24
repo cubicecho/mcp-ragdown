@@ -1,6 +1,7 @@
 import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { DocsPage } from "@/routes/docs";
+import { SettingsPage } from "@/routes/settings";
 
 const rootRoute = createRootRoute({ component: AppShell });
 
@@ -16,7 +17,15 @@ const docsRoute = createRoute({
   component: DocsPage,
 });
 
-export const router = createRouter({ routeTree: rootRoute.addChildren([docsRoute]) });
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  component: SettingsPage,
+});
+
+export const router = createRouter({
+  routeTree: rootRoute.addChildren([docsRoute, settingsRoute]),
+});
 
 declare module "@tanstack/react-router" {
   interface Register {

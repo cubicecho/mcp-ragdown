@@ -1,5 +1,5 @@
 import { Link, Outlet } from "@tanstack/react-router";
-import { FileText, Library, Lock } from "lucide-react";
+import { FileText, Library, Lock, Settings } from "lucide-react";
 import { ActionButton } from "@/components/action-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -7,7 +7,10 @@ import { clearToken, requireAuth } from "@/lib/auth";
 import { formatAgo, formatCount } from "@/lib/format";
 import { useStatus } from "@/lib/queries";
 
-const NAV = [{ to: "/", label: "Documents", icon: FileText }] as const;
+const NAV = [
+  { to: "/", label: "Documents", icon: FileText },
+  { to: "/settings", label: "Settings", icon: Settings },
+] as const;
 
 /** What the index is doing, at the foot of the sidebar: the one thing every page wants to know. */
 function IndexStatus() {
@@ -87,6 +90,7 @@ export function AppShell() {
             <Link
               key={to}
               to={to}
+              activeOptions={{ exact: to === "/" }}
               className="flex items-center gap-2 rounded-md px-3 py-2 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
               activeProps={{ className: "bg-accent font-medium text-accent-foreground" }}
             >
@@ -111,6 +115,14 @@ export function AppShell() {
           <Library className="size-4 shrink-0" aria-hidden />
           <span className="font-semibold text-sm">ragdown</span>
           <div className="ml-auto flex items-center gap-1">
+            <Link
+              to="/settings"
+              aria-label="Settings"
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              activeProps={{ className: "bg-accent text-accent-foreground" }}
+            >
+              <Settings className="size-4" aria-hidden />
+            </Link>
             <LockButton />
             <div className="w-24">
               <ThemeToggle />
