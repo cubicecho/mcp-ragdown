@@ -9,7 +9,7 @@ import { MarkdownPreview } from "@/components/markdown-preview";
 import { PageHeader } from "@/components/page-header";
 import { QueryError, QueryState } from "@/components/query-state";
 import { SidebarLayout } from "@/components/split-layout";
-import { Badge } from "@/components/ui/badge";
+import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Check, Copy, Search } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
@@ -322,7 +322,7 @@ function SearchResults({
 }
 
 function HitRow({ folder, hit, active }: { folder: string; hit: SearchHit; active: boolean }) {
-  const anchor = hit.heading ? slug(hit.heading.split(" > ").pop() ?? hit.heading) : "";
+  const anchor = hit.heading ? slug(hit.heading.split(" › ").pop() ?? hit.heading) : "";
   return (
     <Item
       asChild
@@ -468,16 +468,17 @@ function DocPreview({
                   </span>
                 ) : null}
                 {tags.map((tag) => (
-                  <Badge key={tag} variant="secondary" asChild>
-                    <Link
-                      to="/f/$folder"
-                      params={{ folder }}
-                      search={(prev) => ({ ...prev, tag })}
-                      aria-label={`Show documents tagged #${tag}`}
-                    >
-                      #{tag}
-                    </Link>
-                  </Badge>
+                  // Not `<Badge asChild>`: cubeui's Badge hands its Slot a second, null child.
+                  <Link
+                    key={tag}
+                    to="/f/$folder"
+                    params={{ folder }}
+                    search={(prev) => ({ ...prev, tag })}
+                    aria-label={`Show documents tagged #${tag}`}
+                    className={cn(badgeVariants({ variant: "secondary" }), "hover:underline")}
+                  >
+                    #{tag}
+                  </Link>
                 ))}
                 {otherFields.map(([key, value]) => (
                   <Badge key={key} variant="outline" className="font-normal">
