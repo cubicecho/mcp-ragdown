@@ -10,6 +10,7 @@ import { Trash2, Upload, X } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api";
+import { folderOf, inFolder, withinFolder } from "@/lib/folders";
 import { formatCount } from "@/lib/format";
 import { useDeleteDoc, useUploadDoc } from "@/lib/queries";
 
@@ -23,19 +24,19 @@ type Picked = {
 };
 
 /** `notes/./imported/` → `notes/imported`; the server still has the last word on the path. */
-function joinPath(folder: string, name: string): string {
-  const parts = folder.split(/[\\/]+/).filter((part) => part && part !== ".");
+function joinPath(subfolder: string, name: string): string {
+  const parts = subfolder.split(/[\\/]+/).filter((part) => part && part !== ".");
   return [...parts, name].join("/");
 }
 
 /**
- * Upload Markdown files into the docs folder, optionally under a folder. The picker takes one file
+ * Upload Markdown files into a folder, optionally under a subfolder. The picker takes one file
  * at a time, so each pick adds a row; a file that already exists stays in the list with an
  * Overwrite button rather than being replaced unasked.
  */
-export function UploadDocs() {
+export function UploadDocs({ folder, title }: { folder: string; title: string }) {
   const [open, setOpen] = useState(false);
-  const [folder, setFolder] = useState("");
+  const [subfolder, setSubfolder] = useState("");
   const [files, setFiles] = useState<Picked[]>([]);
   const upload = useUploadDoc();
   const toast = useToast();
@@ -51,7 +52,7 @@ export function UploadDocs() {
       update(file.name, { state: "uploading" });
       try {
         const result = await upload.mutateAsync({
-          path: joinPath(folder, file.name),
+          path: inFolder(folder, joinPath(subfolder, file.name)),
           text: file.text,
           overwrite,
         });
@@ -74,7 +75,14 @@ export function UploadDocs() {
     // Everything picked is in: close, and show the file when there is only one to show.
     if (uploaded.length === files.length) {
       reset(false);
-      if (uploaded.length === 1) void navigate({ to: "/", search: { doc: uploaded[0] } });
+      const [only] = uploaded;
+      if (uploaded.length === 1 && only) {
+        void navigate({
+          to: "/f/$folder",
+          params: { folder },
+          search: (prev) => ({ ...prev, doc: withinFolder(only) }),
+        });
+      }
     }
   };
 
@@ -82,7 +90,7 @@ export function UploadDocs() {
     setOpen(next);
     if (!next) {
       setFiles([]);
-      setFolder("");
+      setSubfolder("");
     }
   };
 
@@ -100,18 +108,18 @@ export function UploadDocs() {
         </ActionButton>
       }
       title="Upload Markdown"
-      description="Files are written into the docs folder and indexed before the upload finishes."
+      description={`Files are written into ${title} and indexed before the upload finishes.`}
       hasUnsavedChanges={() => files.some((file) => file.state !== "done")}
       content={
         <div className="flex flex-col gap-4">
           <FormField
-            label="Folder"
-            description="Optional, relative to the docs folder. Missing folders are created."
+            label="Subfolder"
+            description={`Optional, relative to ${title}. Missing subfolders are created.`}
             control={
               <Input
                 placeholder="notes/imported"
-                value={folder}
-                onChange={(event) => setFolder(event.target.value)}
+                value={subfolder}
+                onChange={(event) => setSubfolder(event.target.value)}
               />
             }
           />
@@ -135,7 +143,7 @@ export function UploadDocs() {
               {files.map((file) => (
                 <li key={file.name} className="flex items-center gap-2 px-3 py-2">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-mono text-xs">{joinPath(folder, file.name)}</p>
+                    <p className="truncate font-mono text-xs">{joinPath(subfolder, file.name)}</p>
                     {file.state === "exists" ? (
                       <p className="text-muted-foreground text-xs">Already exists.</p>
                     ) : file.state === "failed" ? (
@@ -194,7 +202,7 @@ export function UploadDocs() {
   );
 }
 
-/** Delete the previewed file from the docs folder, then leave the preview. */
+/** Delete the previewed file (root-relative `path`) from disk, then leave the preview. */
 export function DeleteDoc({ path }: { path: string }) {
   const remove = useDeleteDoc();
   const toast = useToast();
@@ -206,12 +214,16 @@ export function DeleteDoc({ path }: { path: string }) {
       size="icon-sm"
       disabled={remove.isPending}
       title="Delete this document?"
-      description={`${path} is deleted from the docs folder, not only from the index, and agents stop finding it.`}
+      description={`${path} is deleted from disk, not only from the index, and agents stop finding it.`}
       onConfirm={() =>
         remove.mutate(path, {
           onSuccess: () => {
             toast(`Deleted ${path}`, "success");
-            void navigate({ to: "/", search: {} });
+            void navigate({
+              to: "/f/$folder",
+              params: { folder: folderOf(path) },
+              search: ({ doc: _, ...rest }) => rest,
+            });
           },
           onError: (error) => toast(`Could not delete ${path}: ${error.message}`),
         })
