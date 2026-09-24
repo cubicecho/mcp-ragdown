@@ -3,6 +3,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { TokenGate } from "@/components/token-gate";
+import { ToastProvider } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ApiError } from "@/lib/api";
 import { startTheme } from "@/lib/theme";
@@ -29,9 +30,11 @@ createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <TokenGate>
-          <RouterProvider router={router} />
-        </TokenGate>
+        <ToastProvider>
+          <TokenGate>
+            <RouterProvider router={router} />
+          </TokenGate>
+        </ToastProvider>
       </TooltipProvider>
     </QueryClientProvider>
   </StrictMode>,

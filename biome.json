@@ -59,7 +59,7 @@
   },
   "overrides": [
     {
-      "includes": ["web/src/components/ui/**"],
+      "includes": ["web/src/components/ui/**", "web/cubeui-*.css"],
       "linter": {
         "enabled": false
       }
