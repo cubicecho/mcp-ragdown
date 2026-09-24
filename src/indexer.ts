@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { type Dirent, type FSWatcher, watch } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { chunkMarkdown, embeddingText, readSupersedes } from "./chunk.ts";
+import { chunkMarkdown, embeddingText, readDocMeta, readSupersedes } from "./chunk.ts";
 import type { Embedder } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
 import type { FileUpdate, Store } from "./store.ts";
@@ -34,6 +34,8 @@ export interface SyncReport {
  */
 export class Indexer {
   readonly docsDir: string;
+  /** Folders mode: files directly in `docsDir` belong to no folder and are not indexed. */
+  readonly skipRootFiles: boolean;
   lastSync: (SyncReport & { at: string }) | undefined;
   private readonly store: Store;
   private readonly embedder: Embedder;
@@ -41,9 +43,12 @@ export class Indexer {
   private queued: Promise<SyncReport> | undefined;
   private watcher: FSWatcher | undefined;
   private timer: NodeJS.Timeout | undefined;
+  /** The loose files last warned about, so an unchanged list is not logged on every sync. */
+  private warnedLoose = "";
 
-  constructor(docsDir: string, store: Store, embedder: Embedder) {
+  constructor(docsDir: string, store: Store, embedder: Embedder, skipRootFiles = false) {
     this.docsDir = docsDir;
+    this.skipRootFiles = skipRootFiles;
     this.store = store;
     this.embedder = embedder;
   }
@@ -121,7 +126,17 @@ export class Indexer {
 
   private async run(): Promise<SyncReport> {
     const started = performance.now();
-    const onDisk = await listMarkdown(this.docsDir);
+    const loose: string[] = [];
+    const onDisk = await listMarkdown(this.docsDir, this.skipRootFiles ? loose : undefined);
+    const looseKey = loose.join("\n");
+    if (looseKey !== this.warnedLoose) {
+      this.warnedLoose = looseKey;
+      if (loose.length > 0) {
+        console.error(
+          `[indexer] not indexing ${loose.length} file(s) outside every folder (${loose.slice(0, 5).join(", ")}${loose.length > 5 ? ", …" : ""}): move them into a folder`,
+        );
+      }
+    }
     const indexed = await this.store.files();
     const report: SyncReport = { added: 0, updated: 0, removed: 0, unchanged: 0, chunks: 0, ms: 0 };
 
@@ -174,6 +189,7 @@ export class Indexer {
         chunks,
         vectors: [],
         supersedes: readSupersedes(source, path),
+        ...readDocMeta(source),
       });
       batchChunks += chunks.length;
       if (batchChunks >= BATCH_CHUNKS) await flush();
@@ -195,9 +211,12 @@ export class Indexer {
 /**
  * Every Markdown file under `root`, keyed by its `/`-separated relative path. Dot-directories and
  * `node_modules` are skipped, and symlinks are not followed, so a link cycle cannot hang a sync.
+ *
+ * @param loose when given, files directly in `root` are left out and their names pushed here.
  */
 export async function listMarkdown(
   root: string,
+  loose?: string[],
 ): Promise<Map<string, { mtimeMs: number; size: number }>> {
   const files = new Map<string, { mtimeMs: number; size: number }>();
   const walk = async (dir: string): Promise<void> => {
@@ -213,6 +232,10 @@ export async function listMarkdown(
       const full = join(dir, entry.name);
       if (entry.isDirectory()) await walk(full);
       else if (entry.isFile() && MARKDOWN.test(entry.name)) {
+        if (loose && dir === root) {
+          loose.push(entry.name);
+          continue;
+        }
         try {
           const info = await stat(full);
           const path = relative(root, full).split(sep).join("/");

@@ -17,13 +17,21 @@ export const VERSION = "0.1.0";
  *   loaded. Taking a promise lets the stdio
  *   transport connect first, so a client's handshake never waits on the model; a call made before
  *   then waits instead.
+ * @param folder names the server after its folder (`ragdown-<name>`) and tells the model which
+ *   notes these are, since one client may connect to several folders' servers at once.
  */
-export function createMcpServer(ready: Promise<Scope>, readOnly: boolean): McpServer {
+export function createMcpServer(
+  ready: Promise<Scope>,
+  readOnly: boolean,
+  folder?: { name: string; title: string },
+): McpServer {
+  const which = folder
+    ? `the "${folder.title}" folder of the user's Markdown notes`
+    : "the user's folder of Markdown notes";
   const server = new McpServer(
-    { name: SERVER_NAME, version: VERSION },
+    { name: folder ? `${SERVER_NAME}-${folder.name}` : SERVER_NAME, version: VERSION },
     {
-      instructions:
-        "Search the user's folder of Markdown notes. Call ragdown_recall before answering a question the notes might cover (project decisions, how-tos, runbooks, personal notes), then ragdown_read_doc to read around a hit before relying on it.",
+      instructions: `Search ${which}. Call ragdown_recall before answering a question the notes might cover (project decisions, how-tos, runbooks, personal notes), then ragdown_read_doc to read around a hit before relying on it.`,
     },
   );
 
@@ -40,7 +48,13 @@ export function createMcpServer(ready: Promise<Scope>, readOnly: boolean): McpSe
           .string()
           .optional()
           .describe(
-            "Only search files under this folder, relative to the notes root, e.g. 'projects/'",
+            "Only search files under this subfolder, relative to the notes root, e.g. 'projects/'",
+          ),
+        tag: z
+          .string()
+          .optional()
+          .describe(
+            "Only search notes with this tag (frontmatter tags or inline #tags); 'project' also matches 'project/alpha'",
           ),
         format: z.enum(["text", "json"]).default("text"),
         max_chars: z
@@ -54,7 +68,7 @@ export function createMcpServer(ready: Promise<Scope>, readOnly: boolean): McpSe
     },
     (args) =>
       run(ready, async (rag) => {
-        const hits = await rag.recall(args.query, args.top_k, args.path_prefix);
+        const hits = await rag.recall(args.query, args.top_k, args.path_prefix, args.tag);
         return args.format === "json"
           ? { hits: hits.map(hitJson) }
           : formatHits(hits, args.max_chars ?? rag.config.textLimit);
@@ -114,12 +128,14 @@ export function createMcpServer(ready: Promise<Scope>, readOnly: boolean): McpSe
     {
       title: "Read a note",
       description:
-        "Read a Markdown file from the notes folder, whole or by line range, straight from disk. Never clipped. Use it to see the context around a ragdown_recall hit.",
+        "Read a Markdown file from the notes folder, whole or by line range, straight from disk. Never clipped. Use it to see the context around a ragdown_recall hit, or to follow a [[wikilink]] in a note.",
       inputSchema: {
         path: z
           .string()
           .min(1)
-          .describe("Path relative to the notes root, as returned by ragdown_recall"),
+          .describe(
+            "Path relative to the notes root, as returned by ragdown_recall, or a wikilink target as written inside [[...]] ('Note', 'Note#Heading', 'sub/Note'); a heading narrows the text to that section",
+          ),
         start_line: z.number().int().min(1).optional(),
         end_line: z.number().int().min(1).optional(),
       },

@@ -1,28 +1,31 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { type Config, loadConfig } from "./config.ts";
+import { type Config, loadConfig, type Mode } from "./config.ts";
 
 /**
  * A docs folder and data dir under a fresh temp dir, with the hash embedder so tests need no model.
  * Not a test file itself: shared by the `*.test.ts` files.
  */
-export async function tempSetup(env: Record<string, string> = {}) {
+export async function tempSetup(env: Record<string, string> = {}, mode: Mode = "single") {
   const root = await mkdtemp(join(tmpdir(), "ragdown-test-"));
   const docsDir = join(root, "docs");
   await mkdir(docsDir);
-  const config: Config = loadConfig({
-    RAGDOWN_DOCS_DIR: docsDir,
-    RAGDOWN_DATA_DIR: join(root, "data"),
-    RAGDOWN_MODELS: join(root, "models"),
-    RAGDOWN_EMBEDDER: "hash",
-    RAGDOWN_WATCH: "false",
-    // The hash embedder's cosines are not on the real models' scale, so both hook thresholds are
-    // relaxed here; the tests that care about them pass their own.
-    RAGDOWN_HOOK_MIN_SCORE: "0.2",
-    RAGDOWN_HOOK_MIN_RATIO: "0",
-    ...env,
-  });
+  const config: Config = loadConfig(
+    {
+      RAGDOWN_DOCS_DIR: docsDir,
+      RAGDOWN_DATA_DIR: join(root, "data"),
+      RAGDOWN_MODELS: join(root, "models"),
+      RAGDOWN_EMBEDDER: "hash",
+      RAGDOWN_WATCH: "false",
+      // The hash embedder's cosines are not on the real models' scale, so both hook thresholds are
+      // relaxed here; the tests that care about them pass their own.
+      RAGDOWN_HOOK_MIN_SCORE: "0.2",
+      RAGDOWN_HOOK_MIN_RATIO: "0",
+      ...env,
+    },
+    mode,
+  );
   return {
     root,
     docsDir,

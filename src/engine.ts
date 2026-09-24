@@ -64,9 +64,10 @@ export class Ragdown {
    * a partial answer (what is indexed so far) beats a hook that times out.
    *
    * @param pathPrefix limits the search to paths starting with this, relative to the docs folder.
+   * @param tag limits it to notes with this tag or one nested under it.
    */
-  async recall(query: string, topK: number, pathPrefix?: string): Promise<Hit[]> {
-    return this.store.search(query, topK, pathPrefix);
+  async recall(query: string, topK: number, pathPrefix?: string, tag?: string): Promise<Hit[]> {
+    return this.store.search(query, topK, pathPrefix, tag);
   }
 
   /** The files the index knows about, with their titles, sorted by path. */
@@ -125,7 +126,12 @@ export class Ragdown {
 
   private becomePrimary(socket: Server): void {
     this.socket = socket;
-    this.indexer = new Indexer(this.config.docsDir, this.store, this.embedder);
+    this.indexer = new Indexer(
+      this.config.docsDir,
+      this.store,
+      this.embedder,
+      this.config.mode === "folders",
+    );
     void this.indexer.sync().catch((error: unknown) => {
       console.error(`[ragdown] first sync failed: ${errorMessage(error)}`);
     });

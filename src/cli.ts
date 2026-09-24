@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { basename } from "node:path";
 import { parseArgs } from "node:util";
 import { type Config, loadConfig } from "./config.ts";
 import { errorMessage } from "./errors.ts";
@@ -8,10 +9,11 @@ import { errorMessage } from "./errors.ts";
  * console.log corrupts it. Everything else — searching, indexing, hook context — is an MCP tool.
  */
 
-const USAGE = `ragdown <command> [--docs <folder>] [--data <dir>]
+const USAGE = `ragdown <command> [--docs <dir>] [--data <dir>]
 
-  stdio              MCP server over stdio (default)
-  serve              MCP over Streamable HTTP at /mcp on $PORT (default 3000), plus the web UI
+  stdio              MCP server over stdio for one folder (default): the docs dir is the folder
+  serve              MCP over Streamable HTTP on $PORT (default 3000), one endpoint per folder
+                     of the docs dir at /mcp/<folder>, plus the web UI
 
 Environment: RAGDOWN_DOCS_DIR (required unless --docs), see README.md for the rest.`;
 
@@ -30,11 +32,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  const config = loadConfig({
-    ...process.env,
-    ...(values.docs ? { RAGDOWN_DOCS_DIR: values.docs } : {}),
-    ...(values.data ? { RAGDOWN_DATA_DIR: values.data } : {}),
-  });
+  const config = loadConfig(
+    {
+      ...process.env,
+      ...(values.docs ? { RAGDOWN_DOCS_DIR: values.docs } : {}),
+      ...(values.data ? { RAGDOWN_DATA_DIR: values.data } : {}),
+    },
+    command === "serve" ? "folders" : "single",
+  );
 
   switch (command) {
     case "stdio":
@@ -47,14 +52,14 @@ async function main(): Promise<void> {
 }
 
 async function stdio(config: Config): Promise<void> {
-  const [{ StdioServerTransport }, { Ragdown }, { Scope }, { createMcpServer }] = await Promise.all(
-    [
+  const [{ StdioServerTransport }, { Ragdown }, { Scope }, { createMcpServer }, { readSettings }] =
+    await Promise.all([
       import("@modelcontextprotocol/sdk/server/stdio.js"),
       import("./engine.ts"),
       import("./scope.ts"),
       import("./server.ts"),
-    ],
-  );
+      import("./folders.ts"),
+    ]);
   const ready = Ragdown.start(config);
   // Logged here; each tool call awaits the same promise and reports the failure as its result.
   ready.catch((error: unknown) =>
@@ -62,7 +67,10 @@ async function stdio(config: Config): Promise<void> {
   );
   const scope = ready.then((rag) => new Scope(rag));
   scope.catch(() => undefined);
-  const server = createMcpServer(scope, config.readOnly);
+  // Served whatever its `.ragdown.json` says: running this on a folder is the opt-in.
+  const name = basename(config.docsDir);
+  const { title } = await readSettings(config.docsDir, name);
+  const server = createMcpServer(scope, config.readOnly, { name, title });
   await server.connect(new StdioServerTransport());
   console.error(`[ragdown] stdio ready (docs: ${config.docsDir})`);
 
@@ -91,7 +99,7 @@ async function serve(config: Config): Promise<void> {
   // Listening before the model loads: /api/status answers `ready: false` rather than refusing.
   await new Promise<void>((done) => server.listen(config.http.port, done));
   console.error(
-    `[ragdown] http on :${config.http.port}/mcp (docs: ${config.docsDir}, auth: ${config.http.secureLocalNet ? "off" : "bearer"})`,
+    `[ragdown] http on :${config.http.port}/mcp/<folder> (docs: ${config.docsDir}, auth: ${config.http.secureLocalNet ? "off" : "bearer"})`,
   );
 
   const shutdown = async () => {

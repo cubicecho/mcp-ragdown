@@ -12,7 +12,7 @@ const TABLE = "chunks";
  * rebuilt rather than queried with columns it does not have. Separate from `CHUNKER_VERSION`: the
  * chunks may be unchanged and still be stored differently.
  */
-const INDEX_VERSION = 2;
+const INDEX_VERSION = 3;
 /** Reciprocal-rank-fusion constant; 60 is the value from the original RRF paper and rarely worth tuning. */
 const RRF_K = 60;
 /**
@@ -35,6 +35,8 @@ export interface DocumentInfo {
   mtimeMs: number;
   size: number;
   chunks: number;
+  tags: string[];
+  aliases: string[];
 }
 
 export interface FileUpdate {
@@ -46,6 +48,10 @@ export interface FileUpdate {
   vectors: Float32Array[];
   /** Paths, relative to the docs root, this file's frontmatter says it replaces. */
   supersedes: string[];
+  /** Frontmatter and inline tags, lowercased without `#` (`readDocMeta`); none when omitted. */
+  tags?: string[];
+  /** Frontmatter aliases: other names the note answers to in a wikilink; none when omitted. */
+  aliases?: string[];
 }
 
 export interface Hit {
@@ -62,6 +68,8 @@ export interface Hit {
   similarity: number;
   /** Which retrievers nominated the chunk. */
   sources: ("dense" | "lexical")[];
+  /** The document's tags. */
+  tags: string[];
 }
 
 interface Meta {
@@ -72,7 +80,16 @@ interface Meta {
 }
 
 /** The columns a `Hit` is built from: everything a search reads except the vector. */
-const HIT_COLUMNS = ["id", "path", "title", "heading", "text", "line_start", "line_end"] as const;
+const HIT_COLUMNS = [
+  "id",
+  "path",
+  "title",
+  "heading",
+  "text",
+  "tags",
+  "line_start",
+  "line_end",
+] as const;
 type HitRow = Pick<Row, (typeof HIT_COLUMNS)[number]>;
 /**
  * A row from either retriever, carrying the cosine of the query and the chunk. Each side works it
@@ -95,6 +112,13 @@ interface Row {
   search_text: string;
   /** The file's `supersedes` frontmatter, newline-separated; the same on every row of a file. */
   supersedes: string;
+  /**
+   * The document's tags, space-separated with a space at each end (` a b/c `), so a tag filter is a
+   * substring test for ` a ` or ` a/`. Empty for none. Tags never contain spaces.
+   */
+  tags: string;
+  /** The document's aliases, newline-separated. */
+  aliases: string;
   line_start: number;
   line_end: number;
   /** Written as a number array; read back as an Arrow vector. */
@@ -205,9 +229,15 @@ export class Store {
 
   /** Every indexed file with its title, for listing rather than diffing. */
   async documents(): Promise<DocumentInfo[]> {
-    const rows = await this.table.query().select(["path", "title", "mtime_ms", "size"]).toArray();
+    const rows = await this.table
+      .query()
+      .select(["path", "title", "mtime_ms", "size", "tags", "aliases"])
+      .toArray();
     const docs = new Map<string, DocumentInfo>();
-    for (const row of rows as Pick<Row, "path" | "title" | "mtime_ms" | "size">[]) {
+    for (const row of rows as Pick<
+      Row,
+      "path" | "title" | "mtime_ms" | "size" | "tags" | "aliases"
+    >[]) {
       const doc = docs.get(row.path);
       if (doc) doc.chunks++;
       else {
@@ -217,6 +247,8 @@ export class Store {
           mtimeMs: row.mtime_ms,
           size: row.size,
           chunks: 1,
+          tags: splitTags(row.tags),
+          aliases: row.aliases ? row.aliases.split("\n") : [],
         });
       }
     }
@@ -243,9 +275,16 @@ export class Store {
         heading: chunk.heading,
         text: chunk.text,
         // Lexical search sees the breadcrumb the embedder sees: a table of settings says
-        // "Replicas | 2 | 12" and never names the service its heading names.
-        search_text: embeddingText(chunk),
+        // "Replicas | 2 | 12" and never names the service its heading names. The first chunk also
+        // carries the aliases, so a search for a note's other name finds it; once, not on every
+        // chunk, where it would lift a whole long note over the section that answers.
+        search_text:
+          chunk.index === 0 && u.aliases?.length
+            ? `${embeddingText(chunk)}\n\n${u.aliases.join("\n")}`
+            : embeddingText(chunk),
         supersedes: u.supersedes.join("\n"),
+        tags: u.tags?.length ? ` ${u.tags.join(" ")} ` : "",
+        aliases: u.aliases?.join("\n") ?? "",
         line_start: chunk.lineStart,
         line_end: chunk.lineEnd,
         vector: Array.from(u.vectors[i] ?? []),
@@ -333,16 +372,24 @@ export class Store {
    * confident prose is worse than no hit at all. The file stays on disk and `readDoc` still opens it.
    *
    * @param pathPrefix limits both retrievers to files under this relative path.
+   * @param tag limits both to documents with this tag or one nested under it (`project` takes in
+   *   `project/alpha`).
    */
-  async search(query: string, limit: number, pathPrefix?: string): Promise<Hit[]> {
+  async search(query: string, limit: number, pathPrefix?: string, tag?: string): Promise<Hit[]> {
     const [queryVector] = await this.embedder.embed([query], "query");
     if (!queryVector) return [];
     const pool = Math.max(limit * 4, 20);
     // Superseded notes are filtered here rather than after fusion, so a replaced note cannot take
     // up the pool a current one would have filled.
     const superseded = await this.supersededPaths();
+    const wantedTag = tag?.trim().replace(/^#+/, "").replace(/\/+$/, "").toLowerCase();
     const clauses = [
       ...(pathPrefix ? [`starts_with(path, ${sqlString(pathPrefix)})`] : []),
+      ...(wantedTag
+        ? [
+            `(strpos(tags, ${sqlString(` ${wantedTag} `)}) > 0 OR strpos(tags, ${sqlString(` ${wantedTag}/`)}) > 0)`,
+          ]
+        : []),
       ...(superseded.size > 0
         ? [`path NOT IN (${[...superseded].map(sqlString).join(", ")})`]
         : []),
@@ -415,7 +462,12 @@ function toHit(row: ScoredRow, score: number, sources: Hit["sources"]): Hit {
     score,
     similarity: row.similarity,
     sources,
+    tags: splitTags(row.tags),
   };
+}
+
+function splitTags(tags: string): string[] {
+  return tags.split(" ").filter(Boolean);
 }
 
 /**
@@ -444,6 +496,8 @@ function schema(dim: number): Schema {
     new Field("text", new Utf8(), false),
     new Field("search_text", new Utf8(), false),
     new Field("supersedes", new Utf8(), false),
+    new Field("tags", new Utf8(), false),
+    new Field("aliases", new Utf8(), false),
     new Field("line_start", new Int32(), false),
     new Field("line_end", new Int32(), false),
     new Field("vector", new FixedSizeList(dim, new Field("item", new Float32(), true)), false),

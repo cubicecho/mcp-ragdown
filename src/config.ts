@@ -1,11 +1,19 @@
 import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, posix, resolve } from "node:path";
+
+/**
+ * How the docs dir is laid out. `folders` (`serve`): each top-level directory is a folder with its
+ * own MCP endpoint and settings, and loose files at the top are not indexed. `single` (`stdio`):
+ * the docs dir is itself one folder, served whatever its settings say.
+ */
+export type Mode = "folders" | "single";
 
 export interface Config {
   /** Absolute path of the Markdown folder; the files there are the source of truth. */
   docsDir: string;
+  mode: Mode;
   /** Where the LanceDB index and its meta file live. Derived data: deleting it only costs a rebuild. */
   dataDir: string;
   /** Model cache shared by every docs folder, so a second folder does not download the model again. */
@@ -19,7 +27,7 @@ export interface Config {
   embeddingApiKey: string | undefined;
   readOnly: boolean;
   watch: boolean;
-  /** Where `ragdown_remember` writes; always inside `docsDir` so the note is indexed. */
+  /** Where `ragdown_remember` writes, relative to the folder, `/`-separated; never climbs out of it. */
   notesDir: string;
   textLimit: number;
   http: {
@@ -46,7 +54,7 @@ type Env = Record<string, string | undefined>;
  *
  * @throws when `RAGDOWN_DOCS_DIR` is missing or not a directory, or a number is malformed.
  */
-export function loadConfig(env: Env = process.env): Config {
+export function loadConfig(env: Env = process.env, mode: Mode = "single"): Config {
   const rawDocs = env.RAGDOWN_DOCS_DIR;
   if (!rawDocs) {
     throw new Error(
@@ -60,8 +68,12 @@ export function loadConfig(env: Env = process.env): Config {
 
   const cacheRoot = join(env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "ragdown");
   // Keyed by the folder's path so pointing at a folder needs no other setting and never writes
-  // into the folder itself, where the watcher would see its own index churn.
-  const key = createHash("sha256").update(docsDir).digest("hex").slice(0, 16);
+  // into the folder itself, where the watcher would see its own index churn. The two modes index
+  // different files, so they never share an index (or a primary) for the same docs dir.
+  const key = createHash("sha256")
+    .update(mode === "folders" ? `folders\0${docsDir}` : docsDir)
+    .digest("hex")
+    .slice(0, 16);
   const dataDir = resolve(expandHome(env.RAGDOWN_DATA_DIR ?? join(cacheRoot, key)));
   // Beside the index, so every server on the same folder finds the same socket from the docs path
   // alone, whatever else differs between their environments. A unix socket path is capped near 104 bytes,
@@ -72,13 +84,18 @@ export function loadConfig(env: Env = process.env): Config {
     socketPath = join(tmpdir(), `ragdown-${socketKey}.sock`);
   }
 
-  const notesDir = resolve(docsDir, env.RAGDOWN_NOTES_DIR ?? "notes");
-  if (!isInside(docsDir, notesDir)) {
-    throw new Error(`RAGDOWN_NOTES_DIR must be inside the docs dir (${docsDir}): ${notesDir}`);
+  const notesDir = posix.normalize((env.RAGDOWN_NOTES_DIR ?? "notes").replaceAll("\\", "/"));
+  if (posix.isAbsolute(notesDir) || notesDir === ".." || notesDir.startsWith("../")) {
+    throw new Error(`RAGDOWN_NOTES_DIR must be a path inside the folder: ${notesDir}`);
+  }
+  if (notesDir.split("/").some((s) => (s.startsWith(".") && s !== ".") || s === "node_modules")) {
+    // The indexer skips those, so a note written there would never be found.
+    throw new Error(`RAGDOWN_NOTES_DIR names a folder the index skips: ${notesDir}`);
   }
 
   return {
     docsDir,
+    mode,
     dataDir,
     modelsDir: resolve(expandHome(env.RAGDOWN_MODELS ?? join(cacheRoot, "models"))),
     socketPath,
@@ -88,7 +105,7 @@ export function loadConfig(env: Env = process.env): Config {
     embeddingApiKey: env.RAGDOWN_EMBEDDING_API_KEY,
     readOnly: bool(env, "RAGDOWN_READ_ONLY", false),
     watch: bool(env, "RAGDOWN_WATCH", true),
-    notesDir,
+    notesDir: notesDir === "." ? "" : notesDir.replace(/\/+$/, ""),
     textLimit: int(env, "RAGDOWN_TEXT_LIMIT", 2000),
     http: {
       port: int(env, "PORT", 3000),
