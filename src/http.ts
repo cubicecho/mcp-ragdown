@@ -432,7 +432,10 @@ async function handleApi(
       // A note's SVG or HTML is someone's file, not this app: opened directly, it runs nothing.
       "content-security-policy": "sandbox",
     });
-    await pipeline(createReadStream(full), res);
+    await pipeline(createReadStream(full), res).catch((error: NodeJS.ErrnoException) => {
+      // The client hung up, often right after the last byte and before `finish`: nothing to answer.
+      if (error.code !== "ERR_STREAM_PREMATURE_CLOSE") throw error;
+    });
     return;
   }
 
