@@ -1,27 +1,28 @@
 ---
 layout: base.njk
 title: Get started
-description: A step-by-step walkthrough — run mcp-ragdown over stdio with Claude Code, then in Docker with a token and the web UI, then add notes to every turn with a hook.
+description: A step-by-step walkthrough — run mcp-ragdown over stdio with Claude Code, then in Docker with a token, the web UI and per-folder MCP servers, then add notes to every turn with a hook.
 permalink: /get-started/
 ---
 
 <section class="section gs-intro">
   <div class="wrap">
     <p class="eyebrow">Get started</p>
-    <h1>From a folder of notes to agents that read them</h1>
+    <h1>From folders of notes to agents that read them</h1>
     <p class="lede">
       This walkthrough starts with the smallest setup — a local stdio server for Claude Code — then moves to the
-      Docker image with a token and the web UI, and ends with a hook that adds related notes to every turn. The
+      Docker image with a token, the web UI and its folders, and ends with a hook that adds related notes to every
+      turn. The
       screenshots show the web UI in light mode.
     </p>
     <nav class="gs-toc">
       <a href="#stdio">1 · Local, over stdio</a>
       <a href="#docker">2 · Docker with a token</a>
-      <a href="#connect">3 · Connect over HTTP</a>
-      <a href="#web-ui">4 · Open the web UI</a>
+      <a href="#web-ui">3 · Open the web UI</a>
+      <a href="#connect">4 · Turn MCP on</a>
       <a href="#manage">5 · Upload and delete</a>
-      <a href="#settings">6 · Check the settings</a>
-      <a href="#scopes">7 · One folder per agent</a>
+      <a href="#subfolders">6 · Subfolders</a>
+      <a href="#obsidian">7 · Obsidian</a>
       <a href="#hook">8 · Add a hook</a>
     </nav>
   </div>
@@ -34,23 +35,26 @@ permalink: /get-started/
     <div class="step" id="stdio">
       <div class="step-head"><span class="step-num">1</span><h2>Run it locally with Claude Code</h2></div>
       <p>With Node 26+, which runs the TypeScript directly, clone the repo and register it as a stdio server. Point
-        <code>RAGDOWN_DOCS_DIR</code> at your Markdown folder — it is the only required setting:</p>
+        <code>RAGDOWN_DOCS_DIR</code> at one folder of Markdown — an Obsidian vault works as it is. It is the only
+        required setting:</p>
       <pre class="code"><code>git clone {{ site.repo }} &amp;&amp; cd mcp-ragdown
 npm install
-claude mcp add ragdown -e RAGDOWN_DOCS_DIR=$HOME/notes -- node $PWD/src/cli.ts stdio</code></pre>
+claude mcp add ragdown -e RAGDOWN_DOCS_DIR=$HOME/notes/work -- node $PWD/src/cli.ts stdio</code></pre>
       <p>On first start the default embedder (about 50 MB) downloads once, then the folder is indexed into
         <code>~/.cache/ragdown/</code>. Claude now has <code>ragdown_recall</code> and <code>ragdown_read_doc</code>,
         and calls them itself when the notes might help. Ask it something your notes answer.</p>
-      <p class="callout"><strong>Several windows, one index.</strong> Open as many Claude Code sessions on the same
-        folder as you like: the first process becomes the primary and indexes and watches; the rest are readers that
-        search the same index.</p>
+      <p class="callout"><strong>Over stdio, you chose the folder.</strong> The whole of <code>RAGDOWN_DOCS_DIR</code>
+        is served, whatever its <code>.ragdown.json</code> says. Open as many Claude Code sessions on it as you like:
+        the first process indexes and watches; the rest search the same index.</p>
     </div>
 
     <!-- Step 2 -->
     <div class="step" id="docker">
       <div class="step-head"><span class="step-num">2</span><h2>Run the Docker image with a token</h2></div>
-      <p>To share the notes with other machines or agents, run <code>serve</code>, which the image does by default.
-        It has the default model baked in, so it starts offline. Save this as <code>docker-compose.yml</code>:</p>
+      <p>To serve several folders, to other machines or agents, run <code>serve</code>, which the image does by
+        default. It has the default model baked in, so it starts offline. Mount a directory whose top-level
+        directories are your folders — <code>~/notes/work</code>, <code>~/notes/journal</code> — and save this as
+        <code>docker-compose.yml</code>:</p>
       <pre class="code"><code>services:
   ragdown:
     image: {{ site.dockerImage }}:latest
@@ -73,53 +77,76 @@ curl localhost:3300/api/status                  <span class="cmt"># "ready": tru
         (which builds the web UI).</p>
       <p class="callout"><strong>No token?</strong> <code>serve</code> refuses to start without
         <code>RAGDOWN_TOKEN</code> unless <code>SECURE_LOCAL_NET=true</code>, which skips auth for a trusted
-        network. The first index of a large folder takes minutes; searches answer from what is indexed so far.</p>
+        network. Markdown sitting directly in <code>~/notes</code>, outside every folder, is not indexed; the log
+        and the web UI list it.</p>
     </div>
 
     <!-- Step 3 -->
-    <div class="step" id="connect">
-      <div class="step-head"><span class="step-num">3</span><h2>Connect a client over HTTP</h2></div>
-      <p>Point Claude Code — or any streamable-HTTP MCP client — at <code>/mcp</code> with the token:</p>
-      <pre class="code"><code>claude mcp add --transport http ragdown http://localhost:3300/mcp \
-  --header "Authorization: Bearer $RAGDOWN_TOKEN"</code></pre>
-      <p>The same six tools as over stdio: search, read, stats, and — unless read-only — <code>ragdown_remember</code>
-        to save a note and <code>ragdown_reindex</code> to sync on demand.</p>
+    <div class="step" id="web-ui">
+      <div class="step-head"><span class="step-num">3</span><h2>Open the web UI</h2></div>
+      <p>Visit <code>http://localhost:3300</code> and paste the token once; the browser keeps it. The sidebar lists
+        your folders — a plug for one agents can reach, a person for a human-only one. Pick one to see its files:
+        filter by title, path or tag, switch to <strong>Search</strong> for a hybrid search of the folder, and click a
+        file to read it rendered beside the list.</p>
+      <figure class="shot">
+        <div class="browser">
+          <div class="browser-bar"><span></span><span></span><span></span><em>localhost:3300/f/work?doc=runbooks/backups.md</em></div>
+          <img class="zoomable" src="{{ '/assets/screenshots/documents.png' | url }}"
+            alt="The work folder with runbooks/backups.md open: its tags, a wikilink and its size, line and chunk counts"
+            loading="lazy" width="1440" height="900" />
+        </div>
+        <figcaption><code>[[Wikilinks]]</code> are followed, embedded images are shown, and a tag opens the folder
+          filtered by it. Every folder is searchable here, human-only ones included.</figcaption>
+      </figure>
     </div>
 
     <!-- Step 4 -->
-    <div class="step" id="web-ui">
-      <div class="step-head"><span class="step-num">4</span><h2>Open the web UI</h2></div>
-      <p>Visit <code>http://localhost:3300</code> and paste the token once; the browser keeps it. The
-        <strong>Documents</strong> page lists every indexed file. Filter by title or path, and click one to read it
-        rendered beside the list, with its size, line count and how many chunks it became.</p>
+    <div class="step" id="connect">
+      <div class="step-head"><span class="step-num">4</span><h2>Turn MCP on and connect</h2></div>
+      <p>Every folder starts <strong>human-only</strong>: indexed and searchable in the web UI, but no MCP endpoint,
+        no recall hits and no hook context. Open <strong>Settings → Folders</strong> and flip <strong>Serve over
+        MCP</strong> for the folders agents should read. The switch writes <code>"mcp": true</code> to the folder's
+        <code>.ragdown.json</code>, so you can also set it by hand.</p>
       <figure class="shot">
         <div class="browser">
-          <div class="browser-bar"><span></span><span></span><span></span><em>localhost:3300/?doc=runbooks/backups.md</em></div>
-          <img class="zoomable" src="{{ '/assets/screenshots/documents.png' | url }}"
-            alt="The Documents page with runbooks/backups.md open in the preview"
+          <div class="browser-bar"><span></span><span></span><span></span><em>localhost:3300/settings</em></div>
+          <img class="zoomable" src="{{ '/assets/screenshots/folders.png' | url }}"
+            alt="Settings, Folders: Journal human-only, Research served over MCP, each with Copy MCP config, Rename and Delete"
             loading="lazy" width="1440" height="900" />
         </div>
-        <figcaption>The sidebar shows the last sync, the file and chunk counts, and the embedder in use.</figcaption>
+        <figcaption>Here you can also create, retitle, rename and delete folders. Deleting asks you to type the
+          name.</figcaption>
       </figure>
+      <p><strong>Copy MCP config</strong> puts the line for that folder on the clipboard, with the token header when
+        the server needs one:</p>
+      <pre class="code"><code>claude mcp add --transport http ragdown-work http://localhost:3300/mcp/work \
+  --header "Authorization: Bearer $RAGDOWN_TOKEN"</code></pre>
+      <p>The same six tools as over stdio, with <code>work</code> as the root: search, read, stats, and — unless
+        read-only — <code>ragdown_remember</code>, which writes into <code>work/notes</code>, and
+        <code>ragdown_reindex</code>. A human-only folder answers <code>/mcp/&lt;folder&gt;</code> with the same 404
+        as one that does not exist.</p>
+      <p>Further down, Settings also shows how the server is set up: the docs directory, embedder, role, read-only
+        and watch flags, the last sync, and the search defaults a hook gets. Those come from environment variables
+        at start.</p>
     </div>
 
     <!-- Step 5 -->
     <div class="step" id="manage">
       <div class="step-head"><span class="step-num">5</span><h2>Upload and delete notes</h2></div>
       <p>The upload button above the list opens <strong>Upload Markdown</strong>. Pick <code>.md</code>,
-        <code>.markdown</code> or <code>.mdx</code> files, one pick at a time, and optionally a folder to put them
-        under — missing folders are created. The upload returns once the files are indexed. A file that already
-        exists is not replaced unasked: it stays in the list with an <strong>Overwrite</strong> button.</p>
+        <code>.markdown</code> or <code>.mdx</code> files and optionally a subfolder of the open folder — missing
+        subfolders are created. The upload returns once the files are indexed. A file that already exists is not
+        replaced unasked: it stays in the list with an <strong>Overwrite</strong> button.</p>
       <figure class="shot">
         <div class="browser">
           <div class="browser-bar"><span></span><span></span><span></span><em>Upload Markdown</em></div>
           <img class="zoomable" src="{{ '/assets/screenshots/upload.png' | url }}"
-            alt="The Upload Markdown dialog with the folder notes/reviews and one picked file"
+            alt="The Upload Markdown dialog with the subfolder notes/reviews and one picked file"
             loading="lazy" width="1440" height="900" />
         </div>
-        <figcaption>Uploads go into the docs folder itself, so they are ordinary Markdown files from then on.</figcaption>
+        <figcaption>Uploads land in the folder on disk, so they are ordinary Markdown files from then on.</figcaption>
       </figure>
-      <p>The trash button on a previewed file deletes it from the docs folder — not only from the index — after a
+      <p>The trash button on a previewed file deletes it from disk — not only from the index — after a
         confirmation.</p>
       <figure class="shot">
         <div class="browser">
@@ -128,37 +155,33 @@ curl localhost:3300/api/status                  <span class="cmt"># "ready": tru
             alt="The confirmation shown before deleting runbooks/backups.md"
             loading="lazy" width="1440" height="900" />
         </div>
-        <figcaption>Under <code>RAGDOWN_READ_ONLY=true</code> both upload and delete are refused.</figcaption>
+        <figcaption>Under <code>RAGDOWN_READ_ONLY=true</code> uploads, deletes and folder changes other than the MCP
+          switch and title are refused.</figcaption>
       </figure>
     </div>
 
     <!-- Step 6 -->
-    <div class="step" id="settings">
-      <div class="step-head"><span class="step-num">6</span><h2>Check the settings</h2></div>
-      <p>The <strong>Settings</strong> page holds this browser's theme and stored token, and shows how the server is
-        set up: the docs folder, embedder, role, read-only and watch flags, the last sync, and the search defaults a
-        hook gets. Server values come from environment variables at start, so change one and restart to apply it.</p>
-      <figure class="shot">
-        <div class="browser">
-          <div class="browser-bar"><span></span><span></span><span></span><em>localhost:3300/settings</em></div>
-          <img class="zoomable" src="{{ '/assets/screenshots/settings.png' | url }}"
-            alt="The Settings page: appearance, access, the index card and the search defaults"
-            loading="lazy" width="1440" height="1660" />
-        </div>
-        <figcaption>Each server value names the environment variable it comes from.</figcaption>
-      </figure>
+    <div class="step" id="subfolders">
+      <div class="step-head"><span class="step-num">6</span><h2>Narrow an agent to a subfolder</h2></div>
+      <p><code>/mcp/&lt;folder&gt;/&lt;subfolder&gt;</code> serves the same tools with the subfolder as the root:
+        searches stay inside it, paths are relative to it, and <code>ragdown_remember</code> writes into it. It
+        follows the folder's MCP switch, with nothing else to configure:</p>
+      <pre class="code"><code>claude mcp add --transport http work-alpha http://localhost:3300/mcp/work/projects/alpha \
+  --header "Authorization: Bearer $RAGDOWN_TOKEN"</code></pre>
+      <p class="callout"><strong>Focused, not fenced.</strong> A subfolder keeps an agent on its project's notes, but
+        the same token opens every folder with MCP on. Keep what agents must never read in a human-only folder.</p>
     </div>
 
     <!-- Step 7 -->
-    <div class="step" id="scopes">
-      <div class="step-head"><span class="step-num">7</span><h2>Give each agent one folder</h2></div>
-      <p><code>/mcp/&lt;folder&gt;</code> serves the same tools with that folder as the root: searches stay inside it,
-        paths are relative to it, and <code>ragdown_remember</code> writes into it. Any folder the indexer walks
-        works, with nothing to configure:</p>
-      <pre class="code"><code>claude mcp add --transport http notes-alpha http://localhost:3300/mcp/projects/alpha \
-  --header "Authorization: Bearer $RAGDOWN_TOKEN"</code></pre>
-      <p class="callout"><strong>Focused, not fenced.</strong> A scope keeps an agent on its project's notes, but the
-        token that opens <code>/mcp/projects/alpha</code> also opens <code>/mcp</code>.</p>
+    <div class="step" id="obsidian">
+      <div class="step-head"><span class="step-num">7</span><h2>Open a folder in Obsidian</h2></div>
+      <p>Point Obsidian's <strong>Open folder as vault</strong> at <code>~/notes/work</code> and both see the same
+        notes. <code>.obsidian/</code> and <code>.trash/</code> are skipped. Tags in frontmatter and inline
+        <code>#tags</code> are indexed, so an agent can ask for one:</p>
+      <pre class="code"><code>ragdown_recall({ query: "restore a backup", tag: "runbook" })   <span class="cmt">// also matches #runbook/db</span>
+ragdown_read_doc({ path: "Backups#Restore" })                   <span class="cmt">// a wikilink target: just that section</span></code></pre>
+      <p>Wikilinks resolve the way Obsidian does, within the folder: an exact path, then a note by name (the one
+        beside the linking note first), then an alias from frontmatter.</p>
     </div>
 
     <!-- Step 8 -->
@@ -171,7 +194,7 @@ curl localhost:3300/api/status                  <span class="cmt"># "ready": tru
   "id": "ragdown",
   "label": "Notes",
   "transport": "http",
-  "url": "http://localhost:3300/mcp",
+  "url": "http://localhost:3300/mcp/work",
   "headers": { "Authorization": "Bearer &lt;RAGDOWN_TOKEN&gt;" },
   "hiddenTools": ["ragdown_context"],
   "hooks": [
