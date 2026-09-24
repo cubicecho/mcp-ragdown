@@ -1,22 +1,26 @@
-import { Monitor, Moon, Sun } from "lucide-react";
-import { setTheme, type Theme, useTheme } from "@/lib/theme";
+import { Monitor, Moon, Sun } from "@/components/ui/icons";
+import { useThemePreference } from "@/components/ui/theme-preference";
+import type { ThemePreference } from "@/components/ui/theme-preference-base";
 
-const OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
+const OPTIONS: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
   { value: "system", label: "Match the system", icon: Monitor },
 ];
 
 /**
- * Three states rather than a switch, because "follow the machine" is a real answer a two-way
- * toggle cannot hold — and it is the default, so a switch would have to lie about where it
- * started.
+ * The theme choice, small enough for the sidebar's footer and the phone header bar.
+ *
+ * The storing, the class on `<html>` and following the system all come from cubeui's
+ * `useThemePreference`. Only the control is drawn here: `ThemePicker` is a row of card tiles with
+ * a caption under each, which does not fit a 14rem sidebar or a header bar.
+ * TODO(https://github.com/cubicecho/cubeui/issues/126): swap for `<ThemePicker variant="compact" />` once there is one.
  *
  * Real radios under the labels rather than buttons wearing `role="radio"`: the group then
  * arrows between its options and announces itself without any of that being written here.
  */
 export function ThemeToggle() {
-  const theme = useTheme();
+  const [theme, setTheme] = useThemePreference();
 
   return (
     <fieldset className="flex items-center gap-0.5 rounded-lg border p-0.5">

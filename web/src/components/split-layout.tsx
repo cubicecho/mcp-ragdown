@@ -1,5 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
-
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -26,39 +25,95 @@ export type SplitWidth =
   | "two-thirds";
 
 /**
- * `[the sized pane, the pane that takes the rest]` track sizes.
+ * The width below which the second pane stacks under the first instead of sitting beside it: a
+ * column below it, a row from it up.
  *
- * Every track is `minmax(0,…)` rather than the `auto` a grid track floors itself at, because
- * `auto` floors it at its content: one wide table in one pane widens its own track and
- * shoves the other off the screen. This is the track-level half of rule 4 — `min-w-0` on the
- * cells is the item-level half, and both are needed, since a floored track still holds an
- * unfloored item that can overflow it.
+ * Literal classes rather than a composed one, per rule 3: Tailwind's scanner reads source text, so
+ * `` `${bp}:flex-row` `` names a class that is never generated. That is also why the two tables
+ * below repeat themselves once per breakpoint.
  */
-const TRACKS: Record<SplitWidth, [string, string]> = {
-  auto: ["min-content", "minmax(0,1fr)"],
-  sm: ["minmax(0,20rem)", "minmax(0,1fr)"],
-  md: ["minmax(16rem,22rem)", "minmax(0,1fr)"],
-  lg: ["minmax(18rem,28rem)", "minmax(0,1fr)"],
-  fifth: ["minmax(0,1fr)", "minmax(0,4fr)"],
-  "two-fifths": ["minmax(0,2fr)", "minmax(0,3fr)"],
-  half: ["minmax(0,1fr)", "minmax(0,1fr)"],
-  "two-thirds": ["minmax(0,2fr)", "minmax(0,1fr)"],
+const STACK_BELOW = {
+  never: "flex-row",
+  md: "flex-col md:flex-row",
+  lg: "flex-col lg:flex-row",
+  xl: "flex-col xl:flex-row",
+} as const;
+
+/**
+ * What the pane that carries the width wears once the two sit side by side.
+ *
+ * The fixed rungs are a width that may shrink (`minmax(0,20rem)` was the grid's word for it) with
+ * a floor where the grid had one (`minmax(16rem,22rem)`); the proportional rungs are a flex
+ * factor, with the other pane's in {@link REST}. `auto` neither grows nor shrinks, which is as
+ * wide as what is in it.
+ *
+ * Below the breakpoint none of this applies and both panes are full-width rows.
+ */
+const SIZED: Record<keyof typeof STACK_BELOW, Record<SplitWidth, string>> = {
+  never: {
+    auto: "grow-0",
+    sm: "w-80 grow-0 shrink",
+    md: "w-[22rem] min-w-64 grow-0 shrink",
+    lg: "w-[28rem] min-w-72 grow-0 shrink",
+    fifth: "flex-1",
+    "two-fifths": "flex-[2]",
+    half: "flex-1",
+    "two-thirds": "flex-[2]",
+  },
+  md: {
+    auto: "md:grow-0",
+    sm: "md:w-80 md:grow-0 md:shrink",
+    md: "md:w-[22rem] md:min-w-64 md:grow-0 md:shrink",
+    lg: "md:w-[28rem] md:min-w-72 md:grow-0 md:shrink",
+    fifth: "md:flex-1",
+    "two-fifths": "md:flex-[2]",
+    half: "md:flex-1",
+    "two-thirds": "md:flex-[2]",
+  },
+  lg: {
+    auto: "lg:grow-0",
+    sm: "lg:w-80 lg:grow-0 lg:shrink",
+    md: "lg:w-[22rem] lg:min-w-64 lg:grow-0 lg:shrink",
+    lg: "lg:w-[28rem] lg:min-w-72 lg:grow-0 lg:shrink",
+    fifth: "lg:flex-1",
+    "two-fifths": "lg:flex-[2]",
+    half: "lg:flex-1",
+    "two-thirds": "lg:flex-[2]",
+  },
+  xl: {
+    auto: "xl:grow-0",
+    sm: "xl:w-80 xl:grow-0 xl:shrink",
+    md: "xl:w-[22rem] xl:min-w-64 xl:grow-0 xl:shrink",
+    lg: "xl:w-[28rem] xl:min-w-72 xl:grow-0 xl:shrink",
+    fifth: "xl:flex-1",
+    "two-fifths": "xl:flex-[2]",
+    half: "xl:flex-1",
+    "two-thirds": "xl:flex-[2]",
+  },
 };
 
 /**
- * The width below which the second pane stacks under the first instead of sitting beside it.
- *
- * Four literal classes rather than a composed one, per rule 3: Tailwind's scanner reads source
- * text, so `` `${bp}:grid-cols-…` `` names a class that is never generated. The *template* is the
- * part that is genuinely dynamic, so it rides a custom property, which CSS resolves at run time
- * and the scanner never has to see.
+ * What the other pane wears side by side: the rest. `flex-1` is a zero basis, so it takes what is
+ * left rather than what its content asks for — the `minmax(0,1fr)` the grid spelled out.
  */
-const STACK_BELOW = {
-  never: "grid-cols-[var(--cube-split-cols)]",
-  md: "md:grid-cols-[var(--cube-split-cols)]",
-  lg: "lg:grid-cols-[var(--cube-split-cols)]",
-  xl: "xl:grid-cols-[var(--cube-split-cols)]",
-} as const;
+const REST: Record<keyof typeof STACK_BELOW, Record<"fifth" | "two-fifths" | "other", string>> = {
+  never: { fifth: "flex-[4]", "two-fifths": "flex-[3]", other: "flex-1" },
+  md: { fifth: "md:flex-[4]", "two-fifths": "md:flex-[3]", other: "md:flex-1" },
+  lg: { fifth: "lg:flex-[4]", "two-fifths": "lg:flex-[3]", other: "lg:flex-1" },
+  xl: { fifth: "xl:flex-[4]", "two-fifths": "xl:flex-[3]", other: "xl:flex-1" },
+};
+
+/**
+ * Every pane's floor. `min-w-0` is rule 4: a flex item's minimum is its content, so one wide
+ * table in one pane would otherwise widen it and shove the other off the screen. `grow` is what
+ * lets the panes share a height the layout was given, stacked or alone, the way grid rows did.
+ */
+const PANE = cn(
+  "min-h-0 min-w-0 grow",
+  // A pane wraps a caller's node rather than laying one out, so on the web it stays the block box a
+  // grid cell was; a compiled view would otherwise make it a flex column. Device has no other box.
+  "block",
+);
 
 /**
  * The rule turns where the panes do: a hairline column between two panes side by side, a hairline
@@ -66,7 +121,7 @@ const STACK_BELOW = {
  * can never disagree about where the layout flips.
  */
 const DIVIDER_AT: Record<keyof typeof STACK_BELOW, string> = {
-  never: "h-auto w-px",
+  never: "w-px",
   md: "h-px w-full md:h-auto md:w-px",
   lg: "h-px w-full lg:h-auto lg:w-px",
   xl: "h-px w-full xl:h-auto xl:w-px",
@@ -99,7 +154,7 @@ type SplitLayoutProps = {
    * drawn. That absence is also how a pane collapses — see the component note — which is why
    * there is no `collapsed` prop and no state held here.
    */
-  second?: ReactNode;
+  second?: ReactNode | undefined;
   /**
    * Below this width the two stack rather than sit side by side. `never` keeps them side by side
    * at every width — an icon strip, a kiosk, a pane already inside a media query the caller owns.
@@ -108,7 +163,7 @@ type SplitLayoutProps = {
    * has room for one after the other. A screen where the second pane is genuinely meaningless on
    * a phone wants a separate route for it, not a pane that is present and off-screen.
    */
-  stackBelow?: keyof typeof STACK_BELOW;
+  stackBelow?: keyof typeof STACK_BELOW | undefined;
   /**
    * What separates the panes.
    *
@@ -122,10 +177,10 @@ type SplitLayoutProps = {
    * One prop rather than a `gap` and a `bordered`, because they are the same decision: a rule
    * with a gap on both sides is a line floating in the middle of nothing.
    */
-  divider?: keyof typeof DIVIDERS;
-  className?: string;
-  firstClassName?: string;
-  secondClassName?: string;
+  divider?: keyof typeof DIVIDERS | undefined;
+  className?: string | undefined;
+  firstClassName?: string | undefined;
+  secondClassName?: string | undefined;
 } & SplitWidths;
 
 /**
@@ -140,10 +195,10 @@ type SplitLayoutProps = {
  * {@link SidebarLayout} is this component with the roles put back, for the common case where one
  * pane is the screen and the other is beside it.
  *
- * The floors are the reason this is a component rather than a class string. A grid cell's
- * `min-width` is `auto`, so one wide child — a table, a long unbroken string — grows its track
+ * The floors are the reason this is a component rather than a class string. A flex item's
+ * `min-width` is `auto`, so one wide child — a table, a long unbroken string — grows its pane
  * and pushes the other pane off the screen instead of scrolling inside its own. `min-h-0` /
- * `min-w-0` on both cells is what makes a nested scroll container work at all, and it is the same
+ * `min-w-0` on both panes is what makes a nested scroll container work at all, and it is the same
  * failure `HeaderContentFooter` guards in the other axis: there a wide child pushes the
  * chrome out of the column, here it pushes the neighbouring pane out of the row. Half the panes
  * this replaces are missing one or both.
@@ -196,50 +251,57 @@ export function SplitLayout({
   firstClassName,
   secondClassName,
 }: SplitLayoutProps) {
-  const firstCell = (
-    <div data-slot="split-layout-first" className={cn("min-h-0 min-w-0", firstClassName)}>
-      {first}
-    </div>
-  );
-
-  // Rule 5 — an absent slot draws nothing. Not an empty cell, and not a track whose gap is still
-  // spent: with one pane there is one column and it has the whole width.
+  // Rule 5 — an absent slot draws nothing. Not an empty cell, and not a gap still spent: with one
+  // pane there is one column and it has the whole width.
   if (!second) {
     return (
-      <div data-slot="split-layout" className={cn("grid min-h-0 min-w-0 grid-cols-1", className)}>
-        {firstCell}
+      <div
+        data-slot="split-layout"
+        className={cn("cube-rn-view", "min-h-0 min-w-0 flex-col", className)}
+      >
+        <div data-slot="split-layout-first" className={cn("cube-rn-view", PANE, firstClassName)}>
+          {first}
+        </div>
       </div>
     );
   }
 
-  // TRACKS reads `[the sized pane, the pane that takes the rest]`, so sizing the second pane is
-  // the same row read backwards. Neither given, `half` is two even tracks.
-  const [sized, rest] = TRACKS[secondWidth ?? firstWidth ?? "half"];
-  const tracks = secondWidth ? [rest, sized] : [sized, rest];
-  // The rule gets a track of its own rather than a border on a cell, so that when the panes stack
-  // it becomes a row between them instead of a line down one side of the screen.
-  const columns = divider === "line" ? [tracks[0], "1px", tracks[1]] : tracks;
+  // One pane carries the width and the other takes the rest. Neither given, `half` is two even
+  // panes, which is the same classes on both.
+  const width = secondWidth ?? firstWidth ?? "half";
+  const sized = SIZED[stackBelow][width];
+  const rest = REST[stackBelow][width === "fifth" || width === "two-fifths" ? width : "other"];
 
   return (
     <div
       data-slot="split-layout"
       className={cn(
-        "grid min-h-0 min-w-0 grid-cols-1",
-        DIVIDERS[divider],
+        "cube-rn-view",
+        "min-h-0 min-w-0",
         STACK_BELOW[stackBelow],
+        DIVIDERS[divider],
         className,
       )}
-      style={{ "--cube-split-cols": columns.join(" ") } as CSSProperties}
     >
-      {firstCell}
+      <div
+        data-slot="split-layout-first"
+        className={cn("cube-rn-view", PANE, secondWidth ? rest : sized, firstClassName)}
+      >
+        {first}
+      </div>
       {divider === "line" ? (
+        // The rule is an element of its own rather than a border on a pane, so that when the
+        // panes stack it becomes a row between them instead of a line down one side of the screen.
         <div
           data-slot="split-layout-divider"
           aria-hidden
-          className={cn("self-stretch bg-border", DIVIDER_AT[stackBelow])}
+          className={cn("cube-rn-view", "shrink-0 self-stretch bg-border", DIVIDER_AT[stackBelow])}
         />
       ) : null}
-      <div data-slot="split-layout-second" className={cn("min-h-0 min-w-0", secondClassName)}>
+      <div
+        data-slot="split-layout-second"
+        className={cn("cube-rn-view", PANE, secondWidth ? sized : rest, secondClassName)}
+      >
         {second}
       </div>
     </div>
@@ -257,16 +319,16 @@ type SidebarLayoutProps = {
    *
    * Absent, the pane is one full-width column and neither a sidebar cell nor a divider is drawn.
    */
-  sidebar?: ReactNode;
+  sidebar?: ReactNode | undefined;
   /** Which side the sidebar sits on. Stacked, it keeps this reading order rather than jumping. */
-  sidebarPosition?: "start" | "end";
+  sidebarPosition?: "start" | "end" | undefined;
   /** {@link SplitWidth}. Naming the width is what stops eight call sites each inventing one. */
-  sidebarWidth?: SplitWidth;
-  stackBelow?: keyof typeof STACK_BELOW;
-  divider?: keyof typeof DIVIDERS;
-  className?: string;
-  contentClassName?: string;
-  sidebarClassName?: string;
+  sidebarWidth?: SplitWidth | undefined;
+  stackBelow?: keyof typeof STACK_BELOW | undefined;
+  divider?: keyof typeof DIVIDERS | undefined;
+  className?: string | undefined;
+  contentClassName?: string | undefined;
+  sidebarClassName?: string | undefined;
 };
 
 /**
@@ -294,7 +356,7 @@ export function SidebarLayout({
   sidebarClassName,
 }: SidebarLayoutProps) {
   // No sidebar is one pane, and `first` is the one that is there — passing an absent `first` with
-  // a present `second` would be a hole in the middle of the grid.
+  // a present `second` would be a hole in the middle of the row.
   if (!sidebar) {
     return <SplitLayout first={content} firstClassName={contentClassName} className={className} />;
   }

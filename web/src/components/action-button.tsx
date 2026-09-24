@@ -23,10 +23,10 @@ type ActionButtonProps = Omit<ComponentProps<typeof Button>, "aria-label"> & {
    *
    * This is the prop `disabled` exists for. See the component note.
    */
-  hint?: ReactNode;
-  side?: ComponentProps<typeof TooltipContent>["side"];
+  hint?: ReactNode | undefined;
+  side?: ComponentProps<typeof TooltipContent>["side"] | undefined;
   /** Off, the button keeps its accessible name and drops the tooltip. */
-  tooltip?: boolean;
+  tooltip?: boolean | undefined;
   /**
    * How long the pointer must rest before the tooltip opens, in milliseconds.
    *
@@ -35,13 +35,13 @@ type ActionButtonProps = Omit<ComponentProps<typeof Button>, "aria-label"> & {
    * note: an app with a root delay has to repeat it here, and there is no way for the button to
    * read it.
    */
-  delayDuration?: ComponentProps<typeof TooltipProvider>["delayDuration"];
+  delayDuration?: ComponentProps<typeof TooltipProvider>["delayDuration"] | undefined;
   /**
    * How long after one tooltip closes that the next opens with no delay — what makes a row of
    * these feel like one control rather than several. Grouping only spans a single provider, so
    * it groups the buttons under this one, which is one button.
    */
-  skipDelayDuration?: ComponentProps<typeof TooltipProvider>["skipDelayDuration"];
+  skipDelayDuration?: ComponentProps<typeof TooltipProvider>["skipDelayDuration"] | undefined;
 };
 
 /**

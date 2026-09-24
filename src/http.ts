@@ -12,6 +12,13 @@ import { createMcpServer, SERVER_NAME, VERSION } from "./server.ts";
 
 /** An MCP message is a few kilobytes; anything near this is not one. */
 const MAX_BODY_BYTES = 1024 * 1024;
+/**
+ * An upload's JSON body. A hand-written note is kilobytes and a long one well under a megabyte;
+ * JSON escaping can nearly double Markdown full of quotes and backslashes, and the request waits
+ * while every chunk of the file is embedded, so a file much past this is not a note and would hold
+ * the response for minutes on the CPU model.
+ */
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 /** Where `npm run build` puts the web UI. Absent in a checkout that never built it. */
 export const WEB_DIR = fileURLToPath(new URL("../web/dist", import.meta.url));
@@ -35,6 +42,11 @@ const CONTENT_TYPES: Record<string, string> = {
  *   state lives in the shared `Ragdown`. `/mcp/<folder>` is the same server scoped to one folder of
  *   the docs, which its tools treat as the root (`scope.ts`); a folder that is not one is a 404.
  * - `GET /api/docs` and `GET /api/doc?path=` — the indexed files and one file's text, for the web UI.
+ * - `POST /api/doc` with `{ path, text, overwrite? }` and `DELETE /api/doc?path=` — upload and
+ *   remove a Markdown file, for the web UI. Paths are relative to the docs folder and held to what
+ *   the indexer would index (`Scope.writeDoc`); an existing file is a 409 unless `overwrite`, a
+ *   missing one a 404, and both are a 403 under `RAGDOWN_READ_ONLY`. Each answers once the index
+ *   has synced, so the next `/api/docs` already reflects it.
  * - Anything else under `GET` — the web UI from `webDir`, when it has been built.
  *
  * Agents and hooks use `/mcp` only; the `/api` routes exist for the UI and the health check.
@@ -69,6 +81,23 @@ export function assertAuthConfigured(config: Config): void {
   }
 }
 
+/**
+ * The settings the web UI shows, read from the environment at start. Served unauthenticated with
+ * the status, so only tuning numbers belong here: never the token, a key, or an endpoint URL.
+ */
+function publicSettings(config: Config) {
+  return {
+    watch: config.watch,
+    text_limit: config.textLimit,
+    hook: {
+      top_k: config.hook.topK,
+      min_score: config.hook.minScore,
+      min_ratio: config.hook.minRatio,
+      max_chars: config.hook.maxChars,
+    },
+  };
+}
+
 async function handle(
   ready: Promise<Ragdown>,
   config: Config,
@@ -86,6 +115,7 @@ async function handle(
       version: VERSION,
       ready: rag !== undefined,
       auth_required: !config.http.secureLocalNet,
+      settings: publicSettings(config),
       ...(rag ? await rag.stats(false) : {}),
     });
     return;
@@ -104,6 +134,31 @@ async function handle(
   }
   if (!authorized(config, req.headers.authorization)) {
     json(res, 401, { error: "Unauthorized" });
+    return;
+  }
+
+  if (path === "/api/doc" && (req.method === "POST" || req.method === "DELETE")) {
+    if (config.readOnly) {
+      json(res, 403, { error: "The server is read-only (RAGDOWN_READ_ONLY)" });
+      return;
+    }
+    const scope = new Scope(await ready);
+    if (req.method === "POST") {
+      const body = (await readJson(req, MAX_UPLOAD_BYTES)) as Record<string, unknown>;
+      if (typeof body?.path !== "string" || typeof body.text !== "string") {
+        json(res, 400, { error: "path and text are required strings" });
+        return;
+      }
+      const written = await scope.writeDoc(body.path, body.text, body.overwrite === true);
+      json(res, written.created ? 201 : 200, written);
+      return;
+    }
+    const docPath = new URL(req.url ?? "/", "http://localhost").searchParams.get("path");
+    if (!docPath) {
+      json(res, 400, { error: "path is required" });
+      return;
+    }
+    json(res, 200, await scope.deleteDoc(docPath));
     return;
   }
 
@@ -205,12 +260,12 @@ function authorized(config: Config, header: string | undefined): boolean {
   return timingSafeEqual(digest(provided), digest(config.http.token));
 }
 
-async function readJson(req: IncomingMessage): Promise<unknown> {
+async function readJson(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > MAX_BODY_BYTES) throw Object.assign(new Error("Body too large"), { status: 413 });
+    if (size > limit) throw Object.assign(new Error("Body too large"), { status: 413 });
     chunks.push(chunk as Buffer);
   }
   const text = Buffer.concat(chunks).toString("utf8");

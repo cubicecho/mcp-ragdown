@@ -6,6 +6,13 @@ export interface Status {
   version: string;
   ready: boolean;
   auth_required: boolean;
+  /** Read from the environment at start and never changed at runtime; nothing secret. */
+  settings: {
+    watch: boolean;
+    text_limit: number;
+    /** `ragdown_context`'s defaults, which a hook's own arguments override. */
+    hook: { top_k: number; min_score: number; min_ratio: number; max_chars: number };
+  };
   docs_dir?: string;
   role?: "primary" | "reader";
   embedder?: string;
@@ -45,10 +52,26 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string): Promise<T> {
+/** What `POST /api/doc` and `DELETE /api/doc` answer, once the index has caught up. */
+export interface DocWrite {
+  path: string;
+  /** Upload only: false when an existing file was overwritten. */
+  created?: boolean;
+  sync: { added: number; updated: number; removed: number; unchanged: number; chunks: number };
+}
+
+/** A request with the token, and a JSON body when `body` is given. 401 asks for the token again. */
+async function request<T>(
+  path: string,
+  init: { method?: string; body?: unknown } = {},
+): Promise<T> {
   const token = getToken();
+  const headers: Record<string, string> = token ? { authorization: `Bearer ${token}` } : {};
+  if (init.body !== undefined) headers["content-type"] = "application/json";
   const response = await fetch(path, {
-    headers: token ? { authorization: `Bearer ${token}` } : {},
+    method: init.method ?? "GET",
+    headers,
+    ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
   });
   if (response.status === 401) requireAuth();
   if (!response.ok) {
@@ -61,8 +84,18 @@ async function get<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export const getStatus = () => get<Status>("/api/status");
+export const getStatus = () => request<Status>("/api/status");
 
-export const listDocs = async () => (await get<{ docs: DocSummary[] }>("/api/docs")).docs;
+export const listDocs = async () => (await request<{ docs: DocSummary[] }>("/api/docs")).docs;
 
-export const getDoc = (path: string) => get<Doc>(`/api/doc?path=${encodeURIComponent(path)}`);
+export const getDoc = (path: string) => request<Doc>(`/api/doc?path=${encodeURIComponent(path)}`);
+
+/**
+ * Write a Markdown file into the docs folder. Without `overwrite`, an existing file is an
+ * `ApiError` with status 409, so the caller can ask before replacing it.
+ */
+export const uploadDoc = (upload: { path: string; text: string; overwrite?: boolean }) =>
+  request<DocWrite>("/api/doc", { method: "POST", body: upload });
+
+export const deleteDoc = (path: string) =>
+  request<DocWrite>(`/api/doc?path=${encodeURIComponent(path)}`, { method: "DELETE" });

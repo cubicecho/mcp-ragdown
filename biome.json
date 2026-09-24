@@ -59,9 +59,23 @@
   },
   "overrides": [
     {
-      "includes": ["web/src/components/ui/**"],
+      "includes": [
+        "web/src/components/ui/**",
+        "web/src/components/sidebar.tsx",
+        "web/cubeui-*.css"
+      ],
       "linter": {
         "enabled": false
+      }
+    },
+    {
+      "includes": ["web/src/components/section.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useSemanticElements": "off"
+          }
+        }
       }
     }
   ]

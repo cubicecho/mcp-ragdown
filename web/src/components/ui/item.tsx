@@ -4,10 +4,18 @@ import type * as React from "react";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
+/**
+ * Upstream ships this with `role="list"`, and it is dropped here on purpose: nothing in this
+ * file can be the `listitem` that role requires. `Item` takes `asChild`, so a caller may render
+ * it as an `<a>` or a `<button>`, and a fixed role here would clobber that one — which is why
+ * upstream does not put it there either. A `list` owning no `listitem` is not a neutral
+ * overclaim: it announces as an empty list, and an AT that exposes only listitem children hides
+ * whatever is inside it. A caller that really is drawing a list can say so on its own wrapper,
+ * which is also where it owns the items.
+ */
 function ItemGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
-      role="list"
       data-slot="item-group"
       className={cn("group/item-group flex flex-col", className)}
       {...props}

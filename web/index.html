@@ -7,14 +7,23 @@
     <title>ragdown</title>
     <!--
       Before first paint, not in React: a theme applied from an effect means one frame of white
-      on a dark install. Kept in step with `src/lib/theme.ts`, which owns the key.
+      on a dark install. The same rule as cubeui's pre-paint script (controls.md, "Theme"), kept
+      in step with `THEME_STORAGE_KEY` in `components/ui/theme-preference-base.ts`. The `if` first
+      carries over a choice stored under the key this app used before it moved to cubeui's.
     -->
     <script>
       try {
-        const t = localStorage.getItem("ragdown.theme") || "system";
+        const legacy = localStorage.getItem("ragdown.theme");
+        if (legacy !== null) {
+          if (localStorage.getItem("cubeui-theme") === null)
+            localStorage.setItem("cubeui-theme", legacy);
+          localStorage.removeItem("ragdown.theme");
+        }
+        const t = localStorage.getItem("cubeui-theme");
         const dark =
-          t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
-        if (dark) document.documentElement.classList.add("dark");
+          t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", dark);
+        document.documentElement.classList.toggle("light", t === "light");
       } catch (_) {}
     </script>
   </head>

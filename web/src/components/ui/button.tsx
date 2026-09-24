@@ -1,36 +1,37 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
-import type * as React from "react";
+import * as React from "react";
+import { IconClassContext } from "@/components/ui/icons-base";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "inline-flex flex-row items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        /** A destructive action that is not the emphasis of its row. */
+        "destructive-outline":
+          "border border-destructive/40 bg-transparent text-destructive hover:bg-destructive/10",
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
-        secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
-        ghost:
-          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
-        destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+          "border border-input bg-background text-foreground hover:bg-accent hover:text-accent-foreground",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        ghost: "text-muted-foreground hover:bg-accent hover:text-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default:
-          "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        icon: "size-8",
-        "icon-xs":
-          "size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm":
-          "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
-        "icon-lg": "size-9",
+        default: "h-10 px-4 py-2",
+        /** Small enough to sit inline in a list row without setting its height. */
+        xs: "h-7 rounded-lg px-3",
+        sm: "h-9 rounded-md px-3",
+        lg: "h-11 rounded-md px-8",
+        icon: "h-10 w-10",
+        // shadcn's icon ladder, on this file's own heights: each square is the height of the
+        // text size it is named after, so an icon button sits flush in a row of text buttons.
+        "icon-xs": "h-7 w-7 rounded-lg [&_svg]:size-3.5",
+        "icon-sm": "h-9 w-9",
+        "icon-lg": "h-11 w-11",
       },
     },
     defaultVariants: {
@@ -40,27 +41,117 @@ const buttonVariants = cva(
   },
 );
 
-function Button({
-  className,
-  variant = "default",
-  size = "default",
-  asChild = false,
-  ...props
-}: React.ComponentProps<"button"> &
+/**
+ * The half of each variant that has to live on the `<Text>` for native.
+ *
+ * Not a duplicate of the container's `text-*` classes — both are needed. Web
+ * reads the container's (and hands it to the icons through `currentColor`);
+ * native reads this one, because a `<Text>` inherits nothing from the `View`
+ * above it.
+ */
+const buttonTextVariants = cva("font-medium", {
+  variants: {
+    size: {
+      default: "text-sm",
+      xs: "text-xs",
+      sm: "text-sm",
+      lg: "text-sm",
+      icon: "text-sm",
+      "icon-xs": "text-xs",
+      "icon-sm": "text-sm",
+      "icon-lg": "text-sm",
+    },
+    variant: {
+      default: "text-primary-foreground",
+      destructive: "text-destructive-foreground",
+      "destructive-outline": "text-destructive",
+      outline: "text-foreground",
+      secondary: "text-secondary-foreground",
+      ghost: "text-muted-foreground",
+      link: "text-primary underline",
+    },
+  },
+  defaultVariants: { variant: "default", size: "default" },
+});
+
+export type ButtonProps = Omit<React.ComponentPropsWithoutRef<"button">, "children" | "className"> &
   VariantProps<typeof buttonVariants> & {
-    asChild?: boolean;
-  }) {
-  const Comp = asChild ? Slot.Root : "button";
+    // Re-declared rather than inherited: nativewind types it as
+    // `className?: string`, which under `exactOptionalPropertyTypes` rejects the
+    // conditional `cond ? 'x' : undefined` that call sites pass.
+    className?: string | undefined;
+    /**
+     * Render the single child with the button's look and behaviour instead of a
+     * `Pressable` around it.
+     *
+     * radix's `Slot` on both platforms, for the reason `ui/form.tsx` gives: it only
+     * clones its child with merged props, so there is no DOM in it and it works under
+     * React Native unchanged. Upstream shadcn components that wrap this Button — the
+     * `alert-dialog` action and cancel buttons — are written against it.
+     */
+    asChild?: boolean | undefined;
+    children?: React.ReactNode;
+  };
 
-  return (
-    <Comp
-      data-slot="button"
-      data-variant={variant}
-      data-size={size}
-      className={cn(buttonVariants({ variant, size, className }))}
-      {...props}
-    />
-  );
-}
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, disabled, asChild, children, ...props }, ref) => {
+    const styling = cn(
+      buttonVariants({ variant, size, className }),
+      // `disabled:` has no pseudo-class to hang off a Pressable on either
+      // platform, so the disabled look is applied directly.
+      disabled && "opacity-50",
+    );
 
-export { Button, buttonVariants };
+    const body = (
+      // Icons inside a button take the variant's text colour. On web they
+      // already inherit it, so `icons.web.tsx` ignores this; native has no
+      // inheritance and this is where the colour comes from.
+      <IconClassContext.Provider value={buttonTextVariants({ variant, size })}>
+        {React.Children.map(children, (child) =>
+          typeof child === "string" || typeof child === "number" ? (
+            <span className={cn("cube-rn-text", buttonTextVariants({ variant, size }))}>
+              {child}
+            </span>
+          ) : (
+            child
+          ),
+        )}
+      </IconClassContext.Provider>
+    );
+
+    // Two returns rather than one variable element: `Slot.Root` is typed for the DOM
+    // and `Pressable` for a `View`, and a union of the two types nothing usefully —
+    // every prop below would have to satisfy both. Written out, each branch is checked
+    // against the element it actually renders.
+    if (asChild) {
+      return (
+        // `Slot.Root` is declared over `HTMLAttributes<HTMLElement>` because radix ships
+        // for the DOM, but it renders nothing itself — it clones its child with these
+        // props merged in. The element that receives them is the caller's, so the DOM
+        // typing describes neither side, and the cast is the honest way to say so.
+        <Slot.Root
+          className={styling}
+          {...({ ...props, disabled } as unknown as React.HTMLAttributes<HTMLElement>)}
+          ref={ref as unknown as React.Ref<HTMLElement>}
+        >
+          {body}
+        </Slot.Root>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        ref={ref as React.Ref<HTMLButtonElement>}
+        disabled={disabled}
+        className={cn("cube-rn-view cube-rn-pressable", styling)}
+        {...(props as React.ComponentPropsWithoutRef<"button">)}
+      >
+        {body}
+      </button>
+    );
+  },
+);
+Button.displayName = "Button";
+
+export { Button, buttonTextVariants, buttonVariants };

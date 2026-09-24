@@ -1,15 +1,45 @@
-"use client";
-
 import { Popover as PopoverPrimitive } from "radix-ui";
-import * as React from "react";
+import type * as React from "react";
+import type {
+  PopoverAnchorProps,
+  PopoverCloseProps,
+  PopoverContentProps,
+  PopoverProps,
+  PopoverSectionProps,
+  PopoverTriggerProps,
+} from "@/components/ui/popover-base";
 import { cn } from "@/lib/utils";
 
-function Popover({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
-  return <PopoverPrimitive.Root data-slot="popover" {...props} />;
+/** The shared contract, widened to what the radix part (or element) underneath accepts. */
+type Wide<Base, Radix> = Base & Omit<Radix, keyof Base>;
+
+function Popover({
+  open,
+  onOpenChange,
+  defaultOpen,
+  ...props
+}: Wide<PopoverProps, React.ComponentProps<typeof PopoverPrimitive.Root>>) {
+  // Spread rather than passed: radix switches to uncontrolled on `open === undefined`,
+  // but only if the prop is absent, and `exactOptionalPropertyTypes` is what makes the
+  // difference expressible.
+  return (
+    <PopoverPrimitive.Root
+      data-slot="popover"
+      {...props}
+      {...(open === undefined ? {} : { open })}
+      {...(onOpenChange === undefined ? {} : { onOpenChange })}
+      {...(defaultOpen === undefined ? {} : { defaultOpen })}
+    />
+  );
 }
 
-function PopoverTrigger({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
-  return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
+function PopoverTrigger({
+  asChild,
+  ...props
+}: Wide<PopoverTriggerProps, React.ComponentProps<typeof PopoverPrimitive.Trigger>>) {
+  return (
+    <PopoverPrimitive.Trigger data-slot="popover-trigger" asChild={asChild ?? false} {...props} />
+  );
 }
 
 function PopoverContent({
@@ -17,7 +47,7 @@ function PopoverContent({
   align = "center",
   sideOffset = 4,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+}: Wide<PopoverContentProps, React.ComponentProps<typeof PopoverPrimitive.Content>>) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
@@ -25,7 +55,7 @@ function PopoverContent({
         align={align}
         sideOffset={sideOffset}
         className={cn(
-          "z-50 flex w-72 origin-(--radix-popover-content-transform-origin) flex-col gap-2.5 rounded-lg bg-popover p-2.5 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "z-50 w-72 rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
           className,
         )}
         {...props}
@@ -34,25 +64,54 @@ function PopoverContent({
   );
 }
 
-function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
-  return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />;
+function PopoverAnchor({
+  asChild,
+  ...props
+}: Wide<PopoverAnchorProps, React.ComponentProps<typeof PopoverPrimitive.Anchor>>) {
+  return (
+    <PopoverPrimitive.Anchor data-slot="popover-anchor" asChild={asChild ?? false} {...props} />
+  );
 }
 
-function PopoverHeader({ className, ...props }: React.ComponentProps<"div">) {
+function PopoverClose({
+  asChild,
+  className,
+  ...props
+}: Wide<PopoverCloseProps, React.ComponentProps<typeof PopoverPrimitive.Close>>) {
   return (
-    <div
-      data-slot="popover-header"
-      className={cn("flex flex-col gap-0.5 text-sm", className)}
+    <PopoverPrimitive.Close
+      data-slot="popover-close"
+      asChild={asChild ?? false}
+      {...(className === undefined ? {} : { className })}
       {...props}
     />
   );
 }
 
-function PopoverTitle({ className, ...props }: React.ComponentProps<"h2">) {
+function PopoverHeader({
+  className,
+  ...props
+}: Wide<PopoverSectionProps, React.ComponentProps<"div">>) {
+  return (
+    <div
+      data-slot="popover-header"
+      className={cn("flex flex-col gap-1 text-sm", className)}
+      {...props}
+    />
+  );
+}
+
+function PopoverTitle({
+  className,
+  ...props
+}: Wide<PopoverSectionProps, React.ComponentProps<"div">>) {
   return <div data-slot="popover-title" className={cn("font-medium", className)} {...props} />;
 }
 
-function PopoverDescription({ className, ...props }: React.ComponentProps<"p">) {
+function PopoverDescription({
+  className,
+  ...props
+}: Wide<PopoverSectionProps, React.ComponentProps<"p">>) {
   return (
     <p
       data-slot="popover-description"
@@ -65,6 +124,7 @@ function PopoverDescription({ className, ...props }: React.ComponentProps<"p">) 
 export {
   Popover,
   PopoverAnchor,
+  PopoverClose,
   PopoverContent,
   PopoverDescription,
   PopoverHeader,

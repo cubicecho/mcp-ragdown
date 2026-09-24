@@ -1,18 +1,64 @@
-import type * as React from "react";
+import type { ComponentPropsWithoutRef, HTMLInputTypeAttribute, Ref } from "react";
+import {
+  INPUT_CLASS,
+  type InputHandle,
+  type InputType,
+  type InputProps as SharedInputProps,
+} from "@/components/ui/input-base";
 import { cn } from "@/lib/utils";
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+/**
+ * The shared contract, widened to everything a DOM `<input>` takes.
+ *
+ * `onBlur`, `min`/`max`, `value` and `defaultValue` take the DOM's wider types — a `() => void` is
+ * still one, and a `string` is still a `string | number | readonly string[]` — and `type` is every
+ * DOM input type, of which `InputType` is the cross-platform part.
+ */
+export type InputProps = Omit<ComponentPropsWithoutRef<"input">, "type" | "className"> &
+  Omit<
+    SharedInputProps,
+    "type" | "ref" | "onBlur" | "min" | "max" | "inputMode" | "value" | "defaultValue"
+  > & {
+    type?: HTMLInputTypeAttribute | undefined;
+    ref?: Ref<HTMLInputElement> | Ref<InputHandle> | undefined;
+  };
+
+function Input({
+  className,
+  type = "text",
+  onChange,
+  onChangeText,
+  onKeyDown,
+  onSubmitEditing,
+  ref,
+  ...props
+}: InputProps) {
   return (
     <input
-      type={type}
+      // The element is the handle: it has `focus` and `select`, which is all `InputHandle` asks.
+      ref={ref as Ref<HTMLInputElement>}
       data-slot="input"
+      type={type}
+      onChange={(e) => {
+        onChange?.(e);
+        onChangeText?.(e.target.value);
+      }}
+      onKeyDown={(e) => {
+        onKeyDown?.(e);
+        if (e.key === "Enter" && onSubmitEditing && !e.defaultPrevented) {
+          e.preventDefault();
+          onSubmitEditing();
+        }
+      }}
+      {...props}
       className={cn(
-        "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
+        INPUT_CLASS,
+        "file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive",
         className,
       )}
-      {...props}
     />
   );
 }
 
+export type { InputHandle, InputType };
 export { Input };

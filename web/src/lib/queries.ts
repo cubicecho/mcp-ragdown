@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { getDoc, getStatus, listDocs } from "@/lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { deleteDoc, getDoc, getStatus, listDocs, uploadDoc } from "@/lib/api";
 
 /**
  * Polled, because the index follows the folder on its own: a file saved in an editor shows up
@@ -23,3 +23,22 @@ export const useDoc = (path: string | undefined) =>
     enabled: path !== undefined,
     refetchInterval: 15_000,
   });
+
+/** The server answers a write after the index has synced, so everything it touched is stale. */
+function useInvalidateDocs() {
+  const client = useQueryClient();
+  return () =>
+    Promise.all(
+      [["docs"], ["doc"], ["status"]].map((queryKey) => client.invalidateQueries({ queryKey })),
+    );
+}
+
+export const useUploadDoc = () => {
+  const invalidate = useInvalidateDocs();
+  return useMutation({ mutationFn: uploadDoc, onSettled: invalidate });
+};
+
+export const useDeleteDoc = () => {
+  const invalidate = useInvalidateDocs();
+  return useMutation({ mutationFn: deleteDoc, onSettled: invalidate });
+};
