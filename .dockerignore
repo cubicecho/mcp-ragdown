@@ -11,6 +11,7 @@ docs
 .git
 coverage
 web/dist
+site
 .env
 .env.local
 *.log
