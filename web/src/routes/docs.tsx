@@ -1,13 +1,14 @@
 import { getRouteApi, Link } from "@tanstack/react-router";
-import { Check, Copy, FileText, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
+import { FileText } from "@/components/app-icons";
 import { StickyHeaderContentFooter } from "@/components/header-content-footer";
 import { MarkdownPreview } from "@/components/markdown-preview";
 import { PageHeader } from "@/components/page-header";
 import { QueryError, QueryState } from "@/components/query-state";
 import { SidebarLayout } from "@/components/split-layout";
 import { Badge } from "@/components/ui/badge";
+import { Check, Copy, Search } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -111,7 +112,8 @@ function DocList({
               </p>
             }
           />
-          <ItemGroup>
+          {/* `ItemGroup` no longer claims `role="list"` itself; these rows are list items, so it does here. */}
+          <ItemGroup role="list">
             {rows.map((doc) => (
               <DocRow key={doc.path} doc={doc} active={doc.path === selected} />
             ))}

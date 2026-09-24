@@ -6,13 +6,13 @@ import { cn } from "@/lib/utils";
 
 type PasswordInputProps = Omit<ComponentProps<typeof Input>, "type"> & {
   /** The reveal button's name while the value is hidden. */
-  showLabel?: string;
+  showLabel?: string | undefined;
   /** And while it is showing. Both are announced; the icon alone says nothing. */
-  hideLabel?: string;
+  hideLabel?: string | undefined;
   /** Off, this is a plain `<Input type="password">` with no button. */
-  revealable?: boolean;
+  revealable?: boolean | undefined;
   /** The wrapper's class. `className` still goes to the input, as it does on any input. */
-  wrapperClassName?: string;
+  wrapperClassName?: string | undefined;
 };
 
 /**

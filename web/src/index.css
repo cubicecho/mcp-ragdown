@@ -1,5 +1,7 @@
 @import "tailwindcss";
-@import "tw-animate-css";
+/* cubeui's tokens bring tw-animate-css and the reset its compiled components need (`cube-rn-view`);
+   the palette below is declared after them, so it is the one that wins. */
+@import "../cubeui-tokens.css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 

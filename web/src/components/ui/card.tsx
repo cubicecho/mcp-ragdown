@@ -1,87 +1,140 @@
-import type * as React from "react";
+import * as React from "react";
+import { ColorBar } from "@/components/ui/color-bar";
 import { cn } from "@/lib/utils";
 
-function Card({
-  className,
-  size = "default",
-  ...props
-}: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
-  return (
-    <div
-      data-slot="card"
-      data-size={size}
-      className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
+// `className` is re-declared rather than inherited: nativewind types it as
+// `className?: string`, which under `exactOptionalPropertyTypes` rejects the
+// conditional `cond ? 'x' : undefined` several call sites pass.
+type ViewProps = Omit<React.ComponentPropsWithoutRef<"div">, "className"> & {
+  className?: string | undefined;
+};
+type TextProps = Omit<React.ComponentPropsWithoutRef<"span">, "className"> & {
+  className?: string | undefined;
+};
 
-function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-header"
-      className={cn(
-        "group/card-header @container/card-header grid auto-rows-min items-start gap-1 rounded-t-xl px-(--card-spacing) has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto] [.border-b]:pb-(--card-spacing)",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
+type CardProps = ViewProps & {
+  /** Renders a left-edge ColorBar along with the positioning it requires. */
+  accentColor?: string | null | undefined;
+  /** What the accent colour stands for, for anyone who cannot see it. */
+  accentLabel?: string | undefined;
+  /**
+   * Makes the whole card a target. A card that takes this renders a
+   * `Pressable` instead of a `View` — a `View` has no press handling on
+   * native, and an `onClick` on a plain `div` is not reachable by keyboard.
+   */
+  onClick?: React.ComponentPropsWithoutRef<"button">["onClick"] | undefined;
+};
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-title"
-      className={cn(
-        "font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
+const Card = React.forwardRef<HTMLDivElement, CardProps>(
+  ({ className, accentColor, accentLabel, onClick: onPress, children, ...props }, ref) => {
+    const classes = cn(
+      "rounded-lg border border-border bg-card text-card-foreground shadow-sm",
+      accentColor && "relative overflow-hidden",
+      className,
+    );
+    const inner = (
+      <>
+        <ColorBar color={accentColor} label={accentLabel} />
+        {children}
+      </>
+    );
 
-function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-description"
-      className={cn("text-sm text-muted-foreground", className)}
-      {...props}
-    />
-  );
-}
+    // The two containers are written out rather than picked with `const Container = onPress ?
+    // Pressable : View`. They do not actually share a prop list — only one of them takes a press
+    // handler — and `rn2web` refuses an element chosen at runtime, because the tag it emits, the
+    // reset class it carries and the role it infers all follow from knowing which one it is.
+    if (onPress) {
+      return (
+        <button
+          type="button"
+          ref={ref as React.Ref<HTMLButtonElement>}
+          onClick={onPress}
+          className={cn("cube-rn-view cube-rn-pressable", classes)}
+          {...(props as React.ComponentPropsWithoutRef<"button">)}
+        >
+          {inner}
+        </button>
+      );
+    }
+    return (
+      <div
+        ref={ref as React.Ref<HTMLDivElement>}
+        className={cn("cube-rn-view", classes)}
+        {...(props as React.ComponentPropsWithoutRef<"div">)}
+      >
+        {inner}
+      </div>
+    );
+  },
+);
+Card.displayName = "Card";
 
-function CardAction({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-action"
-      className={cn("col-start-2 row-span-2 row-start-1 self-start justify-self-end", className)}
-      {...props}
-    />
-  );
-}
+const CardHeader = React.forwardRef<HTMLDivElement, ViewProps>(({ className, ...props }, ref) => (
+  <div
+    ref={ref as React.Ref<HTMLDivElement>}
+    className={cn("cube-rn-view", "flex flex-col gap-1.5 p-6", className)}
+    {...(props as React.ComponentPropsWithoutRef<"div">)}
+  />
+));
+CardHeader.displayName = "CardHeader";
 
-function CardContent({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div data-slot="card-content" className={cn("px-(--card-spacing)", className)} {...props} />
-  );
-}
+const CardTitle = React.forwardRef<HTMLSpanElement, TextProps>(({ className, ...props }, ref) => (
+  <h3
+    ref={ref as React.Ref<HTMLHeadingElement>}
+    className={cn(
+      "cube-rn-text",
+      "text-2xl font-semibold leading-none tracking-tight text-card-foreground",
+      className,
+    )}
+    {...(props as React.ComponentPropsWithoutRef<"h3">)}
+  />
+));
+CardTitle.displayName = "CardTitle";
 
-function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-footer"
-      className={cn(
-        "flex items-center rounded-b-xl border-t bg-muted/50 p-(--card-spacing)",
-        className,
-      )}
-      {...props}
+const CardDescription = React.forwardRef<HTMLSpanElement, TextProps>(
+  ({ className, ...props }, ref) => (
+    <span
+      ref={ref as React.Ref<HTMLSpanElement>}
+      className={cn("cube-rn-text", "text-sm text-muted-foreground", className)}
+      {...(props as React.ComponentPropsWithoutRef<"span">)}
     />
-  );
-}
+  ),
+);
+CardDescription.displayName = "CardDescription";
+
+const CardContent = React.forwardRef<HTMLDivElement, ViewProps>(({ className, ...props }, ref) => (
+  <div
+    ref={ref as React.Ref<HTMLDivElement>}
+    className={cn("cube-rn-view", "p-6 pt-0", className)}
+    {...(props as React.ComponentPropsWithoutRef<"div">)}
+  />
+));
+CardContent.displayName = "CardContent";
+
+const CardFooter = React.forwardRef<HTMLDivElement, ViewProps>(({ className, ...props }, ref) => (
+  <div
+    ref={ref as React.Ref<HTMLDivElement>}
+    className={cn("cube-rn-view", "flex flex-row items-center p-6 pt-0", className)}
+    {...(props as React.ComponentPropsWithoutRef<"div">)}
+  />
+));
+CardFooter.displayName = "CardFooter";
+
+/**
+ * The header's trailing slot — a menu button, a status chip.
+ *
+ * shadcn's web `CardHeader` is a grid and `CardAction` places itself in its second
+ * column with `col-start-2 row-span-2 self-start justify-self-end`. Yoga has no grid,
+ * so the same position is a self-aligned absolute box: the header already reserves its
+ * right padding, and the action is the only thing that sits there.
+ */
+const CardAction = React.forwardRef<HTMLDivElement, ViewProps>(({ className, ...props }, ref) => (
+  <div
+    ref={ref as React.Ref<HTMLDivElement>}
+    className={cn("cube-rn-view", "absolute right-6 top-6 items-end", className)}
+    {...(props as React.ComponentPropsWithoutRef<"div">)}
+  />
+));
+CardAction.displayName = "CardAction";
 
 export { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle };

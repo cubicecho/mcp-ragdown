@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { KeyRound } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
+import { KeyRound } from "@/components/app-icons";
 import { CardLayout } from "@/components/card-layout";
 import { FormField } from "@/components/form-field";
 import { PasswordInput } from "@/components/password-input";
