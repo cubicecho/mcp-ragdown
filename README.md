@@ -1,5 +1,8 @@
 # mcp-ragdown
 
+**Website:** [cubicecho.github.io/mcp-ragdown](https://cubicecho.github.io/mcp-ragdown/): an
+overview, a walkthrough and a condensed reference.
+
 An MCP server over folders of Markdown files. Point it at a directory and it embeds every section
 into a local LanceDB index and keeps that index in sync as files change. Each top-level folder is
 its own MCP server, off until you turn it on, and each one opens as an Obsidian vault. Agents get

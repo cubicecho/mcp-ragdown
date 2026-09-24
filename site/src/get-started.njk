@@ -1,0 +1,200 @@
+---
+layout: base.njk
+title: Get started
+description: A step-by-step walkthrough — run mcp-ragdown over stdio with Claude Code, then in Docker with a token and the web UI, then add notes to every turn with a hook.
+permalink: /get-started/
+---
+
+<section class="section gs-intro">
+  <div class="wrap">
+    <p class="eyebrow">Get started</p>
+    <h1>From a folder of notes to agents that read them</h1>
+    <p class="lede">
+      This walkthrough starts with the smallest setup — a local stdio server for Claude Code — then moves to the
+      Docker image with a token and the web UI, and ends with a hook that adds related notes to every turn. The
+      screenshots show the web UI in light mode.
+    </p>
+    <nav class="gs-toc">
+      <a href="#stdio">1 · Local, over stdio</a>
+      <a href="#docker">2 · Docker with a token</a>
+      <a href="#connect">3 · Connect over HTTP</a>
+      <a href="#web-ui">4 · Open the web UI</a>
+      <a href="#manage">5 · Upload and delete</a>
+      <a href="#settings">6 · Check the settings</a>
+      <a href="#scopes">7 · One folder per agent</a>
+      <a href="#hook">8 · Add a hook</a>
+    </nav>
+  </div>
+</section>
+
+<section class="section" style="padding-top: 0;">
+  <div class="wrap">
+
+    <!-- Step 1 -->
+    <div class="step" id="stdio">
+      <div class="step-head"><span class="step-num">1</span><h2>Run it locally with Claude Code</h2></div>
+      <p>With Node 26+, which runs the TypeScript directly, clone the repo and register it as a stdio server. Point
+        <code>RAGDOWN_DOCS_DIR</code> at your Markdown folder — it is the only required setting:</p>
+      <pre class="code"><code>git clone {{ site.repo }} &amp;&amp; cd mcp-ragdown
+npm install
+claude mcp add ragdown -e RAGDOWN_DOCS_DIR=$HOME/notes -- node $PWD/src/cli.ts stdio</code></pre>
+      <p>On first start the default embedder (about 50 MB) downloads once, then the folder is indexed into
+        <code>~/.cache/ragdown/</code>. Claude now has <code>ragdown_recall</code> and <code>ragdown_read_doc</code>,
+        and calls them itself when the notes might help. Ask it something your notes answer.</p>
+      <p class="callout"><strong>Several windows, one index.</strong> Open as many Claude Code sessions on the same
+        folder as you like: the first process becomes the primary and indexes and watches; the rest are readers that
+        search the same index.</p>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="step" id="docker">
+      <div class="step-head"><span class="step-num">2</span><h2>Run the Docker image with a token</h2></div>
+      <p>To share the notes with other machines or agents, run <code>serve</code>, which the image does by default.
+        It has the default model baked in, so it starts offline. Save this as <code>docker-compose.yml</code>:</p>
+      <pre class="code"><code>services:
+  ragdown:
+    image: {{ site.dockerImage }}:latest
+    ports:
+      - '3300:3000'
+    volumes:
+      - ~/notes:/docs          <span class="cmt"># add :ro and RAGDOWN_READ_ONLY=true to forbid writes</span>
+      - ragdown-data:/data     <span class="cmt"># the index, so restarts only diff</span>
+    environment:
+      RAGDOWN_TOKEN: ${RAGDOWN_TOKEN}
+    restart: unless-stopped
+
+volumes:
+  ragdown-data:</code></pre>
+      <pre class="code"><code>export RAGDOWN_TOKEN=$(openssl rand -hex 32)   <span class="cmt"># keep it; clients need it too</span>
+docker compose up -d
+curl localhost:3300/api/status                  <span class="cmt"># "ready": true, and the file and chunk counts</span></code></pre>
+      <p>Without Docker, the same server is
+        <code>RAGDOWN_DOCS_DIR=~/notes RAGDOWN_TOKEN=… node src/cli.ts serve</code> after <code>npm run build</code>
+        (which builds the web UI).</p>
+      <p class="callout"><strong>No token?</strong> <code>serve</code> refuses to start without
+        <code>RAGDOWN_TOKEN</code> unless <code>SECURE_LOCAL_NET=true</code>, which skips auth for a trusted
+        network. The first index of a large folder takes minutes; searches answer from what is indexed so far.</p>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="step" id="connect">
+      <div class="step-head"><span class="step-num">3</span><h2>Connect a client over HTTP</h2></div>
+      <p>Point Claude Code — or any streamable-HTTP MCP client — at <code>/mcp</code> with the token:</p>
+      <pre class="code"><code>claude mcp add --transport http ragdown http://localhost:3300/mcp \
+  --header "Authorization: Bearer $RAGDOWN_TOKEN"</code></pre>
+      <p>The same six tools as over stdio: search, read, stats, and — unless read-only — <code>ragdown_remember</code>
+        to save a note and <code>ragdown_reindex</code> to sync on demand.</p>
+    </div>
+
+    <!-- Step 4 -->
+    <div class="step" id="web-ui">
+      <div class="step-head"><span class="step-num">4</span><h2>Open the web UI</h2></div>
+      <p>Visit <code>http://localhost:3300</code> and paste the token once; the browser keeps it. The
+        <strong>Documents</strong> page lists every indexed file. Filter by title or path, and click one to read it
+        rendered beside the list, with its size, line count and how many chunks it became.</p>
+      <figure class="shot">
+        <div class="browser">
+          <div class="browser-bar"><span></span><span></span><span></span><em>localhost:3300/?doc=runbooks/backups.md</em></div>
+          <img class="zoomable" src="{{ '/assets/screenshots/documents.png' | url }}"
+            alt="The Documents page with runbooks/backups.md open in the preview"
+            loading="lazy" width="1440" height="900" />
+        </div>
+        <figcaption>The sidebar shows the last sync, the file and chunk counts, and the embedder in use.</figcaption>
+      </figure>
+    </div>
+
+    <!-- Step 5 -->
+    <div class="step" id="manage">
+      <div class="step-head"><span class="step-num">5</span><h2>Upload and delete notes</h2></div>
+      <p>The upload button above the list opens <strong>Upload Markdown</strong>. Pick <code>.md</code>,
+        <code>.markdown</code> or <code>.mdx</code> files, one pick at a time, and optionally a folder to put them
+        under — missing folders are created. The upload returns once the files are indexed. A file that already
+        exists is not replaced unasked: it stays in the list with an <strong>Overwrite</strong> button.</p>
+      <figure class="shot">
+        <div class="browser">
+          <div class="browser-bar"><span></span><span></span><span></span><em>Upload Markdown</em></div>
+          <img class="zoomable" src="{{ '/assets/screenshots/upload.png' | url }}"
+            alt="The Upload Markdown dialog with the folder notes/reviews and one picked file"
+            loading="lazy" width="1440" height="900" />
+        </div>
+        <figcaption>Uploads go into the docs folder itself, so they are ordinary Markdown files from then on.</figcaption>
+      </figure>
+      <p>The trash button on a previewed file deletes it from the docs folder — not only from the index — after a
+        confirmation.</p>
+      <figure class="shot">
+        <div class="browser">
+          <div class="browser-bar"><span></span><span></span><span></span><em>Delete this document?</em></div>
+          <img class="zoomable" src="{{ '/assets/screenshots/delete-confirm.png' | url }}"
+            alt="The confirmation shown before deleting runbooks/backups.md"
+            loading="lazy" width="1440" height="900" />
+        </div>
+        <figcaption>Under <code>RAGDOWN_READ_ONLY=true</code> both upload and delete are refused.</figcaption>
+      </figure>
+    </div>
+
+    <!-- Step 6 -->
+    <div class="step" id="settings">
+      <div class="step-head"><span class="step-num">6</span><h2>Check the settings</h2></div>
+      <p>The <strong>Settings</strong> page holds this browser's theme and stored token, and shows how the server is
+        set up: the docs folder, embedder, role, read-only and watch flags, the last sync, and the search defaults a
+        hook gets. Server values come from environment variables at start, so change one and restart to apply it.</p>
+      <figure class="shot">
+        <div class="browser">
+          <div class="browser-bar"><span></span><span></span><span></span><em>localhost:3300/settings</em></div>
+          <img class="zoomable" src="{{ '/assets/screenshots/settings.png' | url }}"
+            alt="The Settings page: appearance, access, the index card and the search defaults"
+            loading="lazy" width="1440" height="1660" />
+        </div>
+        <figcaption>Each server value names the environment variable it comes from.</figcaption>
+      </figure>
+    </div>
+
+    <!-- Step 7 -->
+    <div class="step" id="scopes">
+      <div class="step-head"><span class="step-num">7</span><h2>Give each agent one folder</h2></div>
+      <p><code>/mcp/&lt;folder&gt;</code> serves the same tools with that folder as the root: searches stay inside it,
+        paths are relative to it, and <code>ragdown_remember</code> writes into it. Any folder the indexer walks
+        works, with nothing to configure:</p>
+      <pre class="code"><code>claude mcp add --transport http notes-alpha http://localhost:3300/mcp/projects/alpha \
+  --header "Authorization: Bearer $RAGDOWN_TOKEN"</code></pre>
+      <p class="callout"><strong>Focused, not fenced.</strong> A scope keeps an agent on its project's notes, but the
+        token that opens <code>/mcp/projects/alpha</code> also opens <code>/mcp</code>.</p>
+    </div>
+
+    <!-- Step 8 -->
+    <div class="step" id="hook">
+      <div class="step-head"><span class="step-num">8</span><h2>Add notes to every turn with a hook</h2></div>
+      <p>For context without the model having to ask, a hook calls <code>ragdown_context</code> before each turn.
+        It is an MCP tool like the others, so it needs a client whose hooks call MCP tools — min-agent does. There is no
+        hook command to wire into Claude Code; there, Claude calls <code>ragdown_recall</code> itself. In min-agent, add the server under <strong>Settings → MCP</strong>:</p>
+      <pre class="code"><code>{
+  "id": "ragdown",
+  "label": "Notes",
+  "transport": "http",
+  "url": "http://localhost:3300/mcp",
+  "headers": { "Authorization": "Bearer &lt;RAGDOWN_TOKEN&gt;" },
+  "hiddenTools": ["ragdown_context"],
+  "hooks": [
+    { "id": "notes", "on": "beforeTurn", "tool": "ragdown_context", "inject": true, "maxTokens": 800,
+      "args": { "prompt": "{% raw %}{{prompt}}{% endraw %}", "session_id": "min-agent:{% raw %}{{session.id}}{% endraw %}", "max_chars": 3000 } }
+  ]
+}</code></pre>
+      <p>The hook sends the user's message. <code>ragdown_context</code> returns the sections that clear the
+        similarity bar, wrapped in <code>&lt;ragdown-context&gt;</code>, or empty text when nothing fits. It skips short
+        prompts and slash commands, and never returns the same section twice in one session, so a long chat pays for
+        each note once. <code>hiddenTools</code> keeps the hook's tool away from the model, which has
+        <code>ragdown_recall</code>.</p>
+    </div>
+
+    <div class="step" style="text-align: center;">
+      <h2 style="margin: 0 0 10px;">That's it — your notes are in the loop.</h2>
+      <p style="margin: 0 auto 22px; max-width: 60ch;">Keep writing Markdown; the index follows. For every tool,
+        setting and route — and how to pick an embedder — read the docs.</p>
+      <div class="cta-row" style="justify-content: center;">
+        <a class="btn btn-primary" href="{{ '/docs/' | url }}">Read the docs</a>
+        <a class="btn btn-ghost" href="{{ site.repo }}">GitHub ↗</a>
+      </div>
+    </div>
+
+  </div>
+</section>
