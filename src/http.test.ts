@@ -45,6 +45,15 @@ describe("HTTP server", () => {
       auth_required: boolean;
     };
     expect(status).toMatchObject({ name: "ragdown", ready: true, files: 1, chunks: 1 });
+    expect(status).toMatchObject({
+      settings: {
+        watch: false,
+        text_limit: 2000,
+        hook: { top_k: 4, min_score: 0.2, min_ratio: 0, max_chars: 6000 },
+      },
+    });
+    // Open to anyone who can reach the port, so nothing secret may ride along.
+    expect(JSON.stringify(status)).not.toContain("secret");
 
     const post = (path: string, token?: string) =>
       fetch(`${t.url}${path}`, {

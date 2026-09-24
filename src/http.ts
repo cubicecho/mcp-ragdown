@@ -81,6 +81,23 @@ export function assertAuthConfigured(config: Config): void {
   }
 }
 
+/**
+ * The settings the web UI shows, read from the environment at start. Served unauthenticated with
+ * the status, so only tuning numbers belong here: never the token, a key, or an endpoint URL.
+ */
+function publicSettings(config: Config) {
+  return {
+    watch: config.watch,
+    text_limit: config.textLimit,
+    hook: {
+      top_k: config.hook.topK,
+      min_score: config.hook.minScore,
+      min_ratio: config.hook.minRatio,
+      max_chars: config.hook.maxChars,
+    },
+  };
+}
+
 async function handle(
   ready: Promise<Ragdown>,
   config: Config,
@@ -98,6 +115,7 @@ async function handle(
       version: VERSION,
       ready: rag !== undefined,
       auth_required: !config.http.secureLocalNet,
+      settings: publicSettings(config),
       ...(rag ? await rag.stats(false) : {}),
     });
     return;

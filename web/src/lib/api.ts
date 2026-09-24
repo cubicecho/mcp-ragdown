@@ -6,6 +6,13 @@ export interface Status {
   version: string;
   ready: boolean;
   auth_required: boolean;
+  /** Read from the environment at start and never changed at runtime; nothing secret. */
+  settings: {
+    watch: boolean;
+    text_limit: number;
+    /** `ragdown_context`'s defaults, which a hook's own arguments override. */
+    hook: { top_k: number; min_score: number; min_ratio: number; max_chars: number };
+  };
   docs_dir?: string;
   role?: "primary" | "reader";
   embedder?: string;

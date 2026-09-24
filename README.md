@@ -175,7 +175,7 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 
 | Route | Auth | |
 | --- | --- | --- |
-| `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. |
+| `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. `settings` holds the non-secret tuning values (`RAGDOWN_WATCH`, `RAGDOWN_TEXT_LIMIT`, `RAGDOWN_HOOK_*`) for the web UI's Settings page. |
 | `/mcp` | bearer | Streamable HTTP MCP, stateless. |
 | `/mcp/<folder>` | bearer | The same, scoped to one folder. 404 for a folder that is not one. See [Scopes](#scopes-one-folder-per-project-or-agent). |
 | `GET /api/docs` | bearer | The indexed files: `path`, `title`, `mtime_ms`, `size`, `chunks`. |

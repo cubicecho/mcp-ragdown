@@ -67,6 +67,16 @@
       "linter": {
         "enabled": false
       }
+    },
+    {
+      "includes": ["web/src/components/section.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useSemanticElements": "off"
+          }
+        }
+      }
     }
   ]
 }

@@ -1,15 +1,19 @@
-import { createLink, Outlet, useMatchRoute } from "@tanstack/react-router";
+import { createLink, Link, Outlet, useMatchRoute } from "@tanstack/react-router";
 import { ActionButton } from "@/components/action-button";
 import { FileText, Library, Lock } from "@/components/app-icons";
 import { Sidebar, SidebarNavItem, SidebarSection } from "@/components/sidebar";
 import { SidebarLayout } from "@/components/split-layout";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Settings } from "@/components/ui/icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { clearToken, requireAuth } from "@/lib/auth";
 import { formatAgo, formatCount } from "@/lib/format";
 import { useStatus } from "@/lib/queries";
 
-const NAV = [{ to: "/", label: "Documents", icon: FileText }] as const;
+const NAV = [
+  { to: "/", label: "Documents", icon: FileText },
+  { to: "/settings", label: "Settings", icon: Settings },
+] as const;
 
 /** The row, handed the router's `href` and click handler so it navigates without a reload. */
 const SidebarLink = createLink(SidebarNavItem);
@@ -104,7 +108,8 @@ function Nav() {
             href={to}
             label={label}
             icon={<Icon />}
-            active={Boolean(matchRoute({ to }))}
+            // Exact for `/`, or Documents would also light up on `/settings`.
+            active={Boolean(matchRoute({ to, fuzzy: to !== "/" }))}
           />
         ))}
       />
@@ -147,6 +152,14 @@ export function AppShell() {
           <header className="flex items-center gap-2 border-b px-4 py-2 md:hidden">
             <Brand />
             <div className="ml-auto flex items-center gap-1">
+              <Link
+                to="/settings"
+                aria-label="Settings"
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                activeProps={{ className: "bg-accent text-accent-foreground" }}
+              >
+                <Settings className="size-4" aria-hidden />
+              </Link>
               <LockButton />
               <div className="w-24">
                 <ThemeToggle />
