@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { breadcrumb, chunkMarkdown, embeddingText, readSupersedes } from "./chunk.ts";
+import { breadcrumb, chunkMarkdown, embeddingText, readDocMeta, readSupersedes } from "./chunk.ts";
 
 describe("chunkMarkdown", () => {
   it("scopes chunks by heading with a breadcrumb and original line numbers", () => {
@@ -116,5 +116,42 @@ describe("readSupersedes", () => {
     expect(readSupersedes(front("supersedes:\n  - old.md\ntags: [a]"), "new.md")).toEqual([
       "old.md",
     ]);
+  });
+});
+
+describe("readDocMeta", () => {
+  it("reads frontmatter and inline tags and aliases the way Obsidian does", () => {
+    const source = [
+      "---",
+      "tags: [Ops, '#infra/db']",
+      "aliases:",
+      "  - Elephant",
+      '  - "The DB"',
+      "---",
+      "# Postgres #heading-tag",
+      "",
+      "Vacuum nightly #maintenance and #2024 but not a#b or `#code`.",
+      "",
+      "```",
+      "#include <stdio.h>",
+      "```",
+      "See https://example.com/#anchor and #nested/child/.",
+    ].join("\n");
+    expect(readDocMeta(source)).toEqual({
+      tags: ["heading-tag", "infra/db", "maintenance", "nested/child", "ops"],
+      aliases: ["Elephant", "The DB"],
+    });
+  });
+
+  it("splits a tag string and keeps a string alias whole", () => {
+    const source = ["---", "tags: one, two three", "aliases: Big, Old Name", "---", "x"].join("\n");
+    expect(readDocMeta(source)).toEqual({
+      tags: ["one", "three", "two"],
+      aliases: ["Big, Old Name"],
+    });
+  });
+
+  it("finds nothing in a plain note", () => {
+    expect(readDocMeta("# Title\n\nText.")).toEqual({ tags: [], aliases: [] });
   });
 });

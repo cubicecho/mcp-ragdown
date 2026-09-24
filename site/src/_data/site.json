@@ -1,7 +1,7 @@
 {
   "name": "MCP Ragdown",
   "tagline": "Your Markdown notes, searchable by every agent.",
-  "description": "An MCP server over a folder of Markdown files: it chunks them by heading, embeds the chunks into a local LanceDB index kept in sync with the folder, and serves hybrid search — plus a ragdown_context tool that lets a prompt hook add related notes to every turn. The files stay the source of truth; the index is disposable.",
+  "description": "An MCP server over folders of Markdown files: it chunks them by heading, embeds the chunks into a local LanceDB index kept in sync with the files, and serves hybrid search per folder — plus a ragdown_context tool that lets a prompt hook add related notes to every turn. The files stay the source of truth; the index is disposable.",
   "repo": "https://github.com/cubicecho/mcp-ragdown",
   "url": "https://cubicecho.github.io/mcp-ragdown",
   "dockerHub": "https://hub.docker.com/r/vantreeseba/mcp-ragdown",

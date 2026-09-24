@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import type { Dirent } from "node:fs";
 import {
   lstat,
   mkdir,
+  readdir,
   readFile,
   realpath,
   rename,
@@ -15,6 +17,7 @@ import { isInside } from "./config.ts";
 import type { Ragdown } from "./engine.ts";
 import { formatHit } from "./format.ts";
 import { MARKDOWN } from "./indexer.ts";
+import { type ResolvedLink, resolveLink } from "./links.ts";
 import type { Hit } from "./store.ts";
 
 /** Sessions whose returned chunks are remembered; past this the oldest is forgotten. */
@@ -53,23 +56,30 @@ export class SessionMemory {
 }
 
 /**
- * The notes as one MCP endpoint sees them: the whole docs folder (`dir` is empty, `/mcp`) or one
- * folder inside it (`/mcp/projects/foo`), as if that folder were the root. Every path going in is
- * relative to the scope and every path coming out is made relative to it, so an agent on a scope
- * cannot tell there is anything above it. It is not a security boundary: the same token reaches
- * `/mcp`.
+ * The notes as one endpoint sees them, as if its directory were the root: a folder (`/mcp/work`),
+ * a subfolder inside one (`/mcp/work/projects/foo`), the whole docs dir in single mode (`stdio`),
+ * or — for the web UI only — every folder at once. Every path going in is relative to the scope and
+ * every path coming out is made relative to it, so an agent on a scope cannot tell there is
+ * anything above it. It is not a security boundary between endpoints that share a token; whether a
+ * folder has an endpoint at all is decided in `http.ts`.
  */
 export class Scope {
   readonly rag: Ragdown;
-  /** The folder relative to the docs root, with `/` separators; empty for the root. */
+  /** The directory relative to the docs root, with `/` separators; empty for the root. */
   readonly dir: string;
-  /** The folder's absolute path. */
+  /** The directory's absolute path. */
   readonly root: string;
+  /**
+   * The folder the scope is in, relative to the docs root: its first segment in folders mode, and
+   * empty — the docs dir is the folder — in single mode or at the root. Wikilinks resolve within it.
+   */
+  readonly folder: string;
 
   constructor(rag: Ragdown, dir = "") {
     this.rag = rag;
     this.dir = dir;
     this.root = resolve(rag.config.docsDir, dir);
+    this.folder = rag.config.mode === "folders" ? (dir.split("/")[0] ?? "") : "";
   }
 
   get config() {
@@ -81,10 +91,11 @@ export class Scope {
    * far) beats a hook that times out.
    *
    * @param pathPrefix limits the search to files under this folder, relative to the scope.
+   * @param tag limits it to notes with this tag or one nested under it.
    */
-  async recall(query: string, topK: number, pathPrefix?: string): Promise<Hit[]> {
+  async recall(query: string, topK: number, pathPrefix?: string, tag?: string): Promise<Hit[]> {
     const folder = [this.dir, normalizeFolder(pathPrefix)].filter(Boolean).join("/");
-    const hits = await this.rag.recall(query, topK, folder ? `${folder}/` : undefined);
+    const hits = await this.rag.recall(query, topK, folder ? `${folder}/` : undefined, tag);
     return hits.map((hit) => ({ ...hit, path: this.toScoped(hit.path) }));
   }
 
@@ -140,20 +151,82 @@ export class Scope {
   /**
    * Read a file from the folder: the source, not the index, so it is current even mid-sync. Never
    * clipped — it is what a clipped hit points at.
+   *
+   * A path that names no file is tried as a wikilink target (`Note`, `Note#Heading`, `sub/Note`);
+   * a heading narrows the text to that section unless a line range is given.
    */
   async readDoc(path: string, startLine?: number, endLine?: number) {
-    const full = resolve(this.root, path);
+    let full = resolve(this.root, path);
     if (!isInside(this.root, full)) throw new Error(`path is outside the docs folder: ${path}`);
+    let anchor: string | undefined;
+    let resolvedFrom: string | undefined;
+    if (!(await stat(full).catch(() => undefined))?.isFile()) {
+      const link = await this.resolveLink(path);
+      if (!link || !MARKDOWN.test(link.path)) {
+        throw new Error(`no such note: ${path} (not a path, and no note by that name or alias)`);
+      }
+      full = resolve(this.root, link.path);
+      anchor = link.anchor;
+      resolvedFrom = path;
+    }
     const lines = (await readFile(full, "utf8")).split(/\r?\n/);
-    const start = Math.max(1, startLine ?? 1);
-    const end = Math.min(lines.length, endLine ?? lines.length);
+    const section =
+      anchor && startLine === undefined && endLine === undefined
+        ? headingRange(lines, anchor)
+        : undefined;
+    const start = Math.max(1, startLine ?? section?.start ?? 1);
+    const end = Math.min(lines.length, endLine ?? section?.end ?? lines.length);
     return {
-      path: relative(this.root, full),
+      path: toPosix(relative(this.root, full)),
+      ...(resolvedFrom ? { resolved_from: resolvedFrom } : {}),
       start_line: start,
       end_line: end,
       total_lines: lines.length,
       text: lines.slice(start - 1, end).join("\n"),
     };
+  }
+
+  /**
+   * Resolve a wikilink target within the scope's folder, Obsidian-style (`links.ts`). A target the
+   * folder has but this scope does not (a subfolder endpoint linking above itself) is not found.
+   *
+   * @param from the linking note, relative to the scope; decides ties and relative links.
+   * @returns the path relative to the scope: a note, or with `attachments`, any file.
+   */
+  async resolveLink(
+    raw: string,
+    from?: string,
+    attachments = false,
+  ): Promise<ResolvedLink | undefined> {
+    const prefix = this.folder ? `${this.folder}/` : "";
+    const notes = (await this.rag.documents())
+      .filter((doc) => doc.path.startsWith(prefix))
+      .map((doc) => ({ path: doc.path.slice(prefix.length), aliases: doc.aliases }));
+    const others = attachments
+      ? await listAttachments(resolve(this.rag.config.docsDir, this.folder))
+      : [];
+    const fromInFolder = from
+      ? [this.dir.slice(prefix.length), from].filter(Boolean).join("/").replace(/^\//, "")
+      : undefined;
+    const link = resolveLink(raw, fromInFolder, notes, others);
+    if (!link) return undefined;
+    const rootPath = `${prefix}${link.path}`;
+    if (this.dir && !rootPath.startsWith(`${this.dir}/`)) return undefined;
+    return { ...link, path: this.toScoped(rootPath) };
+  }
+
+  /**
+   * A file inside the scope for the web UI to download — a note or an attachment. Refused like a
+   * write (`resolvePath`): nothing under a dot-folder, and no symlink anywhere on the path.
+   *
+   * @throws with `status: 400` for such a path and `404` for no such file.
+   */
+  async fileFor(path: string): Promise<string> {
+    const { full } = await this.resolvePath(path, { create: false, markdownOnly: false });
+    if (!(await lstat(full).catch(() => undefined))?.isFile()) {
+      throw Object.assign(new Error(`no such file: ${path}`), { status: 404 });
+    }
+    return full;
   }
 
   /**
@@ -164,15 +237,18 @@ export class Scope {
    */
   async readIndexedDoc(path: string) {
     const full = resolve(this.root, path);
-    if (!(await this.rag.files()).has(relative(this.rag.config.docsDir, full))) {
+    const rootPath = toPosix(relative(this.rag.config.docsDir, full));
+    const doc = (await this.rag.documents()).find((d) => d.path === rootPath);
+    if (!doc) {
       throw Object.assign(new Error(`not an indexed document: ${path}`), { status: 404 });
     }
-    return this.readDoc(path);
+    return { ...(await this.readDoc(path)), tags: doc.tags, aliases: doc.aliases };
   }
 
   /**
-   * Write a new note and index it before returning. At the root it goes under `RAGDOWN_NOTES_DIR`;
-   * in a scope, in the scope's own folder, which is already where that project's notes live.
+   * Write a new note and index it before returning. At a folder's root it goes under
+   * `RAGDOWN_NOTES_DIR`; in a subfolder, in the subfolder itself, which is already where that
+   * project's notes live.
    *
    * @param name file name without extension; defaults to the date and a slug of the title. An
    *   existing file is never overwritten: a numeric suffix is added instead.
@@ -184,7 +260,8 @@ export class Scope {
     name?: string,
     options: { supersedes?: string[]; sessionId?: string } = {},
   ) {
-    const notesDir = this.dir ? this.root : this.config.notesDir;
+    const notesDir =
+      this.dir === this.folder ? resolve(this.root, this.config.notesDir) : this.root;
     const date = new Date().toISOString().slice(0, 10);
     const base = name ?? `${date}-${slug(title)}`;
 
@@ -256,7 +333,7 @@ export class Scope {
    *   `409` for an existing file without `overwrite`, or a folder where the file would go.
    */
   async writeDoc(path: string, text: string, overwrite = false) {
-    const { full, relPath } = await this.resolveWritable(path, true);
+    const { full, relPath } = await this.resolvePath(path, { create: true, markdownOnly: true });
     const existing = await lstat(full).catch(() => undefined);
     if (existing && !existing.isFile()) {
       throw Object.assign(new Error(`not a file: ${path}`), { status: 409 });
@@ -292,7 +369,7 @@ export class Scope {
    * @throws with `status: 400` for a path the indexer would not index, and `404` for no such file.
    */
   async deleteDoc(path: string) {
-    const { full, relPath } = await this.resolveWritable(path, false);
+    const { full, relPath } = await this.resolvePath(path, { create: false, markdownOnly: true });
     if (!(await lstat(full).catch(() => undefined))?.isFile()) {
       throw Object.assign(new Error(`no such document: ${path}`), { status: 404 });
     }
@@ -301,15 +378,18 @@ export class Scope {
   }
 
   /**
-   * Resolve a path a client wants to write or delete, relative to the scope. Refused with a 400
-   * unless the indexer would index a file there: a Markdown extension, no dot-segment or
-   * `node_modules`, inside the folder, and no symlink or file on the way — the indexer does not
-   * follow symlinks, and a write through one could land outside the docs. Resolved against the
-   * folder's real path, as `openScope` does.
+   * Resolve a path a client wants to write, delete or download, relative to the scope. Refused with
+   * a 400 unless the indexer would walk to it: no dot-segment or `node_modules`, inside the folder,
+   * and no symlink or file on the way — the indexer does not follow symlinks, and a write through
+   * one could land outside the docs. Resolved against the folder's real path, as `openScope` does.
    *
    * @param create make the missing folders on the way.
+   * @param markdownOnly also require a Markdown extension, as for anything that is written.
    */
-  private async resolveWritable(path: string, create: boolean) {
+  private async resolvePath(
+    path: string,
+    { create, markdownOnly }: { create: boolean; markdownOnly: boolean },
+  ) {
     const invalid = (why: string) => Object.assign(new Error(`${why}: ${path}`), { status: 400 });
     const posixPath = path.replaceAll("\\", "/");
     if (!posixPath || posix.isAbsolute(posixPath) || /^[a-z]:/i.test(posixPath)) {
@@ -325,7 +405,7 @@ export class Scope {
     if (segments.some((s) => s.startsWith(".") || s === "node_modules" || s.includes("\0"))) {
       throw invalid("path names a folder or file the index skips");
     }
-    if (!MARKDOWN.test(segments.at(-1) ?? "")) {
+    if (markdownOnly && !MARKDOWN.test(segments.at(-1) ?? "")) {
       throw invalid("only Markdown files (.md, .markdown, .mdx) can be written");
     }
 
@@ -396,6 +476,60 @@ export async function openScope(rag: Ragdown, dir: string): Promise<Scope | unde
     if (!info?.isDirectory()) return undefined;
   }
   return new Scope(rag, normalized);
+}
+
+/**
+ * The lines of the section under a heading, 1-based and inclusive: from the heading to the line
+ * before the next heading at its level or above. `A#B` names `B` under `A`; only the last part is
+ * matched. Undefined when no heading matches, and the caller reads the whole note.
+ */
+function headingRange(lines: string[], anchor: string): { start: number; end: number } | undefined {
+  const wanted = (anchor.split("#").at(-1) ?? "").trim().toLowerCase();
+  let fence: string | null = null;
+  let start: number | undefined;
+  let level = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    const fenceMatch = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+    if (fenceMatch?.[1]) {
+      const marker = fenceMatch[1];
+      if (fence === null) fence = marker;
+      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+      continue;
+    }
+    if (fence !== null) continue;
+    const heading = /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+    if (!heading?.[1] || !heading[2]) continue;
+    if (start === undefined) {
+      if (heading[2].trim().toLowerCase() === wanted) {
+        start = i + 1;
+        level = heading[1].length;
+      }
+    } else if (heading[1].length <= level) {
+      return { start, end: i };
+    }
+  }
+  return start === undefined ? undefined : { start, end: lines.length };
+}
+
+/**
+ * Every file under `root` a wikilink may embed that is not a note: images, PDFs and the like, by
+ * `/`-separated relative path. Skips what the indexer skips.
+ */
+async function listAttachments(root: string): Promise<string[]> {
+  const out: string[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [] as Dirent[]);
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.isFile() && !MARKDOWN.test(entry.name))
+        out.push(toPosix(relative(root, full)));
+    }
+  };
+  await walk(root);
+  return out;
 }
 
 /** `path_prefix` as a folder: `./projects/` and `projects` both mean files under `projects/`. */

@@ -13,7 +13,8 @@ export function formatHits(hits: Hit[], maxChars: number): string {
 
 export function formatHit(hit: Hit, maxChars: number): string {
   const where = breadcrumb(hit.title, hit.heading);
-  const header = `${hit.path}:${hit.lineStart}-${hit.lineEnd} — ${where} (similarity ${hit.similarity.toFixed(2)})`;
+  const tags = hit.tags.length > 0 ? ` [${hit.tags.map((tag) => `#${tag}`).join(" ")}]` : "";
+  const header = `${hit.path}:${hit.lineStart}-${hit.lineEnd} — ${where}${tags} (similarity ${hit.similarity.toFixed(2)})`;
   return `${header}\n${clip(hit, maxChars)}`;
 }
 
@@ -28,6 +29,7 @@ export function hitJson(hit: Hit) {
     similarity: Number(hit.similarity.toFixed(4)),
     score: Number(hit.score.toFixed(5)),
     sources: hit.sources,
+    tags: hit.tags,
     text: hit.text,
   };
 }

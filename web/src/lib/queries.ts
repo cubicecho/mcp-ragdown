@@ -1,5 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { deleteDoc, getDoc, getStatus, listDocs, uploadDoc } from "@/lib/api";
+import { useEffect, useState } from "react";
+import {
+  createFolder,
+  deleteDoc,
+  deleteFolder,
+  getDoc,
+  getFile,
+  getStatus,
+  listDocs,
+  listFolders,
+  resolveLink,
+  searchDocs,
+  updateFolder,
+  uploadDoc,
+} from "@/lib/api";
 
 /**
  * Polled, because the index follows the folder on its own: a file saved in an editor shows up
@@ -13,8 +27,16 @@ export const useStatus = () =>
       query.state.data?.syncing || query.state.data?.ready === false ? 2_000 : 15_000,
   });
 
-export const useDocs = () =>
-  useQuery({ queryKey: ["docs"], queryFn: listDocs, refetchInterval: 15_000 });
+/** Polled like the docs, so a folder made on disk shows up in the sidebar by itself. */
+export const useFolders = () =>
+  useQuery({ queryKey: ["folders"], queryFn: listFolders, refetchInterval: 15_000 });
+
+export const useDocs = (folder: string) =>
+  useQuery({
+    queryKey: ["docs", folder],
+    queryFn: () => listDocs(folder),
+    refetchInterval: 15_000,
+  });
 
 export const useDoc = (path: string | undefined) =>
   useQuery({
@@ -24,12 +46,57 @@ export const useDoc = (path: string | undefined) =>
     refetchInterval: 15_000,
   });
 
+/** Hybrid recall in one folder. Nothing is asked until there is a query. */
+export const useSearch = (folder: string, q: string, tag: string | undefined) =>
+  useQuery({
+    queryKey: ["search", folder, q, tag],
+    queryFn: () => searchDocs({ folder, q, tag, top_k: 20 }),
+    enabled: q.trim() !== "",
+    placeholderData: (previous) => previous,
+  });
+
+/** The query behind a wikilink, shared so the click reads what the render already asked. */
+export const resolveQuery = (from: string, link: string) => ({
+  queryKey: ["resolve", from, link],
+  queryFn: () => resolveLink(from, link),
+  staleTime: 30_000,
+});
+
+export const useResolve = (from: string, link: string) => useQuery(resolveQuery(from, link));
+
+export const fileQuery = (path: string) => ({
+  queryKey: ["file", path],
+  queryFn: () => getFile(path),
+  staleTime: 60_000,
+});
+
+/**
+ * A file inside a folder as an object URL, for an `<img>`. The URL is made from the fetched blob
+ * and revoked when the blob changes or the component goes, so none of them outlive their image.
+ */
+export function useFileUrl(path: string | undefined) {
+  const file = useQuery({ ...fileQuery(path ?? ""), enabled: path !== undefined });
+  const [url, setUrl] = useState<string>();
+  useEffect(() => {
+    if (!file.data) return;
+    const next = URL.createObjectURL(file.data);
+    setUrl(next);
+    return () => {
+      URL.revokeObjectURL(next);
+      setUrl(undefined);
+    };
+  }, [file.data]);
+  return { url, isError: file.isError, isPending: file.isPending };
+}
+
 /** The server answers a write after the index has synced, so everything it touched is stale. */
 function useInvalidateDocs() {
   const client = useQueryClient();
   return () =>
     Promise.all(
-      [["docs"], ["doc"], ["status"]].map((queryKey) => client.invalidateQueries({ queryKey })),
+      [["docs"], ["doc"], ["status"], ["folders"], ["search"], ["resolve"]].map((queryKey) =>
+        client.invalidateQueries({ queryKey }),
+      ),
     );
 }
 
@@ -41,4 +108,19 @@ export const useUploadDoc = () => {
 export const useDeleteDoc = () => {
   const invalidate = useInvalidateDocs();
   return useMutation({ mutationFn: deleteDoc, onSettled: invalidate });
+};
+
+export const useCreateFolder = () => {
+  const invalidate = useInvalidateDocs();
+  return useMutation({ mutationFn: createFolder, onSettled: invalidate });
+};
+
+export const useUpdateFolder = () => {
+  const invalidate = useInvalidateDocs();
+  return useMutation({ mutationFn: updateFolder, onSettled: invalidate });
+};
+
+export const useDeleteFolder = () => {
+  const invalidate = useInvalidateDocs();
+  return useMutation({ mutationFn: deleteFolder, onSettled: invalidate });
 };

@@ -8,10 +8,11 @@ title: false
     <p class="eyebrow">MCP server over Markdown</p>
     <h1>{{ site.tagline }}</h1>
     <p class="lede">
-      Point mcp-ragdown at a folder of Markdown files. It splits every file into heading-scoped sections, embeds
-      them into a local LanceDB index, keeps that index in sync as the files change, and serves hybrid search over
-      <a href="https://modelcontextprotocol.io">MCP</a>. A prompt hook can call <code>ragdown_context</code> to add
-      the related notes to every turn.
+      Point mcp-ragdown at a directory of Markdown folders. It splits every file into heading-scoped sections,
+      embeds them into a local LanceDB index, keeps that index in sync as the files change, and serves hybrid search
+      over <a href="https://modelcontextprotocol.io">MCP</a> — one server per folder, for the folders you turn on.
+      Each folder opens as an Obsidian vault, and a prompt hook can call <code>ragdown_context</code> to add the
+      related notes to every turn.
     </p>
     <div class="cta-row">
       <a class="btn btn-primary" href="{{ '/get-started/' | url }}">Get started →</a>
@@ -21,14 +22,19 @@ title: false
 
     <div class="endpoint-card" aria-hidden="false">
       <div class="endpoint-row">
-        <span class="method method-agg">ALL</span>
-        <code>http://host:3300/mcp</code>
-        <span class="endpoint-note">the whole folder</span>
+        <span class="method method-agg">MCP</span>
+        <code>http://host:3300/mcp/&lt;folder&gt;</code>
+        <span class="endpoint-note">one folder, once MCP is on</span>
       </div>
       <div class="endpoint-row">
-        <span class="method">ALL</span>
-        <code>http://host:3300/mcp/&lt;folder&gt;</code>
-        <span class="endpoint-note">one folder, as its own root</span>
+        <span class="method">MCP</span>
+        <code>http://host:3300/mcp/&lt;folder&gt;/&lt;sub&gt;</code>
+        <span class="endpoint-note">a subfolder of it</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method">UI</span>
+        <code>http://host:3300/</code>
+        <span class="endpoint-note">every folder, human-only ones too</span>
       </div>
     </div>
   </div>
@@ -38,42 +44,44 @@ title: false
   <div class="wrap">
     <h2>See it</h2>
     <p class="section-lede">
-      <code>serve</code> ships a small web UI: the indexed files, each rendered beside the list, plus upload,
-      delete, and a Settings page showing how the server is set up. Shown here in light mode.
+      <code>serve</code> ships a small web UI: a switcher for the folders, each folder's files rendered with their
+      wikilinks, tags and images, search, upload and delete, and a Settings page that turns MCP on per folder. Shown
+      here in light mode.
     </p>
 
     <figure class="shot shot-wide">
       <div class="browser">
-        <div class="browser-bar"><span></span><span></span><span></span><em>localhost:3300/?doc=runbooks/backups.md</em></div>
+        <div class="browser-bar"><span></span><span></span><span></span><em>localhost:3300/f/work?doc=runbooks/backups.md</em></div>
         <img class="zoomable" src="{{ '/assets/screenshots/documents.png' | url }}"
-          alt="The Documents page: indexed files on the left, the selected file rendered on the right with its size, line and chunk counts"
+          alt="The work folder: its files on the left, runbooks/backups.md rendered on the right with its tags, a wikilink and its size, line and chunk counts"
           loading="lazy" width="1440" height="900" />
       </div>
-      <figcaption><strong>Every indexed file.</strong> Filter by title or path, and open one to read it rendered,
-        with its size, line count and how many chunks it became. The selected file lives in the URL, so a preview
-        can be linked to.</figcaption>
+      <figcaption><strong>One folder at a time.</strong> The sidebar lists the folders and which ones agents can
+        reach. Filter or search a folder, narrow it by tag, and open a note to read it rendered — wikilinks followed,
+        embeds shown. The folder and note live in the URL, so a preview can be linked to.</figcaption>
     </figure>
 
     <div class="shot-grid">
       <figure class="shot">
         <div class="browser">
-          <div class="browser-bar"><span></span><span></span><span></span><em>Upload Markdown</em></div>
-          <img class="zoomable" src="{{ '/assets/screenshots/upload.png' | url }}"
-            alt="The Upload Markdown dialog with a target folder and a picked file"
+          <div class="browser-bar"><span></span><span></span><span></span><em>localhost:3300/settings</em></div>
+          <img class="zoomable" src="{{ '/assets/screenshots/folders.png' | url }}"
+            alt="Settings, Folders: each folder with its MCP switch, title, Copy MCP config, Rename and Delete"
             loading="lazy" width="1440" height="900" />
         </div>
-        <figcaption><strong>Upload.</strong> Drop in <code>.md</code>, <code>.markdown</code> or <code>.mdx</code>
-          files, optionally under a folder. They are indexed before the upload finishes.</figcaption>
+        <figcaption><strong>Folders.</strong> Turn MCP on or off per folder, retitle, rename or delete it, and copy
+          the <code>claude mcp add</code> line for it. New folders start human-only.</figcaption>
       </figure>
       <figure class="shot">
         <div class="browser">
-          <div class="browser-bar"><span></span><span></span><span></span><em>Delete this document?</em></div>
-          <img class="zoomable" src="{{ '/assets/screenshots/delete-confirm.png' | url }}"
-            alt="The delete confirmation for the previewed file"
+          <div class="browser-bar"><span></span><span></span><span></span><em>Upload Markdown</em></div>
+          <img class="zoomable" src="{{ '/assets/screenshots/upload.png' | url }}"
+            alt="The Upload Markdown dialog with a subfolder and a picked file"
             loading="lazy" width="1440" height="900" />
         </div>
-        <figcaption><strong>Delete.</strong> Removes the file from the docs folder, not only from the index, after
-          a confirmation.</figcaption>
+        <figcaption><strong>Upload and delete.</strong> Drop <code>.md</code>, <code>.markdown</code> or
+          <code>.mdx</code> files into the open folder, optionally under a subfolder; they are indexed before the
+          upload finishes. Delete removes a file from disk, not only from the index.</figcaption>
       </figure>
     </div>
   </div>
@@ -86,7 +94,7 @@ title: false
       <div class="feature">
         <div class="feature-icon">📄</div>
         <h3>Your files are the truth</h3>
-        <p>The Markdown folder is the source of truth; the index is derived and disposable. Change the embedder or
+        <p>The Markdown files are the source of truth; the index is derived and disposable. Change the embedder or
           the chunker and the index rebuilds itself. Delete it and the next start rebuilds it.</p>
       </div>
       <div class="feature">
@@ -110,9 +118,17 @@ title: false
       </div>
       <div class="feature">
         <div class="feature-icon">📁</div>
-        <h3>Scopes per project</h3>
-        <p><code>/mcp/&lt;folder&gt;</code> serves the same tools with that folder as the root, so each agent sees
-          its own project's notes. Any folder the indexer walks is a scope, with nothing to configure.</p>
+        <h3>A server per folder</h3>
+        <p>Every top-level folder is found automatically and is its own MCP server at
+          <code>/mcp/&lt;folder&gt;</code>. Folders start human-only — searchable in the web UI, invisible to
+          agents — until you turn MCP on.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🔗</div>
+        <h3>Opens as an Obsidian vault</h3>
+        <p>Frontmatter and inline <code>#tags</code> filter searches, aliases are searchable, and
+          <code>ragdown_read_doc</code> follows <code>[[wikilinks]]</code> down to a heading. <code>.obsidian/</code>
+          is ignored.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">🔄</div>
@@ -129,20 +145,15 @@ title: false
       <div class="feature">
         <div class="feature-icon">💻</div>
         <h3>Local by default</h3>
-        <p>The default embedder, granite-embedding-small-english-r2, runs on ONNX Runtime on your CPU. Two other
-          local models, or any OpenAI-compatible <code>/embeddings</code> endpoint, are a setting away.</p>
+        <p>The default embedder, granite-embedding-small-english-r2, runs on ONNX Runtime on your CPU — and is baked
+          into the Docker image, so it starts offline. Other local models, or any OpenAI-compatible
+          <code>/embeddings</code> endpoint, are a setting away.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">🖥️</div>
         <h3>Web UI</h3>
-        <p>Browse and preview the indexed files, upload and delete Markdown, and check the server's settings — from
-          the same <code>serve</code> process, behind the same token.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">📦</div>
-        <h3>One image</h3>
-        <p>The Docker image has the default model baked in, so it starts offline. Mount your notes at
-          <code>/docs</code> and a volume at <code>/data</code> for the index.</p>
+        <p>Browse, search and preview each folder, upload and delete Markdown, and create, rename and switch MCP
+          on for folders — from the same <code>serve</code> process, behind the same token.</p>
       </div>
     </div>
   </div>
@@ -153,15 +164,15 @@ title: false
     <h2>How it works</h2>
     <div class="flow">
       <div class="flow-node flow-client">
-        <strong>Your Markdown folder</strong>
-        <span><code>.md</code>, <code>.markdown</code>, <code>.mdx</code>, walked recursively</span>
+        <strong>Your Markdown folders</strong>
+        <span><code>.md</code>, <code>.markdown</code>, <code>.mdx</code>, one directory per folder</span>
       </div>
       <div class="flow-arrow">→</div>
       <div class="flow-node flow-router">
         <strong>MCP Ragdown</strong>
         <span>chunk by heading · embed · LanceDB · dense + BM25</span>
       </div>
-      <div class="flow-arrow">→ <code>/mcp</code> →</div>
+      <div class="flow-arrow">→ <code>/mcp/&lt;folder&gt;</code> →</div>
       <div class="flow-node flow-servers">
         <strong>Agents and hooks</strong>
         <span>Claude Code, min-agent, any stdio or streamable-HTTP client</span>
@@ -169,7 +180,8 @@ title: false
     </div>
     <p class="flow-caption">
       Everything an agent or a hook does goes through MCP — there is no hook command and no hook-only HTTP route.
-      Several processes on the same folder share one index: the one that holds the socket lock indexes and watches,
+      Every folder shares one index, one model and one watcher. Several processes on the same docs directory share
+      that index: the one that holds the socket lock indexes and watches,
       and the others search the same table and forward syncs to it.
     </p>
   </div>
@@ -186,7 +198,7 @@ title: false
     ports:
       - '3300:3000'
     volumes:
-      - ~/notes:/docs          <span class="cmt"># your Markdown folder</span>
+      - ~/notes:/docs          <span class="cmt"># one folder per directory in here</span>
       - ragdown-data:/data     <span class="cmt"># the index, so restarts only diff</span>
     environment:
       RAGDOWN_TOKEN: ${RAGDOWN_TOKEN}
@@ -195,17 +207,24 @@ title: false
 volumes:
   ragdown-data:</code></pre>
     <pre class="code"><code>export RAGDOWN_TOKEN=$(openssl rand -hex 32)   <span class="cmt"># keep it; clients need it too</span>
-docker compose up -d
-claude mcp add --transport http ragdown http://localhost:3300/mcp \
+docker compose up -d</code></pre>
+    <p><code>~/notes/work</code> is now the folder <code>work</code>, human-only to start. Open
+      <code>http://localhost:3300</code>, turn MCP on for it under <strong>Settings → Folders</strong>, and
+      <strong>Copy MCP config</strong> gives you:</p>
+    <pre class="code"><code>claude mcp add --transport http ragdown-work http://localhost:3300/mcp/work \
   --header "Authorization: Bearer $RAGDOWN_TOKEN"</code></pre>
-    <p>Open <code>http://localhost:3300</code> for the web UI. Images are published for <code>linux/amd64</code> to
+    <p> Images are published for <code>linux/amd64</code> to
       <a href="{{ site.dockerHub }}">Docker Hub (<code>{{ site.dockerImage }}</code>)</a> and GHCR
       (<code>{{ site.ghcrImage }}</code>).</p>
 
     <h3>Without Docker <span class="pill">Node 26+</span></h3>
     <pre class="code"><code>npm install
-claude mcp add ragdown -e RAGDOWN_DOCS_DIR=$HOME/notes -- node /path/to/mcp-ragdown/src/cli.ts stdio</code></pre>
-    <p>Node 26 runs the TypeScript directly; the default model (about 50 MB) downloads once on first start.</p>
+claude mcp add ragdown -e RAGDOWN_DOCS_DIR=$HOME/notes/work -- node /path/to/mcp-ragdown/src/cli.ts stdio</code></pre>
+    <p>Over stdio, <code>RAGDOWN_DOCS_DIR</code> is the one folder — an Obsidian vault, say — and it is served
+      whatever its settings say. Node 26 runs the TypeScript directly; the default model (about 50 MB) downloads
+      once on first start.</p>
+    <p class="callout"><strong>Upgrading from 4.x?</strong> <code>/mcp</code> is gone and every folder starts
+      human-only. <a href="{{ '/docs/' | url }}#upgrading">Four steps</a> get you back.</p>
   </div>
 </section>
 

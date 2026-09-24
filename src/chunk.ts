@@ -139,42 +139,101 @@ export function readSupersedes(source: string, relPath: string): string[] {
   return out;
 }
 
+/**
+ * The document's tags and aliases, as Obsidian reads them: frontmatter `tags` (a list, or a string
+ * of comma- or space-separated tags, `#` optional) plus inline `#tags` in the body outside code, and
+ * frontmatter `aliases` (a list, or one alias as a string). Tags are lowercased without the `#`.
+ *
+ * Stored beside the chunks as metadata, never added to the embedded text: that was measured and
+ * did not pay for its rebuild.
+ */
+export function readDocMeta(source: string): { tags: string[]; aliases: string[] } {
+  const lines = source.replace(/\r\n?/g, "\n").split("\n");
+  const { front, bodyStart } = readFrontmatter(lines);
+  const tags = new Set<string>();
+  const addTag = (raw: string) => {
+    const tag = raw.trim().replace(/^#+/, "").replace(/\/+$/, "").toLowerCase();
+    if (tag && /^[\p{L}\p{N}_\-/]+$/u.test(tag) && !/^[\p{N}/]+$/u.test(tag)) tags.add(tag);
+  };
+  for (const entry of readList(front, "tags", /[\s,]+/)) addTag(entry);
+
+  let fence: string | null = null;
+  for (let i = bodyStart; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    const fenceMatch = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+    if (fenceMatch?.[1]) {
+      const marker = fenceMatch[1];
+      if (fence === null) fence = marker;
+      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+      continue;
+    }
+    if (fence !== null || /^( {4}|\t)/.test(line)) continue;
+    // Inline code spans are code too: `#include` is not a tag.
+    const prose = line.replace(/(`+)[^`]*?\1/g, " ");
+    for (const match of prose.matchAll(/(?:^|\s)#([\p{L}\p{N}_\-/]+)/gu)) addTag(match[1] ?? "");
+  }
+
+  const aliases = [...new Set(readList(front, "aliases").filter(Boolean))];
+  return { tags: [...tags].sort(), aliases };
+}
+
 function readFrontmatter(lines: string[]): {
   title: string | undefined;
   supersedes: string[];
+  front: string[];
   bodyStart: number;
 } {
-  if (lines[0]?.trim() !== "---") return { title: undefined, supersedes: [], bodyStart: 0 };
+  if (lines[0]?.trim() !== "---") {
+    return { title: undefined, supersedes: [], front: [], bodyStart: 0 };
+  }
   const end = lines.findIndex((line, i) => i > 0 && /^(---|\.\.\.)\s*$/.test(line));
-  if (end === -1) return { title: undefined, supersedes: [], bodyStart: 0 };
-  let title: string | undefined;
-  const supersedes: string[] = [];
+  if (end === -1) return { title: undefined, supersedes: [], front: [], bodyStart: 0 };
   const front = lines.slice(1, end);
-  for (let i = 0; i < front.length; i++) {
-    const line = front[i] ?? "";
+  let title: string | undefined;
+  for (const line of front) {
     const titleMatch = /^title:\s*(.+?)\s*$/.exec(line);
     if (titleMatch?.[1]) title = unquote(titleMatch[1]);
-    const superMatch = /^supersedes:\s*(.*)$/.exec(line);
-    if (!superMatch) continue;
-    const inline = (superMatch[1] ?? "").trim();
-    if (inline) {
-      // `supersedes: old.md`, or `supersedes: [old.md, "older.md"]`.
-      const items = inline.startsWith("[") ? inline.slice(1).replace(/]\s*$/, "") : inline;
-      for (const item of items.split(",")) {
+  }
+  return { title, supersedes: readList(front, "supersedes", /,/), front, bodyStart: end + 1 };
+}
+
+/**
+ * A top-level frontmatter key as a list of strings: `key: [a, "b"]`, a block of `- a` lines, or a
+ * scalar, which is one item unless `split` separates several.
+ */
+function readList(front: string[], key: string, split?: RegExp): string[] {
+  const out: string[] = [];
+  const pattern = new RegExp(`^${key}:\\s*(.*)$`);
+  for (let i = 0; i < front.length; i++) {
+    const match = pattern.exec(front[i] ?? "");
+    if (!match) continue;
+    const inline = (match[1] ?? "").trim();
+    if (inline.startsWith("[")) {
+      for (const item of inline.slice(1).replace(/]\s*$/, "").split(",")) {
         const value = unquote(item.trim());
-        if (value) supersedes.push(value);
+        if (value) out.push(value);
       }
-      continue;
-    }
-    // The block form: `- old.md` lines until something that is not a list item.
-    for (let j = i + 1; j < front.length; j++) {
-      const item = /^\s*-\s*(.+?)\s*$/.exec(front[j] ?? "");
-      if (!item?.[1]) break;
-      supersedes.push(unquote(item[1]));
-      i = j;
+    } else if (inline) {
+      const value = unquote(inline);
+      out.push(
+        ...(split
+          ? value
+              .split(split)
+              .map((item) => unquote(item.trim()))
+              .filter(Boolean)
+          : [value]),
+      );
+    } else {
+      // The block form: `- a` lines until something that is not a list item.
+      for (let j = i + 1; j < front.length; j++) {
+        const item = /^\s*-\s*(.+?)\s*$/.exec(front[j] ?? "");
+        if (!item?.[1]) break;
+        out.push(unquote(item[1]));
+        i = j;
+      }
     }
   }
-  return { title, supersedes, bodyStart: end + 1 };
+  return out;
 }
 
 function unquote(value: string): string {

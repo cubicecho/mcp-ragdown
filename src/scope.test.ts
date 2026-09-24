@@ -182,4 +182,45 @@ describe("superseding a note", () => {
       root.remember("X", "body", [], "x", { supersedes: ["../outside.md"] }),
     ).rejects.toThrow(/outside/);
   });
+
+  it("follows wikilinks and tags within the folder, and remembers into the folder's notes", async () => {
+    const t = await tempSetup({}, "folders");
+    closers.push(t.cleanup);
+    await t.write(
+      "work/ops/pg.md",
+      "---\ntags: [infra/db]\naliases: [Elephant]\n---\n# Postgres\n\n## Vacuum\n\nNightly on postgres.\n\n## Restore\n\nTwice on postgres.",
+    );
+    await t.write("work/kafka.md", "# Kafka\n\nNot postgres, but kafka. #streams");
+    await t.write("home/pg.md", "# Postgres at home");
+    const rag = await Ragdown.start(t.config);
+    closers.push(() => rag.close());
+    await rag.sync(false);
+    const work = (await openScope(rag, "work")) as Scope;
+
+    expect(work.folder).toBe("work");
+    const section = await work.readDoc("pg#Vacuum");
+    expect(section).toMatchObject({ path: "ops/pg.md", resolved_from: "pg#Vacuum" });
+    expect(section.text).toBe("## Vacuum\n\nNightly on postgres.\n");
+    expect((await work.readDoc("Elephant")).path).toBe("ops/pg.md");
+    await expect(work.readDoc("nothing")).rejects.toThrow(/no such note/);
+
+    // A subfolder endpoint cannot follow a link above itself.
+    const ops = (await openScope(rag, "work/ops")) as Scope;
+    expect((await ops.readDoc("pg")).path).toBe("pg.md");
+    await expect(ops.readDoc("kafka")).rejects.toThrow(/no such note/);
+
+    const tagged = await work.recall("postgres", 10, undefined, "infra");
+    expect(new Set(tagged.map((h) => h.path))).toEqual(new Set(["ops/pg.md"]));
+    expect((await work.recall("postgres", 10, undefined, "streams")).map((h) => h.path)).toEqual([
+      "kafka.md",
+    ]);
+    expect(await work.recall("postgres", 10, undefined, "infr")).toEqual([]);
+
+    const note = await work.remember("Decision", "Use postgres.", [], "decision");
+    expect(note.path).toBe("notes/decision.md");
+    expect(await readFile(join(t.docsDir, "work/notes/decision.md"), "utf8")).toContain(
+      "Use postgres.",
+    );
+    expect((await ops.remember("Ops", "In place.", [], "ops-note")).path).toBe("ops-note.md");
+  });
 });

@@ -1,19 +1,20 @@
-import { createLink, Link, Outlet, useMatchRoute } from "@tanstack/react-router";
+import { createLink, Link, Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { ActionButton } from "@/components/action-button";
-import { FileText, Library, Lock } from "@/components/app-icons";
+import { Folder, Library, Lock, Plug, UserRound } from "@/components/app-icons";
+import { CreateFolder } from "@/components/folder-actions";
+import { QueryState } from "@/components/query-state";
 import { Sidebar, SidebarNavItem, SidebarSection } from "@/components/sidebar";
 import { SidebarLayout } from "@/components/split-layout";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Settings } from "@/components/ui/icons";
+import { Button } from "@/components/ui/button";
+import { ChevronDown, Plus, Settings } from "@/components/ui/icons";
+import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { clearToken, requireAuth } from "@/lib/auth";
 import { formatAgo, formatCount } from "@/lib/format";
-import { useStatus } from "@/lib/queries";
+import { useFolders, useStatus } from "@/lib/queries";
 
-const NAV = [
-  { to: "/", label: "Documents", icon: FileText },
-  { to: "/settings", label: "Settings", icon: Settings },
-] as const;
+const NAV = [{ to: "/settings", label: "Settings", icon: Settings }] as const;
 
 /** The row, handed the router's `href` and click handler so it navigates without a reload. */
 const SidebarLink = createLink(SidebarNavItem);
@@ -92,12 +93,71 @@ function Brand() {
   );
 }
 
+/** Whether the server takes writes, which is when making a folder is offered. */
+function useWritable(): boolean {
+  const status = useStatus();
+  return status.data?.ready === true && status.data.read_only === false;
+}
+
+/** Plug for a folder on MCP, a person for a human-only one: the one fact the rail adds. */
+const markerOf = (mcp: boolean) => (mcp ? <Plug /> : <UserRound />);
+const markerText = (mcp: boolean) => (mcp ? "on MCP" : "human-only");
+
 function Nav() {
   const matchRoute = useMatchRoute();
+  const folders = useFolders();
+  const navigate = useNavigate();
+  const writable = useWritable();
+  const list = folders.data?.folders ?? [];
   return (
     // `Sidebar` is a complementary `<aside>` and draws no `<nav>`, so the navigation landmark the
     // rows belong to is added around the section here. See https://github.com/cubicecho/cubeui/issues/128
-    <nav aria-label="Main">
+    <nav aria-label="Main" className="flex flex-col gap-4">
+      <SidebarSection
+        title="Folders"
+        action={
+          writable ? (
+            <CreateFolder
+              trigger={
+                <ActionButton variant="ghost" size="icon-sm" label="Create folder" side="right">
+                  <Plus aria-hidden />
+                </ActionButton>
+              }
+              onCreated={(folder) =>
+                void navigate({ to: "/f/$folder", params: { folder: folder.name } })
+              }
+            />
+          ) : undefined
+        }
+        status={
+          <QueryState
+            query={folders}
+            what="the folders"
+            count={list.length}
+            compact
+            rows={2}
+            empty={<p className="px-2 text-muted-foreground text-xs">No folders yet.</p>}
+          />
+        }
+        content={list.map((folder) => (
+          <SidebarLink
+            key={folder.name}
+            to="/f/$folder"
+            params={{ folder: folder.name }}
+            // Redundant beside `to`, but the prop is required.
+            // See https://github.com/cubicecho/cubeui/issues/129
+            href={`/f/${encodeURIComponent(folder.name)}`}
+            label={folder.title}
+            icon={markerOf(folder.mcp)}
+            count={folder.files}
+            title={`${folder.title}: ${formatCount(folder.files, "file")}, ${markerText(folder.mcp)}`}
+            aria-label={`${folder.title}, ${formatCount(folder.files, "file")}, ${markerText(folder.mcp)}`}
+            active={Boolean(
+              matchRoute({ to: "/f/$folder", params: { folder: folder.name }, fuzzy: true }),
+            )}
+          />
+        ))}
+      />
       <SidebarSection
         content={NAV.map(({ to, label, icon: Icon }) => (
           <SidebarLink
@@ -108,12 +168,49 @@ function Nav() {
             href={to}
             label={label}
             icon={<Icon />}
-            // Exact for `/`, or Documents would also light up on `/settings`.
-            active={Boolean(matchRoute({ to, fuzzy: to !== "/" }))}
+            active={Boolean(matchRoute({ to, fuzzy: true }))}
           />
         ))}
       />
     </nav>
+  );
+}
+
+/**
+ * The sidebar's folder list, for narrow screens where the sidebar is hidden: a menu named after the
+ * open folder. Making a folder stays in Settings there, one tap away.
+ */
+function FolderSwitcher() {
+  const folders = useFolders();
+  const matchRoute = useMatchRoute();
+  const list = folders.data?.folders ?? [];
+  const open = matchRoute({ to: "/f/$folder", fuzzy: true });
+  const current = open ? list.find((folder) => folder.name === open.folder) : undefined;
+  if (list.length === 0) return null;
+  return (
+    <Menu>
+      <MenuTrigger asChild>
+        <Button variant="ghost" size="sm" className="min-w-0 max-w-40 gap-1">
+          <Folder aria-hidden />
+          <span className="truncate">{current?.title ?? "Folders"}</span>
+          <ChevronDown aria-hidden />
+          <span className="sr-only">, switch folder</span>
+        </Button>
+      </MenuTrigger>
+      <MenuContent align="start" className="max-h-80">
+        {list.map((folder) => (
+          <MenuItem
+            key={folder.name}
+            icon={markerOf(folder.mcp)}
+            label={folder.title}
+            trailing={folder.name === current?.name ? "✓" : formatCount(folder.files, "file")}
+            link={<Link to="/f/$folder" params={{ folder: folder.name }} />}
+          />
+        ))}
+        <MenuSeparator />
+        <MenuItem icon={<Settings />} label="Manage folders" link={<Link to="/settings" />} />
+      </MenuContent>
+    </Menu>
   );
 }
 
@@ -148,9 +245,10 @@ export function AppShell() {
       }
       content={
         <div className="flex h-full min-w-0 flex-col">
-          {/* Under `md` the sidebar's furniture moves to a bar: one destination needs no rail. */}
+          {/* Under `md` the sidebar's furniture moves to a bar, the folder list into a menu. */}
           <header className="flex items-center gap-2 border-b px-4 py-2 md:hidden">
             <Brand />
+            <FolderSwitcher />
             <div className="ml-auto flex items-center gap-1">
               <Link
                 to="/settings"
