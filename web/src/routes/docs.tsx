@@ -2,6 +2,7 @@ import { getRouteApi, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { FileText } from "@/components/app-icons";
+import { DeleteDoc, UploadDocs } from "@/components/doc-actions";
 import { StickyHeaderContentFooter } from "@/components/header-content-footer";
 import { MarkdownPreview } from "@/components/markdown-preview";
 import { PageHeader } from "@/components/page-header";
@@ -15,7 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { DocSummary } from "@/lib/api";
 import { formatAgo, formatBytes, formatCount } from "@/lib/format";
 import { listValue, splitFrontmatter } from "@/lib/markdown";
-import { useDoc, useDocs } from "@/lib/queries";
+import { useDoc, useDocs, useStatus } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 const route = getRouteApi("/");
@@ -66,6 +67,7 @@ function DocList({
     });
   }, [docs.data, filter]);
   const chunks = docs.data?.reduce((sum, doc) => sum + doc.chunks, 0) ?? 0;
+  const writable = useWritable();
 
   return (
     <StickyHeaderContentFooter
@@ -73,6 +75,7 @@ function DocList({
         <PageHeader
           level={2}
           title="Documents"
+          action={writable ? <UploadDocs /> : undefined}
           loading={docs.isPending}
           description={
             docs.data
@@ -171,6 +174,7 @@ function DocPreview({
   known: ReadonlySet<string>;
 }) {
   const doc = useDoc(path);
+  const writable = useWritable();
   const parsed = useMemo(() => splitFrontmatter(doc.data?.text ?? ""), [doc.data]);
   const tags = parsed.fields.find(([key]) => key === "tags");
   const otherFields = parsed.fields.filter(([key]) => key !== "tags" && key !== "title");
@@ -191,7 +195,12 @@ function DocPreview({
               </>
             ) : undefined
           }
-          action={<CopyPath path={path} />}
+          action={
+            <>
+              <CopyPath path={path} />
+              {writable && summary ? <DeleteDoc path={path} /> : null}
+            </>
+          }
           content={
             tags || otherFields.length > 0 ? (
               <div className="flex flex-wrap items-center gap-1.5">
@@ -229,6 +238,12 @@ function DocPreview({
       }
     />
   );
+}
+
+/** Upload and delete are offered only once status says the server takes writes. */
+function useWritable(): boolean {
+  const status = useStatus();
+  return status.data?.ready === true && status.data.read_only === false;
 }
 
 function CopyPath({ path }: { path: string }) {

@@ -7,7 +7,8 @@ import type { Embedder } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
 import type { FileUpdate, Store } from "./store.ts";
 
-const MARKDOWN = /\.(md|markdown|mdx)$/i;
+/** The files the indexer reads; anything else in the folder is ignored. */
+export const MARKDOWN = /\.(md|markdown|mdx)$/i;
 /** An editor save is a burst of events (temp file, rename, chmod); one sync per burst. */
 const WATCH_DEBOUNCE_MS = 750;
 /** Chunks per embed-and-write round: a crash loses at most this much work, and progress is visible. */

@@ -67,6 +67,30 @@ describe("Scope", () => {
     expect(stats.docs_dir).toBe(join(t.docsDir, "projects/beta"));
   });
 
+  it("writes and deletes docs inside its folder only", async () => {
+    const t = await setup();
+    const beta = await openScope(t.rag, "projects/beta");
+    if (!beta) throw new Error("no scope");
+
+    const written = await beta.writeDoc("./sub/kafka.md", "# Kafka\n\nSeven days.");
+    expect(written).toMatchObject({ path: "sub/kafka.md", created: true, sync: { added: 1 } });
+    expect(await t.rag.files()).toHaveProperty("size", 6);
+    expect(await readFile(join(t.docsDir, "projects/beta/sub/kafka.md"), "utf8")).toContain(
+      "Seven",
+    );
+    await expect(beta.writeDoc("sub/kafka.md", "# Other")).rejects.toMatchObject({ status: 409 });
+    await expect(beta.writeDoc("sub", "# Other", true)).rejects.toMatchObject({ status: 400 });
+    await expect(beta.writeDoc("../alpha/x.md", "# x")).rejects.toMatchObject({ status: 400 });
+    await expect(beta.writeDoc("backups.md/x.md", "# x")).rejects.toMatchObject({ status: 400 });
+
+    await symlink(join(t.docsDir, "projects/alpha"), join(t.docsDir, "projects/beta/link"));
+    await expect(beta.writeDoc("link/x.md", "# x")).rejects.toMatchObject({ status: 400 });
+    await expect(beta.deleteDoc("link/backups.md")).rejects.toMatchObject({ status: 400 });
+
+    expect(await beta.deleteDoc("sub/kafka.md")).toMatchObject({ sync: { removed: 1 } });
+    await expect(beta.deleteDoc("sub/kafka.md")).rejects.toMatchObject({ status: 404 });
+  });
+
   it("keeps hook context memory per scope", async () => {
     const { rag } = await setup();
     const prompt = "how do I restore postgres?";

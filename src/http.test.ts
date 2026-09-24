@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -80,6 +80,110 @@ describe("HTTP server", () => {
     expect((await get("/api/doc?path=stray.txt")).status).toBe(404);
     expect((await get("/api/doc?path=..%2F..%2Fetc%2Fpasswd")).status).toBe(404);
     expect((await get("/api/doc")).status).toBe(400);
+  });
+
+  it("uploads a Markdown file and indexes it before answering", async () => {
+    const t = await serve({ RAGDOWN_TOKEN: "secret" });
+    const auth = { authorization: "Bearer secret" };
+    const upload = (body: unknown, token = "secret") =>
+      fetch(`${t.url}/api/doc`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+    const docs = async () =>
+      (
+        (await (await fetch(`${t.url}/api/docs`, { headers: auth })).json()) as {
+          docs: { path: string }[];
+        }
+      ).docs.map((doc) => doc.path);
+
+    expect((await upload({ path: "new/kafka.md", text: "# Kafka" }, "wrong")).status).toBe(401);
+
+    const created = await upload({ path: "new/deep/kafka.md", text: "# Kafka\n\nSeven days." });
+    expect(created.status).toBe(201);
+    expect(await created.json()).toMatchObject({
+      path: "new/deep/kafka.md",
+      created: true,
+      sync: { added: 1 },
+    });
+    expect(await docs()).toContain("new/deep/kafka.md");
+    expect(await readFile(join(t.docsDir, "new/deep/kafka.md"), "utf8")).toBe(
+      "# Kafka\n\nSeven days.",
+    );
+
+    const conflict = await upload({ path: "new/deep/kafka.md", text: "# Other" });
+    expect(conflict.status).toBe(409);
+    expect(await readFile(join(t.docsDir, "new/deep/kafka.md"), "utf8")).toContain("Seven");
+
+    const replaced = await upload({
+      path: "new/deep/kafka.md",
+      text: "# Kafka\n\nTwo weeks.",
+      overwrite: true,
+    });
+    expect(replaced.status).toBe(200);
+    expect(await replaced.json()).toMatchObject({ created: false, sync: { updated: 1 } });
+    const doc = await fetch(`${t.url}/api/doc?path=new%2Fdeep%2Fkafka.md`, { headers: auth });
+    expect(((await doc.json()) as { text: string }).text).toContain("Two weeks");
+
+    // Outside the folder, absolute, somewhere the indexer skips, or not Markdown.
+    await symlink(t.root, join(t.docsDir, "out"));
+    for (const path of [
+      "../escape.md",
+      "a/../../escape.md",
+      "/etc/escape.md",
+      "out/escape.md",
+      ".hidden/x.md",
+      "node_modules/x.md",
+      "notes.txt",
+      "script.js",
+      "",
+    ]) {
+      expect((await upload({ path, text: "# x" })).status, path).toBe(400);
+    }
+    expect((await upload({ path: "x.md" })).status).toBe(400);
+    expect(await readFile(join(t.root, "escape.md"), "utf8").catch(() => "none")).toBe("none");
+
+    const put = await fetch(`${t.url}/api/doc`, { method: "PUT", headers: auth });
+    expect(put.status).toBe(405);
+  });
+
+  it("deletes a Markdown file and drops it from the index", async () => {
+    const t = await serve({ RAGDOWN_TOKEN: "secret" });
+    const auth = { authorization: "Bearer secret" };
+    const remove = (path: string, token = "secret") =>
+      fetch(`${t.url}/api/doc?path=${encodeURIComponent(path)}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+    expect((await remove("ops/backups.md", "wrong")).status).toBe(401);
+    const removed = await remove("ops/backups.md");
+    expect(removed.status).toBe(200);
+    expect(await removed.json()).toMatchObject({ path: "ops/backups.md", sync: { removed: 1 } });
+    expect(await (await fetch(`${t.url}/api/docs`, { headers: auth })).json()).toEqual({
+      docs: [],
+    });
+
+    expect((await remove("ops/backups.md")).status).toBe(404);
+    expect((await remove("../../etc/passwd.md")).status).toBe(400);
+    await t.write("keep.txt", "not markdown");
+    expect((await remove("keep.txt")).status).toBe(400);
+    const noPath = await fetch(`${t.url}/api/doc`, { method: "DELETE", headers: auth });
+    expect(noPath.status).toBe(400);
+  });
+
+  it("refuses uploads and deletes when read-only", async () => {
+    const t = await serve({ SECURE_LOCAL_NET: "true", RAGDOWN_READ_ONLY: "true" });
+    const upload = await fetch(`${t.url}/api/doc`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "x.md", text: "# x" }),
+    });
+    expect(upload.status).toBe(403);
+    const remove = await fetch(`${t.url}/api/doc?path=ops%2Fbackups.md`, { method: "DELETE" });
+    expect(remove.status).toBe(403);
+    expect(await readFile(join(t.docsDir, "ops/backups.md"), "utf8")).toContain("pg_restore");
   });
 
   it("serves the web UI, falling back to index.html for app routes", async () => {

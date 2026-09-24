@@ -180,7 +180,13 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 | `/mcp/<folder>` | bearer | The same, scoped to one folder. 404 for a folder that is not one. See [Scopes](#scopes-one-folder-per-project-or-agent). |
 | `GET /api/docs` | bearer | The indexed files: `path`, `title`, `mtime_ms`, `size`, `chunks`. |
 | `GET /api/doc?path=` | bearer | One indexed file's text, read from disk. 404 for a file the index does not hold. |
+| `POST /api/doc` | bearer | Upload a file: JSON `{ path, text, overwrite? }`, body up to 4 MiB. Only `.md`, `.markdown` or `.mdx` somewhere the indexer reads (no `..`, dot-folders, `node_modules` or symlinked folders); folders are created. 201 when created, 200 when overwritten, 409 for an existing file without `overwrite: true`. |
+| `DELETE /api/doc?path=` | bearer | Delete a Markdown file. 404 when it is not there. |
 | `GET /*` | none | The web UI from `web/dist`, with `index.html` for any other path. |
+
+Both writes answer after the index has synced, so the next `GET /api/docs` already shows them, and
+both are a 403 under `RAGDOWN_READ_ONLY`. They are for the web UI; agents write with
+`ragdown_remember`.
 
 The web UI asks for the token once and keeps it in the browser's local storage. Its static files
 hold no notes, so they need none; everything it shows comes from the bearer routes. It is built by
