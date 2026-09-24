@@ -56,8 +56,8 @@ jobs:
       # that the unprivileged `node` user can write the index to /data.
       - name: The container boots, indexes and answers
         run: |
-          mkdir -p ci-docs
-          printf '# Backups\n\n## Restore\n\nRun pg_restore twice.\n' > ci-docs/backups.md
+          mkdir -p ci-docs/work   # serve indexes folders, not files loose in the docs dir
+          printf '# Backups\n\n## Restore\n\nRun pg_restore twice.\n' > ci-docs/work/backups.md
           docker run -d --name mcp-ragdown-ci -p 3000:3000 \
             -v "$PWD/ci-docs:/docs:ro" \
             -e RAGDOWN_READ_ONLY=true \
