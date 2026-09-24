@@ -134,7 +134,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           {...({ ...props, disabled } as unknown as React.HTMLAttributes<HTMLElement>)}
           ref={ref as unknown as React.Ref<HTMLElement>}
         >
-          {body}
+          {/* The caller's element itself, not `body`: `Slot` merges the classes onto its one
+              child, and handed the icon-colour provider it styled that and dropped them. */}
+          {children}
         </Slot.Root>
       );
     }
