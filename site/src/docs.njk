@@ -1,0 +1,235 @@
+---
+layout: base.njk
+title: Docs
+description: mcp-ragdown documentation — MCP tools, scopes, hooks, configuration, HTTP routes, the web UI, and choosing an embedder.
+permalink: /docs/
+---
+
+<section class="section docs">
+  <div class="wrap wrap-docs">
+    <div class="docs-layout">
+      <aside class="toc">
+        <p class="toc-title">On this page</p>
+        <nav>
+          <a href="#tools">MCP tools</a>
+          <a href="#scopes">Scopes</a>
+          <a href="#hooks">Hooks</a>
+          <a href="#config">Configuration</a>
+          <a href="#http">Commands and HTTP</a>
+          <a href="#web-ui">Web UI</a>
+          <a href="#embedders">Choosing an embedder</a>
+          <a href="#design">How the index works</a>
+          <a href="#security">Security notes</a>
+        </nav>
+        <p class="toc-foot"><a href="{{ site.repo }}/blob/main/README.md">Full README ↗</a></p>
+      </aside>
+
+      <article class="docs-body">
+        <h1>Documentation</h1>
+        <p class="lede">
+          A condensed reference. For the design decisions and the benchmark numbers behind them, see the
+          <a href="{{ site.repo }}/blob/main/README.md">README on GitHub</a>.
+        </p>
+
+        <h2 id="tools">MCP tools</h2>
+        <p>Every endpoint — stdio, <code>/mcp</code> and each <code>/mcp/&lt;folder&gt;</code> — serves the same tools.
+          Claude calls <code>ragdown_recall</code> and <code>ragdown_read_doc</code> on its own when the notes might
+          help; the server's instructions tell it to. A tool failure comes back as an error result, never a dropped
+          connection.</p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+            <tbody>
+              <tr><td><code>ragdown_recall</code></td><td>Hybrid search. Returns path, line range, heading breadcrumb and similarity for each hit. Takes <code>top_k</code>, <code>path_prefix</code>, <code>format</code> (<code>text</code> or <code>json</code>) and <code>max_chars</code>.</td></tr>
+              <tr><td><code>ragdown_read_doc</code></td><td>Reads a file, or a line range of one, straight from disk. Never clipped.</td></tr>
+              <tr><td><code>ragdown_context</code></td><td>For hooks: the sections related to a <code>prompt</code> as a <code>&lt;ragdown-context&gt;</code> block, or empty text. Filters by similarity, skips short prompts and slash commands, and never repeats a section for the same <code>session_id</code>. Takes <code>top_k</code>, <code>min_score</code>, <code>min_ratio</code> and <code>max_chars</code> to override the <code>RAGDOWN_HOOK_*</code> defaults.</td></tr>
+              <tr><td><code>ragdown_stats</code></td><td>Folder, index size, embedder, role (primary or reader), whether a sync is running, and the last sync.</td></tr>
+              <tr><td><code>ragdown_remember</code></td><td>Writes a new note (with frontmatter) and indexes it before returning. Never overwrites a file. <code>supersedes</code> lists the notes this one replaces, which search then skips; <code>session_id</code> is recorded as provenance.</td></tr>
+              <tr><td><code>ragdown_reindex</code></td><td>Syncs now; <code>full: true</code> re-embeds everything.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The two write tools, <code>ragdown_remember</code> and <code>ragdown_reindex</code>, are not listed when
+          <code>RAGDOWN_READ_ONLY=true</code>.</p>
+
+        <h3>Superseding a note</h3>
+        <p>A note whose frontmatter lists <code>supersedes:</code> hides the notes it names from search and from hook
+          context. Nothing is deleted — the old file stays on disk and <code>ragdown_read_doc</code> still opens it —
+          but a fact that changed stops coming back next to its replacement. Paths are relative to the note's own
+          folder, like a Markdown link.</p>
+        <pre class="code"><code>---
+title: "Embedder"
+date: 2026-09-15
+supersedes: ["2025-04-02-embedder.md"]
+created_by: ragdown_remember
+---</code></pre>
+
+        <h2 id="scopes">Scopes</h2>
+        <p><code>/mcp</code> serves the whole folder. <code>/mcp/&lt;folder&gt;</code> serves the same tools with
+          <code>&lt;folder&gt;</code> as the root, so each agent can get its own project's notes and nothing else:</p>
+        <pre class="code"><code>claude mcp add --transport http notes-alpha http://localhost:3300/mcp/projects/alpha \
+  --header "Authorization: Bearer $RAGDOWN_TOKEN"</code></pre>
+        <ul class="notes">
+          <li><code>ragdown_recall</code> and <code>ragdown_context</code> search only files under the folder, and
+            <code>path_prefix</code> narrows further inside it.</li>
+          <li>Every path in and out is relative to the folder: <code>backups.md</code>, not
+            <code>projects/alpha/backups.md</code>. <code>ragdown_read_doc</code> refuses a path that leaves it.</li>
+          <li><code>ragdown_remember</code> writes into the folder itself; <code>RAGDOWN_NOTES_DIR</code> applies to
+            <code>/mcp</code> only.</li>
+          <li><code>ragdown_stats</code> counts the folder's files and chunks, and <code>ragdown_context</code>'s
+            per-session memory is kept separately for each scope.</li>
+          <li><code>ragdown_reindex</code> still syncs everything: all scopes share one index, one model and one
+            watcher.</li>
+        </ul>
+        <p>Any folder the indexer walks is a scope, with nothing to configure. A missing folder, a file, a symlink or
+          a dot-folder is a 404, so create the folder before pointing an agent at it. A scope keeps an agent focused,
+          not out: the token that opens <code>/mcp/projects/alpha</code> also opens <code>/mcp</code>.</p>
+
+        <h2 id="hooks">Hooks</h2>
+        <p>There is no hook command and no hook HTTP route: a hook calls <code>ragdown_context</code> over MCP like any
+          other tool, so automatic per-prompt context needs a client whose hooks call MCP tools, such as min-agent.
+          (There is no hook command to wire into Claude Code; there Claude calls <code>ragdown_recall</code> itself
+          when the notes might help.) A min-agent server entry
+          under <strong>Settings → MCP</strong>:</p>
+        <pre class="code"><code>{
+  "id": "ragdown",
+  "label": "Notes",
+  "transport": "http",
+  "url": "http://localhost:3300/mcp",   <span class="cmt">// or /mcp/&lt;folder&gt; for one project's notes</span>
+  "headers": { "Authorization": "Bearer &lt;RAGDOWN_TOKEN&gt;" },
+  "hiddenTools": ["ragdown_context"],   <span class="cmt">// the model has ragdown_recall; this one is for the hook</span>
+  "hooks": [
+    { "id": "notes", "on": "beforeTurn", "tool": "ragdown_context", "inject": true, "maxTokens": 800,
+      "args": { "prompt": "{% raw %}{{prompt}}{% endraw %}", "session_id": "min-agent:{% raw %}{{session.id}}{% endraw %}", "max_chars": 3000 } }
+  ]
+}</code></pre>
+        <p>Before each turn the hook sends the user's message. <code>ragdown_context</code> answers with the sections
+          whose cosine similarity reaches <code>RAGDOWN_HOOK_MIN_SCORE</code> and whose score is at least
+          <code>RAGDOWN_HOOK_MIN_RATIO</code> of the best hit's, wrapped in <code>&lt;ragdown-context&gt;</code> — or
+          with empty text, which the client treats as nothing to add. It skips prompts under 12 characters, slash
+          commands, and sections it already returned for the same <code>session_id</code>.</p>
+
+        <h2 id="config">Configuration</h2>
+        <p>Only <code>RAGDOWN_DOCS_DIR</code> is required. See
+          <a href="{{ site.repo }}/blob/main/.env.example"><code>.env.example</code></a>.</p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>RAGDOWN_DOCS_DIR</code></td><td>—</td><td>The Markdown folder, walked recursively. Indexes <code>.md</code>, <code>.markdown</code> and <code>.mdx</code>; skips dot-folders and <code>node_modules</code>, and does not follow symlinks.</td></tr>
+              <tr><td><code>RAGDOWN_DATA_DIR</code></td><td><code>~/.cache/ragdown/&lt;hash&gt;</code></td><td>The index. Deleting it only costs a rebuild.</td></tr>
+              <tr><td><code>RAGDOWN_MODELS</code></td><td><code>~/.cache/ragdown/models</code></td><td>Model cache, shared by every folder.</td></tr>
+              <tr><td><code>RAGDOWN_EMBEDDER</code></td><td><code>granite-small</code></td><td><code>granite-small</code>, <code>bge-small</code>, <code>embeddinggemma</code>, <code>openai:&lt;model&gt;</code>, or <code>hash</code> (tests only). See <a href="#embedders">below</a>.</td></tr>
+              <tr><td><code>RAGDOWN_EMBEDDING_URL</code> / <code>_API_KEY</code></td><td>OpenAI</td><td>For <code>openai:&lt;model&gt;</code>: any OpenAI-compatible <code>/embeddings</code> endpoint, such as Ollama or llama.cpp.</td></tr>
+              <tr><td><code>RAGDOWN_THREADS</code></td><td>half the cores</td><td>ONNX Runtime threads for the local model.</td></tr>
+              <tr><td><code>RAGDOWN_WATCH</code></td><td><code>true</code></td><td>Watch the folder; without a watcher, sync on start and on <code>ragdown_reindex</code> only.</td></tr>
+              <tr><td><code>RAGDOWN_READ_ONLY</code></td><td><code>false</code></td><td>Hide the write tools; the web UI's upload and delete answer 403.</td></tr>
+              <tr><td><code>RAGDOWN_NOTES_DIR</code></td><td><code>notes</code></td><td>Where <code>ragdown_remember</code> writes on <code>/mcp</code>. Must be inside the docs folder.</td></tr>
+              <tr><td><code>RAGDOWN_TEXT_LIMIT</code></td><td><code>2000</code></td><td>Characters per hit in text output. Every cut names the <code>ragdown_read_doc</code> call that returns the rest.</td></tr>
+              <tr><td><code>RAGDOWN_HOOK_TOP_K</code></td><td><code>4</code></td><td><code>ragdown_context</code>: most sections per prompt.</td></tr>
+              <tr><td><code>RAGDOWN_HOOK_MIN_SCORE</code></td><td><code>0.8</code></td><td><code>ragdown_context</code>: lowest cosine similarity returned. Calibrated for the default embedder.</td></tr>
+              <tr><td><code>RAGDOWN_HOOK_MIN_RATIO</code></td><td><code>0.95</code></td><td><code>ragdown_context</code>: lowest share of the best hit's similarity a hit may have; <code>0</code> disables it.</td></tr>
+              <tr><td><code>RAGDOWN_HOOK_MAX_CHARS</code></td><td><code>6000</code></td><td><code>ragdown_context</code>: most characters per prompt.</td></tr>
+              <tr><td><code>PORT</code></td><td><code>3000</code></td><td><code>serve</code> only. The HTTP port.</td></tr>
+              <tr><td><code>RAGDOWN_TOKEN</code></td><td>—</td><td><code>serve</code> only. The bearer token <code>/mcp</code> and the web UI's <code>/api</code> routes require.</td></tr>
+              <tr><td><code>SECURE_LOCAL_NET</code></td><td><code>false</code></td><td><code>serve</code> only. Skip the token on a trusted network. <code>serve</code> refuses to start with neither.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="http">Commands and HTTP</h2>
+        <p><code>node src/cli.ts &lt;command&gt;</code>: <code>stdio</code> (the MCP server a client launches) or
+          <code>serve</code> (HTTP, what the Docker image runs). Searching, indexing and stats are MCP tools, not
+          commands. <code>serve</code> exposes these routes:</p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Route</th><th>Auth</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>GET /api/status</code></td><td>none</td><td>Liveness and index stats; <code>ready: false</code> while the model loads. <code>settings</code> holds the non-secret tuning values for the Settings page.</td></tr>
+              <tr><td><code>/mcp</code></td><td>bearer</td><td>Streamable HTTP MCP, stateless.</td></tr>
+              <tr><td><code>/mcp/&lt;folder&gt;</code></td><td>bearer</td><td>The same, scoped to one folder. 404 for a folder that is not one.</td></tr>
+              <tr><td><code>GET /api/docs</code></td><td>bearer</td><td>The indexed files: <code>path</code>, <code>title</code>, <code>mtime_ms</code>, <code>size</code>, <code>chunks</code>.</td></tr>
+              <tr><td><code>GET /api/doc?path=</code></td><td>bearer</td><td>One indexed file's text, read from disk.</td></tr>
+              <tr><td><code>POST /api/doc</code></td><td>bearer</td><td>Upload a file: JSON <code>{ path, text, overwrite? }</code>, up to 4 MiB. 201 created, 200 overwritten, 409 for an existing file without <code>overwrite: true</code>.</td></tr>
+              <tr><td><code>DELETE /api/doc?path=</code></td><td>bearer</td><td>Delete a Markdown file. 404 when it is not there.</td></tr>
+              <tr><td><code>GET /*</code></td><td>none</td><td>The web UI from <code>web/dist</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Both writes answer after the index has synced, and both are a 403 under <code>RAGDOWN_READ_ONLY</code>.
+          They exist for the web UI; agents write with <code>ragdown_remember</code>. An upload must be
+          <code>.md</code>, <code>.markdown</code> or <code>.mdx</code> somewhere the indexer reads — no
+          <code>..</code>, dot-folders, <code>node_modules</code> or symlinked folders; missing folders are created.</p>
+
+        <h2 id="web-ui">Web UI</h2>
+        <p><code>serve</code> serves a web UI at <code>/</code>. It asks for the token once and keeps it in the
+          browser's local storage; its static files hold no notes, and everything it shows comes from the bearer
+          routes above.</p>
+        <ul class="notes">
+          <li><strong>Documents</strong> — the indexed files, filterable by title or path, each rendered beside the
+            list with its size, line count and chunk count. The selected file is in the URL.</li>
+          <li><strong>Upload</strong> — pick <code>.md</code>, <code>.markdown</code> or <code>.mdx</code> files and an
+            optional folder. A file that already exists stays in the list with an <em>Overwrite</em> button instead of
+            being replaced unasked.</li>
+          <li><strong>Delete</strong> — removes the previewed file from the docs folder, after a confirmation.</li>
+          <li><strong>Settings</strong> — the theme for this browser, whether a token is required (and a way to forget
+            the stored one), and the server's index and search defaults: docs folder, embedder, role, read-only,
+            watch, and the <code>RAGDOWN_HOOK_*</code> and <code>RAGDOWN_TEXT_LIMIT</code> values. Server values are
+            read from environment variables at start, so they are shown, not edited.</li>
+        </ul>
+
+        <h2 id="embedders">Choosing an embedder</h2>
+        <p><code>RAGDOWN_EMBEDDER</code> picks one of three local models, measured on the same benchmark of 210
+          questions over generated runbooks, with identical chunks:</p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th><code>RAGDOWN_EMBEDDER</code></th><th>Dim</th><th>Top-1</th><th>Per query</th><th><code>MIN_SCORE</code></th></tr></thead>
+            <tbody>
+              <tr><td><code>granite-small</code> (default)</td><td>384</td><td>85.7%</td><td>9 ms</td><td><code>0.8</code></td></tr>
+              <tr><td><code>bge-small</code></td><td>384</td><td>82.9%</td><td>9 ms</td><td><code>0.7</code></td></tr>
+              <tr><td><code>embeddinggemma</code></td><td>768</td><td>91.0%</td><td>260 ms</td><td><code>0.6</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><code>granite-small</code> is the default and the model baked into the Docker image; the others download
+          on first start. <code>openai:&lt;model&gt;</code> uses any OpenAI-compatible endpoint, which is the way to
+          index faster on a GPU.</p>
+        <p><strong>Changing the model rebuilds the index, and <code>RAGDOWN_HOOK_MIN_SCORE</code> has to move with
+          it:</strong> cosine is on each model's own scale. Use the value in the last column.
+          <code>RAGDOWN_HOOK_MIN_RATIO</code>, being relative to the best hit, carries across embedders as it is.</p>
+
+        <h2 id="design">How the index works</h2>
+        <ul class="notes">
+          <li><strong>Chunks follow headings.</strong> Each section's breadcrumb is embedded with it. Long sections
+            are packed paragraph by paragraph; fenced code blocks are never split. Line numbers refer to the original
+            file, so a hit is one <code>ragdown_read_doc</code> call from its surroundings.</li>
+          <li><strong>Hybrid retrieval.</strong> Dense cosine search and BM25 full-text search each return a pool, and
+            reciprocal rank fusion (k = 60) merges them. Ranking uses the fused score; filtering uses cosine
+            similarity.</li>
+          <li><strong>The index is derived data.</strong> A change of embedder or chunker version drops and rebuilds it.
+            Syncs are diffs: unchanged size and mtime skip a file, a content hash decides re-embedding, and files gone
+            from disk are dropped. The watcher debounces for 750 ms and falls back to polling every 60 s.</li>
+          <li><strong>One primary per index.</strong> The process that binds <code>&lt;data dir&gt;/primary.sock</code>
+            indexes and watches; others are readers that search the same table and forward syncs. A crashed primary is
+            replaced by the next process.</li>
+          <li><strong>Searches never wait for indexing.</strong> Until the first index finishes, searches answer from
+            what is indexed so far.</li>
+        </ul>
+
+        <h2 id="security">Security notes</h2>
+        <ul class="notes">
+          <li><strong>One bearer token guards everything</strong> except <code>/api/status</code> and the static UI
+            files. Generate it with <code>openssl rand -hex 32</code>.</li>
+          <li><strong>A scope is not a boundary.</strong> The token that opens <code>/mcp/&lt;folder&gt;</code> also
+            opens <code>/mcp</code>.</li>
+          <li><strong><code>SECURE_LOCAL_NET=true</code></strong> drops the token entirely: anyone who can reach the
+            port can read and, unless read-only, write the notes. Use it only on a trusted network.</li>
+          <li><strong>To forbid writes</strong>, mount the folder <code>:ro</code> and set
+            <code>RAGDOWN_READ_ONLY=true</code>.</li>
+        </ul>
+
+        <p class="docs-cta"><a class="btn btn-primary" href="{{ site.repo }}/blob/main/README.md">Read the full README ↗</a></p>
+      </article>
+    </div>
+  </div>
+</section>

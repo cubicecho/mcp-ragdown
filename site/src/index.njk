@@ -1,0 +1,222 @@
+---
+layout: base.njk
+title: false
+---
+
+<section class="hero">
+  <div class="wrap">
+    <p class="eyebrow">MCP server over Markdown</p>
+    <h1>{{ site.tagline }}</h1>
+    <p class="lede">
+      Point mcp-ragdown at a folder of Markdown files. It splits every file into heading-scoped sections, embeds
+      them into a local LanceDB index, keeps that index in sync as the files change, and serves hybrid search over
+      <a href="https://modelcontextprotocol.io">MCP</a>. A prompt hook can call <code>ragdown_context</code> to add
+      the related notes to every turn.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="{{ '/get-started/' | url }}">Get started →</a>
+      <a class="btn btn-ghost" href="#quickstart">Quickstart</a>
+      <a class="btn btn-ghost" href="{{ site.repo }}">View on GitHub ↗</a>
+    </div>
+
+    <div class="endpoint-card" aria-hidden="false">
+      <div class="endpoint-row">
+        <span class="method method-agg">ALL</span>
+        <code>http://host:3300/mcp</code>
+        <span class="endpoint-note">the whole folder</span>
+      </div>
+      <div class="endpoint-row">
+        <span class="method">ALL</span>
+        <code>http://host:3300/mcp/&lt;folder&gt;</code>
+        <span class="endpoint-note">one folder, as its own root</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>See it</h2>
+    <p class="section-lede">
+      <code>serve</code> ships a small web UI: the indexed files, each rendered beside the list, plus upload,
+      delete, and a Settings page showing how the server is set up. Shown here in light mode.
+    </p>
+
+    <figure class="shot shot-wide">
+      <div class="browser">
+        <div class="browser-bar"><span></span><span></span><span></span><em>localhost:3300/?doc=runbooks/backups.md</em></div>
+        <img class="zoomable" src="{{ '/assets/screenshots/documents.png' | url }}"
+          alt="The Documents page: indexed files on the left, the selected file rendered on the right with its size, line and chunk counts"
+          loading="lazy" width="1440" height="900" />
+      </div>
+      <figcaption><strong>Every indexed file.</strong> Filter by title or path, and open one to read it rendered,
+        with its size, line count and how many chunks it became. The selected file lives in the URL, so a preview
+        can be linked to.</figcaption>
+    </figure>
+
+    <div class="shot-grid">
+      <figure class="shot">
+        <div class="browser">
+          <div class="browser-bar"><span></span><span></span><span></span><em>Upload Markdown</em></div>
+          <img class="zoomable" src="{{ '/assets/screenshots/upload.png' | url }}"
+            alt="The Upload Markdown dialog with a target folder and a picked file"
+            loading="lazy" width="1440" height="900" />
+        </div>
+        <figcaption><strong>Upload.</strong> Drop in <code>.md</code>, <code>.markdown</code> or <code>.mdx</code>
+          files, optionally under a folder. They are indexed before the upload finishes.</figcaption>
+      </figure>
+      <figure class="shot">
+        <div class="browser">
+          <div class="browser-bar"><span></span><span></span><span></span><em>Delete this document?</em></div>
+          <img class="zoomable" src="{{ '/assets/screenshots/delete-confirm.png' | url }}"
+            alt="The delete confirmation for the previewed file"
+            loading="lazy" width="1440" height="900" />
+        </div>
+        <figcaption><strong>Delete.</strong> Removes the file from the docs folder, not only from the index, after
+          a confirmation.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>What it does</h2>
+    <div class="feature-grid">
+      <div class="feature">
+        <div class="feature-icon">📄</div>
+        <h3>Your files are the truth</h3>
+        <p>The Markdown folder is the source of truth; the index is derived and disposable. Change the embedder or
+          the chunker and the index rebuilds itself. Delete it and the next start rebuilds it.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🧭</div>
+        <h3>Chunks follow headings</h3>
+        <p>Every heading starts a section, and its breadcrumb (<code>Backups › Restore</code>) is embedded with it,
+          so a paragraph that only says "run it twice" is still found by a question about restores.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🔍</div>
+        <h3>Hybrid search</h3>
+        <p>Dense cosine search finds an answer in different words; BM25 full-text search finds an exact error
+          string or flag name. Reciprocal rank fusion merges the two.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🪝</div>
+        <h3>Context for every turn</h3>
+        <p><code>ragdown_context</code> is built for prompt hooks: the sections that clear a similarity bar, in a
+          <code>&lt;ragdown-context&gt;</code> block, never repeated within a session — or empty text when nothing
+          fits.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">📁</div>
+        <h3>Scopes per project</h3>
+        <p><code>/mcp/&lt;folder&gt;</code> serves the same tools with that folder as the root, so each agent sees
+          its own project's notes. Any folder the indexer walks is a scope, with nothing to configure.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🔄</div>
+        <h3>Always in sync</h3>
+        <p>A watcher diffs the folder: unchanged files are skipped by size and mtime, a content hash decides what to
+          re-embed, and deleted files drop out. Searches never wait for indexing.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">✍️</div>
+        <h3>Agents can write notes</h3>
+        <p><code>ragdown_remember</code> saves a new note and indexes it before returning. It never overwrites, and
+          <code>supersedes</code> hides the notes a new one replaces. <code>RAGDOWN_READ_ONLY</code> turns writing off.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">💻</div>
+        <h3>Local by default</h3>
+        <p>The default embedder, granite-embedding-small-english-r2, runs on ONNX Runtime on your CPU. Two other
+          local models, or any OpenAI-compatible <code>/embeddings</code> endpoint, are a setting away.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🖥️</div>
+        <h3>Web UI</h3>
+        <p>Browse and preview the indexed files, upload and delete Markdown, and check the server's settings — from
+          the same <code>serve</code> process, behind the same token.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">📦</div>
+        <h3>One image</h3>
+        <p>The Docker image has the default model baked in, so it starts offline. Mount your notes at
+          <code>/docs</code> and a volume at <code>/data</code> for the index.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-alt">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <div class="flow">
+      <div class="flow-node flow-client">
+        <strong>Your Markdown folder</strong>
+        <span><code>.md</code>, <code>.markdown</code>, <code>.mdx</code>, walked recursively</span>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node flow-router">
+        <strong>MCP Ragdown</strong>
+        <span>chunk by heading · embed · LanceDB · dense + BM25</span>
+      </div>
+      <div class="flow-arrow">→ <code>/mcp</code> →</div>
+      <div class="flow-node flow-servers">
+        <strong>Agents and hooks</strong>
+        <span>Claude Code, min-agent, any stdio or streamable-HTTP client</span>
+      </div>
+    </div>
+    <p class="flow-caption">
+      Everything an agent or a hook does goes through MCP — there is no hook command and no hook-only HTTP route.
+      Several processes on the same folder share one index: the one that holds the socket lock indexes and watches,
+      and the others search the same table and forward syncs to it.
+    </p>
+  </div>
+</section>
+
+<section class="section" id="quickstart">
+  <div class="wrap">
+    <h2>Quickstart</h2>
+
+    <h3>Docker Compose <span class="pill">recommended</span></h3>
+    <pre class="code"><code>services:
+  ragdown:
+    image: {{ site.dockerImage }}:latest
+    ports:
+      - '3300:3000'
+    volumes:
+      - ~/notes:/docs          <span class="cmt"># your Markdown folder</span>
+      - ragdown-data:/data     <span class="cmt"># the index, so restarts only diff</span>
+    environment:
+      RAGDOWN_TOKEN: ${RAGDOWN_TOKEN}
+    restart: unless-stopped
+
+volumes:
+  ragdown-data:</code></pre>
+    <pre class="code"><code>export RAGDOWN_TOKEN=$(openssl rand -hex 32)   <span class="cmt"># keep it; clients need it too</span>
+docker compose up -d
+claude mcp add --transport http ragdown http://localhost:3300/mcp \
+  --header "Authorization: Bearer $RAGDOWN_TOKEN"</code></pre>
+    <p>Open <code>http://localhost:3300</code> for the web UI. Images are published for <code>linux/amd64</code> to
+      <a href="{{ site.dockerHub }}">Docker Hub (<code>{{ site.dockerImage }}</code>)</a> and GHCR
+      (<code>{{ site.ghcrImage }}</code>).</p>
+
+    <h3>Without Docker <span class="pill">Node 26+</span></h3>
+    <pre class="code"><code>npm install
+claude mcp add ragdown -e RAGDOWN_DOCS_DIR=$HOME/notes -- node /path/to/mcp-ragdown/src/cli.ts stdio</code></pre>
+    <p>Node 26 runs the TypeScript directly; the default model (about 50 MB) downloads once on first start.</p>
+  </div>
+</section>
+
+<section class="section cta-final">
+  <div class="wrap">
+    <h2>Keep writing Markdown. Let agents find it.</h2>
+    <p>Walk through stdio, Docker and a hook on the Get started page, or read the tools and configuration reference.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="{{ '/get-started/' | url }}">Get started</a>
+      <a class="btn btn-ghost" href="{{ '/docs/' | url }}">Read the docs</a>
+      <a class="btn btn-ghost" href="{{ site.repo }}">GitHub ↗</a>
+    </div>
+  </div>
+</section>

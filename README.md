@@ -1,5 +1,8 @@
 # mcp-ragdown
 
+**Website:** [cubicecho.github.io/mcp-ragdown](https://cubicecho.github.io/mcp-ragdown/): an
+overview, a walkthrough and a condensed reference.
+
 An MCP server over a folder of Markdown files. Point it at the folder and it embeds every section
 into a local LanceDB index and keeps that index in sync as files change. Agents get search tools,
 and a hook that calls `ragdown_context` before each turn adds related notes to the prompt. The tool
