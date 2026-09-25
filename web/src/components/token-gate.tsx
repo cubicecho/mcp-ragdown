@@ -1,10 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
+import { useAppForm } from "@/components/app-form";
 import { KeyRound } from "@/components/app-icons";
 import { CardLayout } from "@/components/card-layout";
-import { FormField } from "@/components/form-field";
-import { PasswordInput } from "@/components/password-input";
-import { Button } from "@/components/ui/button";
+import { PasswordField } from "@/components/password-field";
 import { setToken, useNeedsAuth } from "@/lib/auth";
 
 /**
@@ -14,22 +13,26 @@ import { setToken, useNeedsAuth } from "@/lib/auth";
 export function TokenGate({ children }: { children: ReactNode }) {
   const needsAuth = useNeedsAuth();
   const queryClient = useQueryClient();
-  const [value, setValue] = useState("");
+  const form = useAppForm({
+    defaultValues: { token: "" },
+    onSubmit: ({ value }) => {
+      setToken(value.token.trim());
+      form.reset();
+      void queryClient.invalidateQueries();
+    },
+  });
 
   if (!needsAuth) return children;
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const token = value.trim();
-    if (!token) return;
-    setToken(token);
-    setValue("");
-    void queryClient.invalidateQueries();
-  };
-
   return (
     <div className="flex h-full items-center justify-center p-4">
-      <form onSubmit={submit} className="w-full max-w-sm">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void form.handleSubmit();
+        }}
+        className="w-full max-w-sm"
+      >
         <CardLayout
           icon={<KeyRound aria-hidden />}
           title="Token required"
@@ -39,25 +42,30 @@ export function TokenGate({ children }: { children: ReactNode }) {
             </>
           }
           content={
-            <FormField
+            <PasswordField
+              form={form}
+              name="token"
               label="Token"
-              control={
-                <PasswordInput
-                  placeholder="Bearer token"
-                  autoComplete="current-password"
-                  autoFocus
-                  value={value}
-                  onChange={(event) => setValue(event.target.value)}
-                  showLabel="Show token"
-                  hideLabel="Hide token"
-                />
-              }
+              placeholder="Bearer token"
+              autoComplete="current-password"
+              autoFocus
+              showLabel="Show token"
+              hideLabel="Hide token"
+              validators={{
+                onChange: ({ value }) => (value.trim() ? undefined : "Enter the token."),
+              }}
             />
           }
           footerActions={
-            <Button type="submit" disabled={!value.trim()}>
-              Unlock
-            </Button>
+            <form.AppForm>
+              <form.Subscribe selector={(state) => !state.values.token.trim()}>
+                {(empty) => (
+                  <form.SubmitButton pendingLabel="Unlocking…" disabled={empty}>
+                    Unlock
+                  </form.SubmitButton>
+                )}
+              </form.Subscribe>
+            </form.AppForm>
           }
         />
       </form>

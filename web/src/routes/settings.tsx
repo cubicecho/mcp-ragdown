@@ -1,5 +1,6 @@
 import { Link, useBlocker, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { InputField, SwitchField, useAppForm } from "@/components/app-form";
 import { CardLayout } from "@/components/card-layout";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DescriptionList, PropertyRow } from "@/components/description-list";
@@ -10,7 +11,6 @@ import {
   McpOffHint,
   RenameFolder,
 } from "@/components/folder-actions";
-import { FormField } from "@/components/form-field";
 import { LeaveDialog } from "@/components/leave-dialog";
 import { PageLayout } from "@/components/page-layout";
 import { QueryError, QueryState } from "@/components/query-state";
@@ -18,13 +18,12 @@ import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Plus, TriangleAlert } from "@/components/ui/icons";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemePicker } from "@/components/ui/theme-picker";
 import { useToast } from "@/components/ui/toast";
 import type { Folder, Status } from "@/lib/api";
 import { clearToken, getToken, requireAuth } from "@/lib/auth";
+import { errorMessage } from "@/lib/form-errors";
 import { formatAgo, formatCount } from "@/lib/format";
 import { useFolders, useStatus, useUpdateFolder } from "@/lib/queries";
 
@@ -226,6 +225,32 @@ function FoldersSection({ writable }: { writable: boolean }) {
  * A folder's settings as one form: change the title and the MCP switch, then Save sends both.
  * Nothing is saved on leaving a field, so a half-typed title never reaches agents.
  */
+/** What a save sends: only what differs. An empty title means the name, as an untitled folder shows. */
+function folderPatch(folder: Folder, values: { title: string; mcp: boolean }) {
+  const title = values.title.trim();
+  return {
+    ...((title || folder.name) !== folder.title ? { title } : {}),
+    ...(values.mcp !== folder.mcp ? { mcp: values.mcp } : {}),
+  };
+}
+
+/** Tells the section whether a card has unsaved changes, and takes it back when the card goes. */
+function ReportDirty({
+  name,
+  dirty,
+  onDirty,
+}: {
+  name: string;
+  dirty: boolean;
+  onDirty: (name: string, dirty: boolean) => void;
+}) {
+  useEffect(() => {
+    onDirty(name, dirty);
+    return () => onDirty(name, false);
+  }, [onDirty, name, dirty]);
+  return null;
+}
+
 function FolderCard({
   folder,
   writable,
@@ -237,42 +262,27 @@ function FolderCard({
 }) {
   const update = useUpdateFolder();
   const toast = useToast();
-  const [title, setTitle] = useState(folder.title);
-  const [mcp, setMcp] = useState(folder.mcp);
+  const saved = { title: folder.title, mcp: folder.mcp };
+  const form = useAppForm({
+    defaultValues: saved,
+    onSubmit: async ({ value }) => {
+      const patch = folderPatch(folder, value);
+      try {
+        await update.mutateAsync({ name: folder.name, patch });
+        toast(`Saved ${value.title.trim() || folder.name}`, "success");
+      } catch (error) {
+        toast(`Could not update ${folder.name}: ${errorMessage(error)}`);
+      }
+    },
+  });
   // A save, or a change from another tab, lands here as the new starting point.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the saved values are the trigger.
   useEffect(() => {
-    setTitle(folder.title);
-    setMcp(folder.mcp);
+    form.reset({ title: folder.title, mcp: folder.mcp });
   }, [folder.title, folder.mcp]);
-
-  // An empty title means the name, which is also what an untitled folder shows.
-  const nextTitle = title.trim() || folder.name;
-  const patch = {
-    ...(nextTitle !== folder.title ? { title: title.trim() } : {}),
-    ...(mcp !== folder.mcp ? { mcp } : {}),
-  };
-  const dirty = Object.keys(patch).length > 0;
-  useEffect(() => {
-    onDirty(folder.name, dirty);
-    return () => onDirty(folder.name, false);
-  }, [onDirty, folder.name, dirty]);
   const formId = `folder-${folder.name}`;
   const disabled = !writable || update.isPending;
-
-  const reset = () => {
-    setTitle(folder.title);
-    setMcp(folder.mcp);
-  };
-  const submit = () => {
-    if (!dirty || update.isPending) return;
-    update.mutate(
-      { name: folder.name, patch },
-      {
-        onSuccess: () => toast(`Saved ${nextTitle}`, "success"),
-        onError: (error) => toast(`Could not update ${folder.name}: ${error.message}`),
-      },
-    );
-  };
+  const reset = () => form.reset(saved);
 
   return (
     <CardLayout
@@ -302,51 +312,65 @@ function FolderCard({
           className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
-            submit();
+            void form.handleSubmit();
           }}
           onKeyDown={(event) => {
-            if (event.key === "Escape" && dirty) reset();
+            if (event.key === "Escape") reset();
           }}
         >
-          <FormField
+          <InputField
+            form={form}
+            name="title"
             label="Title"
             description="How the folder is shown here and to agents. The name, if left empty."
-            control={
-              <Input
-                className="sm:max-w-xs"
-                value={title}
-                placeholder={folder.name}
+            placeholder={folder.name}
+            disabled={disabled}
+          />
+          <form.Subscribe selector={(state) => state.values.mcp}>
+            {(mcp) => (
+              <SwitchField
+                form={form}
+                name="mcp"
+                label="Serve over MCP"
                 disabled={disabled}
-                onChange={(event) => setTitle(event.target.value)}
+                description={
+                  mcp ? (
+                    <>
+                      Agents reach it at <code className="text-xs">{folder.mcp_path}</code>.
+                    </>
+                  ) : (
+                    "Off, it is searchable here but agents never see it."
+                  )
+                }
               />
-            }
-          />
-          <FormField
-            orientation="horizontal"
-            label="Serve over MCP"
-            description={
-              mcp ? (
-                <>
-                  Agents reach it at <code className="text-xs">{folder.mcp_path}</code>.
-                </>
-              ) : (
-                "Off, it is searchable here but agents never see it."
-              )
-            }
-            control={<Switch checked={mcp} disabled={disabled} onCheckedChange={setMcp} />}
-          />
-          {writable ? (
-            <div className="flex items-center justify-end gap-2">
-              {dirty ? (
-                <Button type="button" variant="ghost" disabled={update.isPending} onClick={reset}>
-                  Reset
-                </Button>
-              ) : null}
-              <Button type="submit" disabled={!dirty || update.isPending}>
-                {update.isPending ? "Saving…" : "Save"}
-              </Button>
-            </div>
-          ) : null}
+            )}
+          </form.Subscribe>
+          <form.Subscribe
+            selector={(state) => Object.keys(folderPatch(folder, state.values)).length > 0}
+          >
+            {(dirty) => (
+              <>
+                <ReportDirty name={folder.name} dirty={dirty} onDirty={onDirty} />
+                {writable ? (
+                  <div className="flex items-center justify-end gap-2">
+                    {dirty ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={update.isPending}
+                        onClick={reset}
+                      >
+                        Reset
+                      </Button>
+                    ) : null}
+                    <form.AppForm>
+                      <form.SubmitButton disabled={!dirty}>Save</form.SubmitButton>
+                    </form.AppForm>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </form.Subscribe>
         </form>
       }
       // The shell's action row does not wrap, and three buttons outrun a phone's card.
