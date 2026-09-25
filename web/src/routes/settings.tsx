@@ -1,7 +1,8 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useState } from "react";
 import { CardLayout } from "@/components/card-layout";
 import { ConfirmButton } from "@/components/confirm-button";
+import { DescriptionList, PropertyRow } from "@/components/description-list";
 import {
   CreateFolder,
   DeleteFolder,
@@ -18,6 +19,7 @@ import { ArrowLeft, Plus, TriangleAlert } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemePicker } from "@/components/ui/theme-picker";
 import { useToast } from "@/components/ui/toast";
 import type { Folder, Status } from "@/lib/api";
@@ -25,70 +27,106 @@ import { clearToken, getToken, requireAuth } from "@/lib/auth";
 import { formatAgo, formatCount } from "@/lib/format";
 import { useFolders, useStatus, useUpdateFolder } from "@/lib/queries";
 
+export type SettingsTab = "folders" | "browser" | "server";
+
+const TABS: { value: SettingsTab; label: string }[] = [
+  { value: "folders", label: "Folders" },
+  { value: "browser", label: "This browser" },
+  { value: "server", label: "Server" },
+];
+
 /**
- * What this browser remembers, and how the server was started. The server's half is read-only:
- * it comes from environment variables at start, so each row names the variable that changes it.
+ * The folders, what this browser remembers, and how the server was started, one tab each. The
+ * server's tab is read-only: it comes from environment variables at start, so each row names the
+ * variable that changes it. The open tab is in the URL, so a link can land on one.
  */
 export function SettingsPage() {
   const status = useStatus();
+  const { tab = "folders" } = useSearch({ from: "/settings" });
+  const navigate = useNavigate({ from: "/settings" });
 
   useEffect(() => {
     document.title = "Settings · ragdown";
   }, []);
 
   return (
-    <PageLayout
-      title="Settings"
-      description="How this browser shows ragdown, and how the server is set up."
-      width="prose"
-      breadcrumbs={
-        // Under `md` the sidebar is gone, and its folder links with it.
-        <Link to="/" className="inline-flex items-center gap-1 md:hidden">
-          <ArrowLeft className="size-3.5" aria-hidden />
-          Documents
-        </Link>
+    // The root wraps the page so the list in the header and the panels in the body are one set.
+    <Tabs
+      className="h-full"
+      value={tab}
+      onValueChange={(next) =>
+        void navigate({
+          search: next === "folders" ? {} : { tab: next as SettingsTab },
+          replace: true,
+        })
       }
-      content={
-        <div className="flex flex-col gap-8 py-6">
-          <FoldersSection
-            writable={status.data?.ready === true && status.data.read_only === false}
-          />
-          <Section
-            title="This browser"
-            description="Kept in this browser's storage. Other browsers keep their own."
-            content={
-              <div className="flex flex-col gap-4">
-                <CardLayout
-                  title="Appearance"
-                  description="System follows the device's light or dark setting."
-                  // Uncontrolled: bound to the same stored preference as the sidebar's toggle.
-                  content={<ThemePicker />}
-                />
-                <AccessCard status={status.data} loading={status.isPending} />
-              </div>
-            }
-          />
-          <Section
-            title="Server"
-            description="Read from environment variables when the server starts. Change one and restart the server to apply it."
-            content={
-              status.isError ? (
-                <QueryError
-                  error={status.error}
-                  onRetry={status.refetch}
-                  what="the server status"
-                />
-              ) : (
-                <div className="flex flex-col gap-4">
-                  <ServerCard status={status.data} loading={status.isPending} />
-                  <HookCard status={status.data} loading={status.isPending} />
-                </div>
-              )
-            }
-          />
-        </div>
-      }
-    />
+    >
+      <PageLayout
+        title="Settings"
+        description="Folders, how this browser shows ragdown, and how the server is set up."
+        width="prose"
+        breadcrumbs={
+          // Under `md` the sidebar is gone, and its folder links with it.
+          <Link to="/" className="inline-flex items-center gap-1 md:hidden">
+            <ArrowLeft className="size-3.5" aria-hidden />
+            Documents
+          </Link>
+        }
+        headerContent={
+          <TabsList aria-label="Settings" className="self-start">
+            {TABS.map((t) => (
+              <TabsTrigger key={t.value} value={t.value}>
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        }
+        content={
+          <div className="py-6">
+            <TabsContent value="folders" className="mt-0">
+              <FoldersSection
+                writable={status.data?.ready === true && status.data.read_only === false}
+              />
+            </TabsContent>
+            <TabsContent value="browser" className="mt-0">
+              <Section
+                description="Kept in this browser's storage. Other browsers keep their own."
+                content={
+                  <div className="flex flex-col gap-4">
+                    <CardLayout
+                      title="Appearance"
+                      description="System follows the device's light or dark setting."
+                      // Uncontrolled: bound to the same stored preference as the sidebar's toggle.
+                      content={<ThemePicker />}
+                    />
+                    <AccessCard status={status.data} loading={status.isPending} />
+                  </div>
+                }
+              />
+            </TabsContent>
+            <TabsContent value="server" className="mt-0">
+              <Section
+                description="Read from environment variables when the server starts. Change one and restart the server to apply it."
+                content={
+                  status.isError ? (
+                    <QueryError
+                      error={status.error}
+                      onRetry={status.refetch}
+                      what="the server status"
+                    />
+                  ) : (
+                    <div className="flex flex-col gap-4">
+                      <ServerCard status={status.data} loading={status.isPending} />
+                      <HookCard status={status.data} loading={status.isPending} />
+                    </div>
+                  )
+                }
+              />
+            </TabsContent>
+          </div>
+        }
+      />
+    </Tabs>
   );
 }
 
@@ -103,7 +141,6 @@ function FoldersSection({ writable }: { writable: boolean }) {
 
   return (
     <Section
-      title="Folders"
       description="Top-level folders of the docs directory. Each has its own search, and its own MCP address while MCP is on for it."
       action={
         writable ? (
@@ -237,6 +274,8 @@ function FolderCard({ folder, writable }: { folder: Folder; writable: boolean })
           />
         </div>
       }
+      // The shell's action row does not wrap, and three buttons outrun a phone's card.
+      footerClassName="[&>div]:min-w-0 [&>div]:shrink [&>div]:flex-wrap [&>div]:justify-end"
       footerActions={
         <>
           <McpConfig folder={folder} />
@@ -272,7 +311,7 @@ function TitleInput({
   return (
     <Input
       aria-label={`Title of ${folder.name}`}
-      className="h-8 w-48"
+      className="h-8 w-48 max-w-full"
       value={draft}
       placeholder={folder.name}
       disabled={disabled}
@@ -302,31 +341,34 @@ function AccessCard({ status, loading }: { status: Status | undefined; loading: 
       loading={loading}
       content={
         status?.auth_required ? (
-          <div className="flex flex-col">
-            <Row label="Token required" value={<YesNo value />} />
-            <Row
-              label="Stored in this browser"
-              value={<YesNo value={stored} />}
-              action={
-                <ConfirmButton
-                  label="Forget token"
-                  variant="outline"
-                  size="sm"
-                  tooltip={false}
-                  disabled={!stored}
-                  title="Forget the token?"
-                  description="This browser stops sending it, and asks for it again before it shows anything. Keep a copy: the server cannot show it to you."
-                  confirmLabel="Forget"
-                  onConfirm={() => {
-                    clearToken();
-                    requireAuth();
-                  }}
-                >
-                  Forget token
-                </ConfirmButton>
-              }
-            />
-          </div>
+          <DescriptionList
+            content={[
+              <PropertyRow key="required" label="Token required" value={<YesNo value />} />,
+              <PropertyRow
+                key="stored"
+                label="Stored here"
+                value={<YesNo value={stored} />}
+                action={
+                  <ConfirmButton
+                    label="Forget token"
+                    variant="outline"
+                    size="sm"
+                    tooltip={false}
+                    disabled={!stored}
+                    title="Forget the token?"
+                    description="This browser stops sending it, and asks for it again before it shows anything. Keep a copy: the server cannot show it to you."
+                    confirmLabel="Forget"
+                    onConfirm={() => {
+                      clearToken();
+                      requireAuth();
+                    }}
+                  >
+                    Forget token
+                  </ConfirmButton>
+                }
+              />,
+            ]}
+          />
         ) : null
       }
     />
@@ -349,76 +391,87 @@ function ServerCard({ status, loading }: { status: Status | undefined; loading: 
       loading={loading}
       content={
         status ? (
-          <div className="flex flex-col">
-            <Row
-              label="Docs directory"
-              hint={<Env name="RAGDOWN_DOCS_DIR" />}
-              value={<code className="break-all text-xs">{status.docs_dir ?? "—"}</code>}
-            />
-            <Row
-              label="Embedder"
-              hint={
-                <>
-                  <Env name="RAGDOWN_EMBEDDER" />. A new one rebuilds the index, and wants its own
-                  hook minimum score.
-                </>
-              }
-              value={status.embedder ?? "—"}
-            />
-            <Row
-              label="Role"
-              hint={
-                status.role === "reader"
-                  ? "Another process on this folder owns the index; this one reads it."
-                  : "This process owns the index and keeps it in sync with the folder."
-              }
-              value={status.role ?? "—"}
-            />
-            <Row
-              label="Read-only"
-              hint={
-                <>
-                  <Env name="RAGDOWN_READ_ONLY" />. On, the MCP write tools are hidden.
-                </>
-              }
-              value={status.read_only === undefined ? "—" : <YesNo value={status.read_only} />}
-            />
-            <Row
-              label="Watch the folder"
-              hint={
-                <>
-                  <Env name="RAGDOWN_WATCH" />. Off, the index syncs at start and on{" "}
-                  <code>ragdown_reindex</code> only.
-                </>
-              }
-              value={<YesNo value={status.settings.watch} />}
-            />
-            <Row
-              label="Indexed"
-              value={
-                status.ready
-                  ? `${formatCount(status.files ?? 0, "file")} · ${formatCount(status.chunks ?? 0, "chunk")}`
-                  : "—"
-              }
-            />
-            <Row
-              label="Last sync"
-              hint={
-                sync
-                  ? `${sync.added} added, ${sync.updated} updated, ${sync.removed} removed`
-                  : undefined
-              }
-              value={
-                sync ? (
-                  <time dateTime={sync.at} title={new Date(sync.at).toLocaleString()}>
-                    {formatAgo(Date.parse(sync.at))}
-                  </time>
-                ) : (
-                  "—"
-                )
-              }
-            />
-          </div>
+          <DescriptionList
+            content={[
+              <PropertyRow
+                key="docs"
+                label="Docs directory"
+                value={
+                  <code className="break-all text-xs leading-5">{status.docs_dir ?? "—"}</code>
+                }
+                hint={<Env name="RAGDOWN_DOCS_DIR" />}
+              />,
+              <PropertyRow
+                key="embedder"
+                label="Embedder"
+                value={status.embedder ?? "—"}
+                hint={
+                  <>
+                    <Env name="RAGDOWN_EMBEDDER" />. A new one rebuilds the index, and wants its own
+                    hook minimum score.
+                  </>
+                }
+              />,
+              <PropertyRow
+                key="role"
+                label="Role"
+                value={status.role ?? "—"}
+                hint={
+                  status.role === "reader"
+                    ? "Another process owns the index; this one reads it."
+                    : "This process owns the index and keeps it in sync."
+                }
+              />,
+              <PropertyRow
+                key="read-only"
+                label="Read-only"
+                value={status.read_only === undefined ? "—" : <YesNo value={status.read_only} />}
+                hint={
+                  <>
+                    <Env name="RAGDOWN_READ_ONLY" />. On, the MCP write tools are hidden.
+                  </>
+                }
+              />,
+              <PropertyRow
+                key="watch"
+                label="Watch for changes"
+                value={<YesNo value={status.settings.watch} />}
+                hint={
+                  <>
+                    <Env name="RAGDOWN_WATCH" />. Off, the index syncs at start and on{" "}
+                    <code className="text-xs">ragdown_reindex</code> only.
+                  </>
+                }
+              />,
+              <PropertyRow
+                key="indexed"
+                label="Indexed"
+                value={
+                  status.ready
+                    ? `${formatCount(status.files ?? 0, "file")} · ${formatCount(status.chunks ?? 0, "chunk")}`
+                    : "—"
+                }
+              />,
+              <PropertyRow
+                key="sync"
+                label="Last sync"
+                value={
+                  sync ? (
+                    <time dateTime={sync.at} title={new Date(sync.at).toLocaleString()}>
+                      {formatAgo(Date.parse(sync.at))}
+                    </time>
+                  ) : (
+                    "—"
+                  )
+                }
+                hint={
+                  sync
+                    ? `${sync.added} added, ${sync.updated} updated, ${sync.removed} removed`
+                    : undefined
+                }
+              />,
+            ]}
+          />
         ) : null
       }
     />
@@ -432,80 +485,76 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
       title="Search defaults"
       description={
         <>
-          What <code>ragdown_context</code> injects before each prompt when the hook passes no
-          arguments of its own.
+          What <code className="text-xs">ragdown_context</code> injects before each prompt when the
+          hook passes no arguments of its own.
         </>
       }
       loading={loading}
       content={
         settings ? (
-          <div className="flex flex-col">
-            <Row
-              label="Sections per prompt"
-              hint={<Env name="RAGDOWN_HOOK_TOP_K" />}
-              value={settings.hook.top_k}
-            />
-            <Row
-              label="Minimum score"
-              hint={
-                <>
-                  <Env name="RAGDOWN_HOOK_MIN_SCORE" />. Cosine similarity, on the embedder's own
-                  scale.
-                </>
-              }
-              value={settings.hook.min_score}
-            />
-            <Row
-              label="Minimum share of the best hit"
-              hint={
-                <>
-                  <Env name="RAGDOWN_HOOK_MIN_RATIO" />. 0 turns it off.
-                </>
-              }
-              value={settings.hook.min_ratio}
-            />
-            <Row
-              label="Characters per prompt"
-              hint={<Env name="RAGDOWN_HOOK_MAX_CHARS" />}
-              value={settings.hook.max_chars.toLocaleString()}
-            />
-            <Row
-              label="Characters per search hit"
-              hint={
-                <>
-                  <Env name="RAGDOWN_TEXT_LIMIT" />. For the search tools' text output.
-                </>
-              }
-              value={settings.text_limit.toLocaleString()}
-            />
-          </div>
+          <DescriptionList
+            content={[
+              <PropertyRow
+                key="top-k"
+                label="Sections per prompt"
+                value={settings.hook.top_k}
+                hint={<Env name="RAGDOWN_HOOK_TOP_K" />}
+              />,
+              <PropertyRow
+                key="min-score"
+                label="Minimum score"
+                value={settings.hook.min_score}
+                hint={
+                  <>
+                    <Env name="RAGDOWN_HOOK_MIN_SCORE" />. Cosine similarity, on the embedder's own
+                    scale.
+                  </>
+                }
+              />,
+              <PropertyRow
+                key="min-ratio"
+                label="Share of the best hit"
+                value={settings.hook.min_ratio}
+                hint={
+                  <>
+                    <Env name="RAGDOWN_HOOK_MIN_RATIO" />. The least a hit may score against the
+                    best one; 0 turns it off.
+                  </>
+                }
+              />,
+              <PropertyRow
+                key="max-chars"
+                label="Characters per prompt"
+                value={settings.hook.max_chars.toLocaleString()}
+                hint={<Env name="RAGDOWN_HOOK_MAX_CHARS" />}
+              />,
+              <PropertyRow
+                key="text-limit"
+                label="Characters per hit"
+                value={settings.text_limit.toLocaleString()}
+                hint={
+                  <>
+                    <Env name="RAGDOWN_TEXT_LIMIT" />. For the search tools' text output.
+                  </>
+                }
+              />,
+            ]}
+          />
         ) : null
       }
     />
   );
 }
 
-function Row({
-  label,
-  hint,
-  value,
-  action,
-}: {
-  label: string;
-  hint?: ReactNode;
-  value: ReactNode;
-  action?: ReactNode;
-}) {
+/** A folder's editable rows: what the control sets on the left, the control on the right. */
+function Row({ label, hint, value }: { label: string; hint?: ReactNode; value: ReactNode }) {
   return (
     <Item size="sm" className="px-0">
       <ItemContent>
         <ItemTitle>{label}</ItemTitle>
         {hint ? <ItemDescription>{hint}</ItemDescription> : null}
       </ItemContent>
-      <ItemActions className="max-w-1/2 text-right tabular-nums">
-        {value}
-        {action}
-      </ItemActions>
+      <ItemActions className="max-w-1/2 text-right tabular-nums">{value}</ItemActions>
     </Item>
   );
 }

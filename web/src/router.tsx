@@ -2,7 +2,7 @@ import { createRootRoute, createRoute, createRouter } from "@tanstack/react-rout
 import { AppShell } from "@/components/app-shell";
 import { DocsPage } from "@/routes/docs";
 import { HomePage } from "@/routes/home";
-import { SettingsPage } from "@/routes/settings";
+import { SettingsPage, type SettingsTab } from "@/routes/settings";
 
 const rootRoute = createRootRoute({ component: AppShell });
 
@@ -30,9 +30,16 @@ const docsRoute = createRoute({
   component: DocsPage,
 });
 
+const SETTINGS_TABS: readonly string[] = ["folders", "browser", "server"];
+
+/** Settings, with the open tab in the URL. No `tab` is the folders. */
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
+  validateSearch: (search: Record<string, unknown>): { tab?: SettingsTab } =>
+    typeof search.tab === "string" && search.tab !== "folders" && SETTINGS_TABS.includes(search.tab)
+      ? { tab: search.tab as SettingsTab }
+      : {},
   component: SettingsPage,
 });
 
