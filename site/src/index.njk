@@ -45,7 +45,7 @@ title: false
     <h2>See it</h2>
     <p class="section-lede">
       <code>serve</code> ships a small web UI: a switcher for the folders, each folder's files rendered with their
-      wikilinks, tags and images, search, upload and delete, and a Settings page that turns MCP on per folder. Shown
+      wikilinks, tags and images, search, an editor for writing and editing notes, upload and delete, and a Settings page that turns MCP on per folder. Shown
       here in light mode.
     </p>
 
@@ -62,6 +62,27 @@ title: false
     </figure>
 
     <div class="shot-grid">
+      <figure class="shot">
+        <div class="browser">
+          <div class="browser-bar"><span></span><span></span><span></span><em>localhost:3300/f/work?doc=runbooks/backups.md&amp;edit=true</em></div>
+          <img class="zoomable" src="{{ '/assets/screenshots/editor.png' | url }}"
+            alt="runbooks/backups.md open in the Markdown editor with an unsaved change"
+            loading="lazy" width="1440" height="900" />
+        </div>
+        <figcaption><strong>Write and edit.</strong> Start a note — in a new subfolder if need be — or edit one in
+          place, with a preview a click away. A save never quietly overwrites a change made on disk since you opened
+          the note.</figcaption>
+      </figure>
+      <figure class="shot">
+        <div class="browser">
+          <div class="browser-bar"><span></span><span></span><span></span><em>New note</em></div>
+          <img class="zoomable" src="{{ '/assets/screenshots/new-note.png' | url }}"
+            alt="The New note dialog with a title and a subfolder"
+            loading="lazy" width="1440" height="900" />
+        </div>
+        <figcaption><strong>New note.</strong> A title and an optional subfolder; the note is created as
+          Markdown on disk and opens in the editor.</figcaption>
+      </figure>
       <figure class="shot">
         <div class="browser">
           <div class="browser-bar"><span></span><span></span><span></span><em>localhost:3300/settings</em></div>
@@ -152,7 +173,7 @@ title: false
       <div class="feature">
         <div class="feature-icon">🖥️</div>
         <h3>Web UI</h3>
-        <p>Browse, search and preview each folder, upload and delete Markdown, and create, rename and switch MCP
+        <p>Browse, search and preview each folder, write and edit notes, upload and delete Markdown, and create, rename and switch MCP
           on for folders — from the same <code>serve</code> process, behind the same token.</p>
       </div>
     </div>

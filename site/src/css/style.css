@@ -52,6 +52,15 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 code { font-family: var(--mono); font-size: 0.92em; }
+kbd {
+  font-family: var(--mono);
+  font-size: 0.8em;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0.05em 0.35em;
+}
 
 p code, li code, td code, h3 code {
   background: var(--bg-alt);
