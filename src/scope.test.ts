@@ -251,3 +251,72 @@ describe("superseding a note", () => {
     expect((await ops.remember("Ops", "In place.", [], "ops-note")).path).toBe("ops-note.md");
   });
 });
+
+describe("moving a note", () => {
+  async function folder() {
+    const t = await tempSetup({}, "folders");
+    closers.push(t.cleanup);
+    await t.write("work/ops/pg.md", "# Postgres\n\nSee [[kafka]] and [runbook](../run/book.md).");
+    await t.write("work/kafka.md", "# Kafka");
+    await t.write("work/run/book.md", "# Book");
+    await t.write(
+      "work/index.md",
+      [
+        "# Index",
+        "",
+        "[[ops/pg#Vacuum|vacuum]], [[pg]], ![[pg.md]] and [pg](ops/pg.md).",
+        "`[[pg]]` stays, [[missing]] too.",
+      ].join("\n"),
+    );
+    await t.write("work/other/pg.md", "# Another pg");
+    await t.write("home/link.md", "[[pg]]");
+    const rag = await Ragdown.start(t.config);
+    closers.push(() => rag.close());
+    await rag.sync(false);
+    const read = (path: string) => readFile(join(t.docsDir, path), "utf8");
+    return { ...t, rag, read, work: (await openScope(rag, "work")) as Scope };
+  }
+
+  it("rewrites the links to it, and its own links the move would break", async () => {
+    const t = await folder();
+    const moved = await t.work.moveDoc("ops/pg.md", "db/postgres.md");
+    expect(moved).toMatchObject({ from: "ops/pg.md", to: "db/postgres.md", updated: ["index.md"] });
+    expect(await t.read("work/index.md")).toBe(
+      [
+        "# Index",
+        "",
+        "[[postgres#Vacuum|vacuum]], [[postgres]], ![[postgres.md]] and [pg](db/postgres.md).",
+        "`[[pg]]` stays, [[missing]] too.",
+      ].join("\n"),
+    );
+    expect(await t.read("work/db/postgres.md")).toBe(
+      "# Postgres\n\nSee [[kafka]] and [runbook](../run/book.md).",
+    );
+    // Another folder's links never resolved to it.
+    expect(await t.read("home/link.md")).toBe("[[pg]]");
+    expect((await t.work.readDoc("postgres")).path).toBe("db/postgres.md");
+  });
+
+  it("keeps as much of the path as the new name needs to stay unambiguous", async () => {
+    const t = await folder();
+    await t.work.moveDoc("ops/pg.md", "db/deep/book.md");
+    expect(await t.read("work/index.md")).toContain(
+      "[[deep/book#Vacuum|vacuum]], [[deep/book]], ![[deep/book.md]] and [pg](db/deep/book.md).",
+    );
+    // Its own relative link moved with it, so it is recomputed.
+    expect(await t.read("work/db/deep/book.md")).toBe(
+      "# Postgres\n\nSee [[kafka]] and [runbook](../../run/book.md).",
+    );
+  });
+
+  it("refuses a taken path, a missing note and a move onto itself", async () => {
+    const t = await folder();
+    await expect(t.work.moveDoc("ops/pg.md", "kafka.md")).rejects.toMatchObject({ status: 409 });
+    await expect(t.work.moveDoc("nope.md", "x.md")).rejects.toMatchObject({ status: 404 });
+    await expect(t.work.moveDoc("ops/pg.md", "ops/pg.md")).rejects.toMatchObject({ status: 400 });
+    await expect(t.work.moveDoc("ops/pg.md", "../home/pg.md")).rejects.toMatchObject({
+      status: 400,
+    });
+    expect(await t.read("work/ops/pg.md")).toContain("# Postgres");
+  });
+});

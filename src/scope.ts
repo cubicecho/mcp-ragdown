@@ -17,7 +17,14 @@ import { isInside } from "./config.ts";
 import type { Ragdown } from "./engine.ts";
 import { formatHit } from "./format.ts";
 import { MARKDOWN } from "./indexer.ts";
-import { findLinks, type LinkNote, type ResolvedLink, resolveLink, resolveRef } from "./links.ts";
+import {
+  findLinks,
+  type LinkNote,
+  type LinkRef,
+  type ResolvedLink,
+  resolveLink,
+  resolveRef,
+} from "./links.ts";
 import type { Hit } from "./store.ts";
 
 /** Sessions whose returned chunks are remembered; past this the oldest is forgotten. */
@@ -536,6 +543,114 @@ export class Scope {
   }
 
   /**
+   * Rename or move a note within its folder, and rewrite every link in the folder that pointed at
+   * it — wikilinks, aliases aside, and relative Markdown links — so none of them breaks. The note's
+   * own links are rewritten too where the move would break them. Any link that resolved before
+   * resolves to the same note after; one that already resolved to nothing is left alone.
+   *
+   * A rewritten wikilink is the shortest target that still resolves where it should: the name when
+   * that is unambiguous, else as much of the path as it takes. Headings and shown text are kept.
+   *
+   * @throws with `status: 400` for a bad path or moving onto itself, `404` for no such note, and
+   *   `409` when something is already at `to`.
+   */
+  async moveDoc(from: string, to: string) {
+    const source = await this.resolvePath(from, { create: false, markdownOnly: true });
+    const dest = await this.resolvePath(to, { create: false, markdownOnly: true });
+    const info = await lstat(source.full).catch(() => undefined);
+    if (!info?.isFile()) {
+      throw Object.assign(new Error(`no such note: ${from}`), { status: 404 });
+    }
+    if (source.full === dest.full) {
+      throw Object.assign(new Error(`${from} is already there`), { status: 400 });
+    }
+    // A case-only rename on a case-insensitive disk finds the note itself at `to`: that is fine.
+    const occupied = await lstat(dest.full).catch(() => undefined);
+    if (occupied && (occupied.ino !== info.ino || occupied.dev !== info.dev)) {
+      throw Object.assign(new Error(`already exists: ${to}`), { status: 409 });
+    }
+
+    const docsDir = this.rag.config.docsDir;
+    const prefix = this.folder ? `${this.folder}/` : "";
+    const inFolder = (full: string) => toPosix(relative(docsDir, full)).slice(prefix.length);
+    const oldPath = inFolder(source.full);
+    const newPath = inFolder(dest.full);
+    const before = await this.folderNotes();
+    if (!before.some((note) => note.path === oldPath)) {
+      before.push({ path: oldPath, aliases: [] });
+    }
+    const after = before.map((note) => (note.path === oldPath ? { ...note, path: newPath } : note));
+    const attachments = await listAttachments(resolve(docsDir, this.folder));
+
+    // Every note's new text, read and rewritten before anything is written.
+    const rewrites = new Map<string, { original: string; text: string }>();
+    for (const note of before) {
+      const full = resolve(docsDir, `${prefix}${note.path}`);
+      const original = await readFile(full, "utf8").catch(() => undefined);
+      if (original === undefined) continue;
+      const from = note.path;
+      const at = from === oldPath ? newPath : from;
+      const edits: { start: number; end: number; text: string }[] = [];
+      for (const ref of findLinks(original)) {
+        const was = resolveRef(ref, from, before, attachments);
+        if (!was) continue;
+        const want = was === oldPath ? newPath : was;
+        if (resolveRef(ref, at, after, attachments) === want) continue;
+        edits.push({
+          start: ref.targetStart,
+          end: ref.targetEnd,
+          text: linkTarget(ref, want, at, after, attachments),
+        });
+      }
+      let text = original;
+      for (const edit of edits.reverse()) {
+        text = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
+      }
+      if (text !== original || from === oldPath) rewrites.set(from, { original, text });
+    }
+
+    const moved = rewrites.get(oldPath);
+    if (!moved) throw Object.assign(new Error(`no such note: ${from}`), { status: 404 });
+    await mkdir(dirname(dest.full), { recursive: true });
+    if (occupied) {
+      await rename(source.full, dest.full);
+      if (moved.text !== moved.original) await writeFile(dest.full, moved.text);
+    } else {
+      try {
+        await writeFile(dest.full, moved.text, { flag: "wx" });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        throw Object.assign(new Error(`already exists: ${to}`), { status: 409 });
+      }
+      await unlink(source.full);
+    }
+
+    const updated: string[] = [];
+    for (const [path, { original, text }] of rewrites) {
+      if (path === oldPath) continue;
+      const full = resolve(docsDir, `${prefix}${path}`);
+      // Changed since it was read, by an editor or an agent: theirs wins, and this link is not fixed.
+      if ((await readFile(full, "utf8").catch(() => undefined)) !== original) continue;
+      const temp = join(dirname(full), `.${randomUUID()}.tmp`);
+      try {
+        await writeFile(temp, text);
+        await rename(temp, full);
+      } catch (error) {
+        await rm(temp, { force: true });
+        throw error;
+      }
+      updated.push(path);
+    }
+    const scoped = (path: string) => this.toScoped(`${prefix}${path}`);
+    return {
+      from: scoped(oldPath),
+      to: scoped(newPath),
+      updated: updated.map(scoped),
+      sync: await this.rag.sync(false),
+    };
+  }
+
+  /**
    * Delete a Markdown file and drop it from the index before returning.
    *
    * @throws with `status: 400` for a path the indexer would not index, and `404` for no such file.
@@ -682,6 +797,34 @@ function headingRange(lines: string[], anchor: string): { start: number; end: nu
     }
   }
   return start === undefined ? undefined : { start, end: lines.length };
+}
+
+/**
+ * What to write in place of a link's target so it points at `want` from the note at `from`. A
+ * Markdown link gets the relative path; a wikilink, the shortest trailing part of the path that
+ * resolves there, keeping `.md` if the link had it.
+ */
+function linkTarget(
+  ref: LinkRef,
+  want: string,
+  from: string,
+  notes: LinkNote[],
+  attachments: string[],
+): string {
+  if (ref.kind === "markdown") {
+    return encodeURI(posix.relative(posix.dirname(from), want))
+      .replaceAll("(", "%28")
+      .replaceAll(")", "%29");
+  }
+  const note = MARKDOWN.test(want);
+  const keepExtension = note && MARKDOWN.test(ref.target);
+  const bare = note && !keepExtension ? want.replace(MARKDOWN, "") : want;
+  const segments = bare.split("/");
+  for (let k = 1; k <= segments.length; k++) {
+    const candidate = segments.slice(-k).join("/");
+    if (resolveLink(candidate, from, notes, attachments)?.path === want) return candidate;
+  }
+  return bare;
 }
 
 /**

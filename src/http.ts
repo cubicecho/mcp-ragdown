@@ -94,6 +94,8 @@ const FILE_TYPES: Record<string, string> = {
  *   a missing one a 404. `base_hash` is the `hash` `GET /api/doc` gave: the editor's save, a 409
  *   with `code: "changed"` when the file has changed or gone since. Each answers once the index
  *   has synced, so the next `/api/docs` already reflects it.
+ * - `POST /api/move` with `{ from, to }` — rename or move a note within its folder, rewriting the
+ *   links that pointed at it (`Scope.moveDoc`).
  * - `GET /api/search?folder=&q=[&tag=&top_k=]` — hybrid search within one folder, human-only ones
  *   included: the UI is for people.
  * - `GET /api/resolve?from=&link=` — a wikilink in the note `from`, resolved within its folder.
@@ -211,6 +213,7 @@ const API_ROUTES = new Set([
   "/api/search",
   "/api/resolve",
   "/api/backlinks",
+  "/api/move",
   "/api/file",
 ]);
 
@@ -354,6 +357,32 @@ async function handleApi(
     const docPath = required("path");
     await assertInFolder(config, docPath);
     json(res, 200, await root.deleteDoc(docPath));
+    return;
+  }
+
+  if (path === "/api/move") {
+    allow("POST");
+    if (config.readOnly) readOnly();
+    const body = (await readJson(req, MAX_UPLOAD_BYTES)) as Record<string, unknown>;
+    if (typeof body?.from !== "string" || typeof body.to !== "string") {
+      json(res, 400, { error: "from and to are required strings" });
+      return;
+    }
+    const name = await assertInFolder(config, body.from);
+    if ((await assertInFolder(config, body.to)) !== name) {
+      json(res, 400, { error: "a note moves within its folder: links do not cross folders" });
+      return;
+    }
+    const moved = await new Scope(rag, name).moveDoc(
+      body.from.slice(name.length + 1),
+      body.to.slice(name.length + 1),
+    );
+    json(res, 200, {
+      ...moved,
+      from: `${name}/${moved.from}`,
+      to: `${name}/${moved.to}`,
+      updated: moved.updated.map((each) => `${name}/${each}`),
+    });
     return;
   }
 
