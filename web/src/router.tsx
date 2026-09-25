@@ -14,12 +14,12 @@ const homeRoute = createRoute({
 });
 
 /** `edit` opens `doc` in the editor, once: the page drops it as soon as the editor is open. */
-export type DocsSearch = { doc?: string; tag?: string; edit?: boolean };
+export type DocsSearch = { doc?: string; tag?: string; edit?: boolean; sort?: "recent" };
 
 /**
- * One folder's documents. The selected file (relative to the folder) and the tag filter live in
- * the URL, so a preview can be linked to, reloaded, and walked back through with the browser's
- * own buttons.
+ * One folder's documents. The selected file (relative to the folder), the tag filter and the sort
+ * live in the URL, so a preview can be linked to, reloaded, and walked back through with the
+ * browser's own buttons.
  */
 const docsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -28,6 +28,7 @@ const docsRoute = createRoute({
     ...(typeof search.doc === "string" && search.doc ? { doc: search.doc } : {}),
     ...(typeof search.tag === "string" && search.tag ? { tag: search.tag } : {}),
     ...(search.edit === true || search.edit === "true" ? { edit: true } : {}),
+    ...(search.sort === "recent" ? { sort: "recent" as const } : {}),
   }),
   component: DocsPage,
 });

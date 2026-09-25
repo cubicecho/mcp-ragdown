@@ -37,6 +37,8 @@ export interface DocumentInfo {
   chunks: number;
   tags: string[];
   aliases: string[];
+  /** Root-relative paths this document's frontmatter says it replaces. */
+  supersedes: string[];
 }
 
 export interface FileUpdate {
@@ -231,12 +233,12 @@ export class Store {
   async documents(): Promise<DocumentInfo[]> {
     const rows = await this.table
       .query()
-      .select(["path", "title", "mtime_ms", "size", "tags", "aliases"])
+      .select(["path", "title", "mtime_ms", "size", "tags", "aliases", "supersedes"])
       .toArray();
     const docs = new Map<string, DocumentInfo>();
     for (const row of rows as Pick<
       Row,
-      "path" | "title" | "mtime_ms" | "size" | "tags" | "aliases"
+      "path" | "title" | "mtime_ms" | "size" | "tags" | "aliases" | "supersedes"
     >[]) {
       const doc = docs.get(row.path);
       if (doc) doc.chunks++;
@@ -249,6 +251,7 @@ export class Store {
           chunks: 1,
           tags: splitTags(row.tags),
           aliases: row.aliases ? row.aliases.split("\n") : [],
+          supersedes: row.supersedes ? row.supersedes.split("\n") : [],
         });
       }
     }
@@ -464,6 +467,15 @@ function toHit(row: ScoredRow, score: number, sources: Hit["sources"]): Hit {
     sources,
     tags: splitTags(row.tags),
   };
+}
+
+/** Which documents replace each superseded one, root-relative, from `documents()`. */
+export function supersededBy(docs: DocumentInfo[]): Map<string, string[]> {
+  const by = new Map<string, string[]>();
+  for (const doc of docs) {
+    for (const old of doc.supersedes) by.set(old, [...(by.get(old) ?? []), doc.path]);
+  }
+  return by;
 }
 
 function splitTags(tags: string): string[] {

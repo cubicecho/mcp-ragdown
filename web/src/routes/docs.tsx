@@ -1,7 +1,7 @@
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
-import { FileText, Folder as FolderIcon, Tag } from "@/components/app-icons";
+import { ArrowDownWideNarrow, FileText, Folder as FolderIcon, Tag } from "@/components/app-icons";
 import { Backlinks } from "@/components/backlinks";
 import { DeleteDoc, NewNote, RenameDoc, UploadDocs } from "@/components/doc-actions";
 import { DocEditor } from "@/components/doc-editor";
@@ -13,13 +13,14 @@ import { QueryError, QueryState } from "@/components/query-state";
 import { SidebarLayout } from "@/components/split-layout";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, Pencil, Plus, Search } from "@/components/ui/icons";
+import { Check, Copy, Download, Pencil, Plus, Search } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
 import { SegmentedButton, SegmentedGroup } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { DocSummary, Folder, SearchHit } from "@/lib/api";
+import { useToast } from "@/components/ui/toast";
+import { type DocSummary, type Folder, getFile, type SearchHit } from "@/lib/api";
 import { inFolder, setLastFolder, withinFolder } from "@/lib/folders";
 import { formatAgo, formatBytes, formatCount } from "@/lib/format";
 import { listValue, slug, splitFrontmatter } from "@/lib/markdown";
@@ -82,7 +83,14 @@ function FolderDocs({
       sidebar={<DocList folder={folder} title={title} info={info} docs={docs} selected={path} />}
       content={
         path ? (
-          <DocPreview key={path} folder={folder} path={path} summary={summary} known={known} />
+          <DocPreview
+            key={path}
+            folder={folder}
+            path={path}
+            summary={summary}
+            docs={docs.data}
+            known={known}
+          />
         ) : (
           <NothingSelected folder={folder} title={title} count={docs.data?.length} />
         )
@@ -120,7 +128,7 @@ function DocList({
   docs: ReturnType<typeof useDocs>;
   selected: string | undefined;
 }) {
-  const { tag } = route.useSearch();
+  const { tag, sort } = route.useSearch();
   const [mode, setMode] = useState<Mode>("filter");
   const [text, setText] = useState("");
   const query = useDebounced(mode === "search" ? text.trim() : "", 250);
@@ -134,13 +142,14 @@ function DocList({
   );
   const rows = useMemo(() => {
     const words = mode === "filter" ? text.toLowerCase().split(/\s+/).filter(Boolean) : [];
-    return (docs.data ?? []).filter((doc) => {
+    const matching = (docs.data ?? []).filter((doc) => {
       if (tag && !hasTag(doc.tags, tag)) return false;
       const haystack =
         `${doc.title} ${withinFolder(doc.path)} ${doc.aliases.join(" ")} ${doc.tags.join(" ")}`.toLowerCase();
       return words.every((word) => haystack.includes(word));
     });
-  }, [docs.data, text, tag, mode]);
+    return sort === "recent" ? matching.sort((a, b) => b.mtime_ms - a.mtime_ms) : matching;
+  }, [docs.data, text, tag, mode, sort]);
   const chunks = docs.data?.reduce((sum, doc) => sum + doc.chunks, 0) ?? 0;
   const searching = mode === "search" && query !== "";
 
@@ -184,7 +193,10 @@ function DocList({
                   <SegmentedButton value="filter">Filter</SegmentedButton>
                   <SegmentedButton value="search">Search</SegmentedButton>
                 </SegmentedGroup>
-                <TagMenu folder={folder} tags={tags} active={tag} />
+                <div className="ml-auto flex items-center gap-1">
+                  <SortMenu folder={folder} active={sort} />
+                  <TagMenu folder={folder} tags={tags} active={tag} />
+                </div>
               </div>
               <div className="relative">
                 <Search
@@ -272,7 +284,7 @@ function TagMenu({
   return (
     <Menu>
       <MenuTrigger asChild>
-        <Button variant="outline" size="sm" className="ml-auto">
+        <Button variant="outline" size="sm">
           <Tag aria-hidden /> {active ? `#${active}` : "Tags"}
         </Button>
       </MenuTrigger>
@@ -295,6 +307,45 @@ function TagMenu({
             }
           />
         ))}
+      </MenuContent>
+    </Menu>
+  );
+}
+
+/** By path, as the folder reads on disk, or the most recently changed first. Kept in the URL. */
+function SortMenu({ folder, active }: { folder: string; active: "recent" | undefined }) {
+  return (
+    <Menu>
+      <MenuTrigger asChild>
+        {/* Icon only: the pane is narrow, and Filter, Search and Tags already share the row. */}
+        <Button
+          variant="outline"
+          size="icon-sm"
+          aria-label={active === "recent" ? "Sorted by recently changed" : "Sorted by path"}
+          title={active === "recent" ? "Sorted by recently changed" : "Sorted by path"}
+        >
+          <ArrowDownWideNarrow aria-hidden />
+        </Button>
+      </MenuTrigger>
+      <MenuContent align="end">
+        <MenuItem
+          label="By path"
+          trailing={active === undefined ? "✓" : undefined}
+          link={
+            <Link to="/f/$folder" params={{ folder }} search={({ sort: _, ...rest }) => rest} />
+          }
+        />
+        <MenuItem
+          label="Recently changed"
+          trailing={active === "recent" ? "✓" : undefined}
+          link={
+            <Link
+              to="/f/$folder"
+              params={{ folder }}
+              search={(prev) => ({ ...prev, sort: "recent" as const })}
+            />
+          }
+        />
       </MenuContent>
     </Menu>
   );
@@ -382,7 +433,14 @@ function DocRow({ folder, doc, active }: { folder: string; doc: DocSummary; acti
         aria-current={active ? "page" : undefined}
       >
         <ItemContent className="min-w-0 gap-0.5">
-          <ItemTitle className="w-full truncate">{doc.title}</ItemTitle>
+          <ItemTitle className="w-full">
+            <span className="truncate">{doc.title}</span>
+            {doc.superseded_by.length > 0 ? (
+              <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
+                superseded
+              </Badge>
+            ) : null}
+          </ItemTitle>
           <ItemDescription className="truncate text-xs">
             <span className="text-muted-foreground/70">{dir}</span>
             {file}
@@ -447,11 +505,13 @@ function DocPreview({
   folder,
   path,
   summary,
+  docs,
   known,
 }: {
   folder: string;
   path: string;
   summary: DocSummary | undefined;
+  docs: DocSummary[] | undefined;
   known: ReadonlySet<string>;
 }) {
   const doc = useDoc(path);
@@ -482,7 +542,11 @@ function DocPreview({
   const otherFields = parsed.fields.filter(
     ([key]) => key !== "tags" && key !== "title" && key !== "aliases",
   );
-  const hasBadges = tags.length > 0 || aliases.length > 0 || otherFields.length > 0;
+  const replacedBy = (doc.data?.superseded_by ?? summary?.superseded_by ?? []).map(
+    (each) => docs?.find((d) => d.path === each) ?? { path: each, title: withinFolder(each) },
+  );
+  const hasBadges =
+    tags.length > 0 || aliases.length > 0 || otherFields.length > 0 || replacedBy.length > 0;
   const title = summary?.title ?? path.split("/").pop() ?? path;
 
   if (editing && doc.data) {
@@ -523,6 +587,7 @@ function DocPreview({
           action={
             <>
               <CopyPath path={path} />
+              <DownloadDoc path={path} />
               {writable && doc.data ? (
                 <ActionButton
                   variant="ghost"
@@ -540,6 +605,28 @@ function DocPreview({
           content={
             hasBadges ? (
               <div className="flex flex-wrap items-center gap-1.5">
+                {replacedBy.length > 0 ? (
+                  // Search already leaves this note out; this is for whoever opened it anyway.
+                  <p className="w-full text-muted-foreground text-sm">
+                    <Badge variant="outline" className="mr-1.5 font-normal">
+                      superseded
+                    </Badge>
+                    by{" "}
+                    {replacedBy.map((next, index) => (
+                      <span key={next.path}>
+                        {index > 0 ? ", " : null}
+                        <Link
+                          to="/f/$folder"
+                          params={{ folder }}
+                          search={(prev) => ({ ...prev, doc: withinFolder(next.path) })}
+                          className="font-medium text-foreground underline underline-offset-4"
+                        >
+                          {next.title}
+                        </Link>
+                      </span>
+                    ))}
+                  </p>
+                ) : null}
                 {aliases.length > 0 ? (
                   <span className="text-muted-foreground text-xs">
                     Also called {aliases.join(", ")}
@@ -594,6 +681,37 @@ function DocPreview({
 function useWritable(): boolean {
   const status = useStatus();
   return status.data?.ready === true && status.data.read_only === false;
+}
+
+/** The note's file as it is on disk, front matter and all, saved under its own name. */
+function DownloadDoc({ path }: { path: string }) {
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  return (
+    <ActionButton
+      variant="ghost"
+      size="icon-sm"
+      label="Download .md"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        getFile(path)
+          .then((blob) => {
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = path.split("/").pop() ?? "note.md";
+            anchor.click();
+            // After the click has handed the URL to the download, not before.
+            setTimeout(() => URL.revokeObjectURL(url), 0);
+          })
+          .catch((error) => toast(error instanceof Error ? error.message : String(error), "error"))
+          .finally(() => setBusy(false));
+      }}
+    >
+      <Download aria-hidden />
+    </ActionButton>
+  );
 }
 
 function CopyPath({ path }: { path: string }) {

@@ -21,7 +21,7 @@ import {
 } from "./folders.ts";
 import { openScope, Scope } from "./scope.ts";
 import { createMcpServer, SERVER_NAME, VERSION } from "./server.ts";
-import type { FileState } from "./store.ts";
+import { type FileState, supersededBy } from "./store.ts";
 
 /** An MCP message is a few kilobytes; anything near this is not one. */
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -394,7 +394,9 @@ async function handleApi(
       json(res, 404, { error: `no such folder: ${name}` });
       return;
     }
-    const docs = (await rag.documents()).filter((doc) => !name || doc.path.startsWith(`${name}/`));
+    const all = await rag.documents();
+    const replaced = supersededBy(all);
+    const docs = all.filter((doc) => !name || doc.path.startsWith(`${name}/`));
     json(res, 200, {
       docs: docs.map((doc) => ({
         path: doc.path,
@@ -405,6 +407,7 @@ async function handleApi(
         chunks: doc.chunks,
         tags: doc.tags,
         aliases: doc.aliases,
+        superseded_by: replaced.get(doc.path) ?? [],
       })),
     });
     return;

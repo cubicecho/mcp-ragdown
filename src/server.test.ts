@@ -269,6 +269,22 @@ describe("MCP server", () => {
     expect((await t.call("ragdown_backlinks", { path: "nope.md" })).isError).toBe(true);
   });
 
+  it("says which note replaces a superseded one, when reading and listing", async () => {
+    const t = await connect();
+    await t.write("ops/backups-v2.md", "---\nsupersedes: backups.md\n---\n# Backups v2\n");
+    await t.rag.sync(false);
+    const read = JSON.parse((await t.call("ragdown_read_doc", { path: "ops/backups.md" })).text);
+    expect(read.superseded_by).toEqual(["ops/backups-v2.md"]);
+    const newer = JSON.parse(
+      (await t.call("ragdown_read_doc", { path: "ops/backups-v2.md" })).text,
+    );
+    expect(newer).not.toHaveProperty("superseded_by");
+    const listed = JSON.parse((await t.call("ragdown_list", {})).text);
+    expect(listed.notes).toContainEqual(
+      expect.objectContaining({ path: "ops/backups.md", superseded_by: ["ops/backups-v2.md"] }),
+    );
+  });
+
   it("reports stats", async () => {
     const t = await connect();
     const stats = JSON.parse((await t.call("ragdown_stats", { include_files: true })).text);

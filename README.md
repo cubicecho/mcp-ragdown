@@ -157,8 +157,9 @@ Open a folder as an Obsidian vault and both see the same notes:
 - **Wikilinks.** `ragdown_read_doc` takes a link target as well as a path — `Note`, `Note#Heading`,
   `sub/Note`, an alias — and resolves it the way Obsidian does, within the folder: an exact path,
   then a note whose name matches (the one beside the linking note, then the shortest path), then an
-  alias. A heading narrows the text to that section. The web UI follows `[[links]]` and shows
-  `![[embeds]]` and images.
+  alias. A heading narrows the text to that section. The web UI follows `[[links]]`, shows
+  `![[embeds]]` and images, lists the notes that link to the open one, completes `[[` in the editor
+  with the folder's notes, and rewrites the links to a note when it is renamed or moved.
 
 Tags and aliases get their own columns; they are not added to the text that is embedded, which was
 measured and made retrieval worse.
@@ -201,9 +202,9 @@ middle. A hook that fails or takes longer than min-agent's 3 seconds only loses 
 | --- | --- |
 | `ragdown_context` | For hooks: the sections related to a `prompt` as a `<ragdown-context>` block, or empty text. Filters by similarity, skips short prompts and slash commands, and never repeats a section for the same `session_id`. Takes `top_k`, `min_score`, `min_ratio` and `max_chars` to override the `RAGDOWN_HOOK_*` defaults. |
 | `ragdown_recall` | Hybrid search. Returns path, line range, heading breadcrumb, tags and similarity for each hit. Takes `top_k`, `path_prefix`, `tag`, `format: text\|json` and `max_chars`. |
-| `ragdown_read_doc` | Reads a file, or a line range of one, straight from disk. Never clipped. Also takes a wikilink target (`Note#Heading`); see [Obsidian](#obsidian). Returns the whole file's `hash`, for `ragdown_edit`. |
+| `ragdown_read_doc` | Reads a file, or a line range of one, straight from disk. Never clipped. Also takes a wikilink target (`Note#Heading`); see [Obsidian](#obsidian). Returns the whole file's `hash`, for `ragdown_edit`, and `superseded_by` when another note replaces it. |
 | `ragdown_backlinks` | The notes that link to a `path` — by wikilink, alias or relative Markdown link — with the lines the links are on. Links in code are not links. |
-| `ragdown_list` | Browses rather than searches: each note's path, title, tags and last change. Takes `path_prefix`, `tag`, `sort: path\|recent` and `limit`. |
+| `ragdown_list` | Browses rather than searches: each note's path, title, tags, last change, and `superseded_by` if it has been replaced. Takes `path_prefix`, `tag`, `sort: path\|recent` and `limit`. |
 | `ragdown_stats` | Folder, index size, embedder, role (primary or reader), whether a sync is running, and the last sync. |
 | `ragdown_remember` | Writes a new note (with frontmatter) under `RAGDOWN_NOTES_DIR` and indexes it before returning. Never overwrites a file. `supersedes` lists the notes this one replaces, which search then skips; `session_id` is recorded as provenance. |
 | `ragdown_edit` | Changes a note at a `path`, or creates one. `text` replaces the whole file, which for an existing note needs `base_hash` — the `hash` `ragdown_read_doc` gave — so an agent never overwrites a version it has not read. `append: true` adds `text` at the end instead, or with `heading` at the end of that section. A file that changed since `base_hash` is not written. |
@@ -251,7 +252,7 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 | `POST /api/folders` | bearer | Create a folder: JSON `{ name, title?, mcp? }`. 201; 409 when it exists, 400 for a bad name. |
 | `PATCH /api/folders/<name>` | bearer | JSON `{ title?, mcp?, name? }`: change its settings, or rename it with `name` (which re-indexes it). Unknown keys in `.ragdown.json` are kept. |
 | `DELETE /api/folders/<name>?confirm=<name>` | bearer | Delete a folder and everything in it. 400 unless `confirm` repeats the name. |
-| `GET /api/docs?folder=` | bearer | The indexed files, of one folder or all: `path`, `folder`, `title`, `tags`, `aliases`, `mtime_ms`, `size`, `chunks`. |
+| `GET /api/docs?folder=` | bearer | The indexed files, of one folder or all: `path`, `folder`, `title`, `tags`, `aliases`, `superseded_by`, `mtime_ms`, `size`, `chunks`. |
 | `GET /api/doc?path=` | bearer | One indexed file's text, read from disk, with its tags, aliases and `hash` (SHA-256 of the bytes on disk). 404 for a file the index does not hold. |
 | `POST /api/doc` | bearer | Upload a file: JSON `{ path, text, overwrite? }`, body up to 4 MiB. Only `.md`, `.markdown` or `.mdx` inside an existing folder, somewhere the indexer reads (no `..`, dot-folders, `node_modules` or symlinked folders); subfolders are created. 201 when created, 200 when overwritten, 409 for an existing file without `overwrite: true`. An edit sends `base_hash`, the `hash` it was opened at, in place of `overwrite`: 409 with `code: "changed"` if the file has changed or gone since. Saved over a CRLF file, the text keeps CRLF. The answer carries the new `hash`. |
 | `DELETE /api/doc?path=` | bearer | Delete a Markdown file. 404 when it is not there. |
@@ -356,8 +357,9 @@ keeps everything an ungated hook found while still cutting a fifth of the inject
 
 **Superseding a note.** A note whose frontmatter lists `supersedes:` hides the notes it names from
 search and from hook context. Nothing is deleted or rewritten — the old file stays on disk and
-`ragdown_read_doc` still opens it — but a fact that changed stops coming back as confident prose
-next to its replacement.
+`ragdown_read_doc` still opens it, saying which note replaced it (`superseded_by`), and the web UI
+marks it superseded and links to the replacement. But a fact that changed stops coming back as
+confident prose next to its replacement.
 
 ```markdown
 ---

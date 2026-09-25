@@ -56,6 +56,8 @@ export interface DocSummary {
   /** Lowercase, without `#`: frontmatter tags and inline ones, nested ones as `a/b`. */
   tags: string[];
   aliases: string[];
+  /** Root-relative paths of the notes whose frontmatter says they replace this one. */
+  superseded_by: string[];
 }
 
 /** One file's text, from `GET /api/doc?path=`. Read from disk, so current even mid-sync. */
@@ -69,6 +71,8 @@ export interface Doc {
   hash: string;
   tags?: string[];
   aliases?: string[];
+  /** Root-relative paths of the notes that replace this one; absent when none do. */
+  superseded_by?: string[];
 }
 
 /** One section `GET /api/search` found: hybrid recall within one folder. */
