@@ -125,9 +125,19 @@ curl localhost:3300/api/status                  <span class="cmt"># "ready": tru
         read-only — <code>ragdown_remember</code>, which writes into <code>work/notes</code>, and
         <code>ragdown_reindex</code>. A human-only folder answers <code>/mcp/&lt;folder&gt;</code> with the same 404
         as one that does not exist.</p>
-      <p>Further down, Settings also shows how the server is set up: the docs directory, embedder, role, read-only
-        and watch flags, the last sync, and the search defaults a hook gets. Those come from environment variables
-        at start.</p>
+      <p>The <strong>Server</strong> tab shows how the server is set up: the docs directory, embedder, role,
+        read-only and watch flags, the last sync, and the search defaults a hook gets. Those come from environment
+        variables at start, and each row names the one that sets it. <strong>This browser</strong> holds the theme
+        and the stored token.</p>
+      <figure class="shot">
+        <div class="browser">
+          <div class="browser-bar"><span></span><span></span><span></span><em>localhost:3300/settings?tab=server</em></div>
+          <img class="zoomable" src="{{ '/assets/screenshots/server.png' | url }}"
+            alt="Settings, Server: the docs directory, embedder, role, read-only and watch flags and last sync, each with the environment variable that sets it"
+            loading="lazy" width="1440" height="900" />
+        </div>
+        <figcaption>Read-only: change a variable and restart the server to apply it.</figcaption>
+      </figure>
     </div>
 
     <!-- Step 5 -->
