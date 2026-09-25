@@ -5,7 +5,6 @@ import { CreateFolder } from "@/components/folder-actions";
 import { QueryState } from "@/components/query-state";
 import { Sidebar, SidebarNavItem, SidebarSection } from "@/components/sidebar";
 import { SidebarLayout } from "@/components/split-layout";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, Plus, Settings } from "@/components/ui/icons";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
@@ -13,8 +12,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { clearToken, requireAuth } from "@/lib/auth";
 import { formatAgo, formatCount } from "@/lib/format";
 import { useFolders, useStatus } from "@/lib/queries";
-
-const NAV = [{ to: "/settings", label: "Settings", icon: Settings }] as const;
 
 /** The row, handed the router's `href` and click handler so it navigates without a reload. */
 const SidebarLink = createLink(SidebarNavItem);
@@ -81,6 +78,22 @@ function LockButton() {
     >
       <Lock aria-hidden />
     </ActionButton>
+  );
+}
+
+/** Settings, at the foot of the sidebar; the theme is chosen there, under Browser. */
+function SettingsLink() {
+  const matchRoute = useMatchRoute();
+  return (
+    <SidebarLink
+      to="/settings"
+      // Redundant beside `to`, but the prop is required.
+      // See https://github.com/cubicecho/cubeui/issues/129
+      href="/settings"
+      label="Settings"
+      icon={<Settings />}
+      active={Boolean(matchRoute({ to: "/settings", fuzzy: true }))}
+    />
   );
 }
 
@@ -158,20 +171,6 @@ function Nav() {
           />
         ))}
       />
-      <SidebarSection
-        content={NAV.map(({ to, label, icon: Icon }) => (
-          <SidebarLink
-            key={to}
-            to={to}
-            // Redundant beside `to`, but the prop is required.
-            // See https://github.com/cubicecho/cubeui/issues/129
-            href={to}
-            label={label}
-            icon={<Icon />}
-            active={Boolean(matchRoute({ to, fuzzy: true }))}
-          />
-        ))}
-      />
     </nav>
   );
 }
@@ -233,9 +232,9 @@ export function AppShell() {
           footer={
             <>
               <IndexStatus />
-              <div className="flex items-center gap-1">
-                <div className="flex-1">
-                  <ThemeToggle />
+              <div className="-mx-2 flex items-center gap-1">
+                <div className="min-w-0 flex-1">
+                  <SettingsLink />
                 </div>
                 <LockButton />
               </div>
@@ -259,9 +258,6 @@ export function AppShell() {
                 <Settings className="size-4" aria-hidden />
               </Link>
               <LockButton />
-              <div className="w-24">
-                <ThemeToggle />
-              </div>
             </div>
           </header>
           <main className="min-h-0 flex-1 overflow-y-auto md:overflow-hidden">
