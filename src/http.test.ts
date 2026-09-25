@@ -446,6 +446,19 @@ describe("HTTP server", () => {
     expect(await (await resolve("pg")).json()).toEqual({ path: "ops/db/pg.md" });
     expect((await resolve("nothing")).status).toBe(404);
 
+    const backlinks = await (await get("/api/backlinks?path=ops%2Fbackups.md")).json();
+    expect(backlinks).toEqual({
+      path: "ops/backups.md",
+      backlinks: [
+        {
+          path: "ops/db/pg.md",
+          title: "Postgres",
+          lines: [{ line: 7, text: expect.stringContaining("[[backups#Restore]]") }],
+        },
+      ],
+    });
+    expect((await get("/api/backlinks?path=ops%2Fnope.md")).status).toBe(404);
+
     const file = await get("/api/file?path=ops%2Fimg%2Fdiagram.png");
     expect(file.status).toBe(200);
     expect(file.headers.get("content-type")).toBe("image/png");

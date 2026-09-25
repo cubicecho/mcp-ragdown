@@ -89,6 +89,12 @@ export interface Resolved {
   anchor?: string;
 }
 
+/** The notes in a note's folder that link to it, from `GET /api/backlinks`. */
+export interface Backlinks {
+  path: string;
+  backlinks: { path: string; title: string; lines: { line: number; text: string }[] }[];
+}
+
 /** A non-2xx answer, carrying the server's `{ error }` message. */
 export class ApiError extends Error {
   readonly status: number;
@@ -199,6 +205,10 @@ export const searchDocs = async (search: {
  */
 export const resolveLink = (from: string, link: string) =>
   request<Resolved>(`/api/resolve${query({ from, link })}`);
+
+/** The notes that link to `path`, by wikilink, alias or relative Markdown link. */
+export const getBacklinks = (path: string) =>
+  request<Backlinks>(`/api/backlinks${query({ path })}`);
 
 /**
  * Any file inside a folder, as a blob. Fetched rather than linked because it needs the bearer

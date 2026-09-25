@@ -16,7 +16,7 @@ export const VERSION: string = (
 
 /**
  * The MCP surface, and the only way an agent or a hook reaches the notes. Tool names are `ragdown_*`,
- * after zeromem's `zeromem_*`: recall, read, list, remember, edit, stats, plus reindex and context (for hooks). Under `RAGDOWN_READ_ONLY` the write tools are not listed at all — an
+ * after zeromem's `zeromem_*`: recall, read, list, backlinks, remember, edit, stats, plus reindex and context (for hooks). Under `RAGDOWN_READ_ONLY` the write tools are not listed at all — an
  * agent should never see a tool it cannot call.
  *
  * @param ready resolves to the scope — the folder these tools treat as the root — once the model is
@@ -148,6 +148,20 @@ export function createMcpServer(
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     (args) => run(ready, (rag) => rag.readDoc(args.path, args.start_line, args.end_line)),
+  );
+
+  server.registerTool(
+    "ragdown_backlinks",
+    {
+      title: "Notes linking here",
+      description:
+        "The notes that link to a note — by [[wikilink]], alias, or relative Markdown link — each with the lines the links are on. Use it to find what depends on or refers to a note, e.g. before changing or superseding it.",
+      inputSchema: {
+        path: z.string().min(1).describe("Path of the note relative to the notes root"),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    (args) => run(ready, (rag) => rag.backlinks(args.path)),
   );
 
   server.registerTool(

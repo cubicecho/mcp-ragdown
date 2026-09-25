@@ -108,3 +108,87 @@ function normalize(target: string): string {
   const normalized = posix.normalize(text).replace(/^(\.\/|\/)+/, "");
   return normalized === "." ? "" : normalized;
 }
+
+/** A link found in a note's text by `findLinks`. */
+export interface LinkRef {
+  /** `wiki` for `[[…]]` and `![[…]]`, `markdown` for `[text](path)` to a relative path. */
+  kind: "wiki" | "markdown";
+  /** What goes to `resolveLink` (a wikilink's inside) or is a relative path (a Markdown link's). */
+  raw: string;
+  /** The target alone, before any `#heading` or `|shown`, as written, and where it sits in the text. */
+  target: string;
+  targetStart: number;
+  targetEnd: number;
+  /** 1-based. */
+  line: number;
+}
+
+/**
+ * Every wikilink, and every Markdown link to a relative path, in a note's text. Links in fenced code
+ * or inline code are left out, as a renderer leaves them.
+ */
+export function findLinks(text: string): LinkRef[] {
+  const out: LinkRef[] = [];
+  let fence: string | null = null;
+  let offset = 0;
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    const start = offset;
+    offset += line.length + 1;
+    const fenceMatch = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+    if (fenceMatch?.[1]) {
+      const marker = fenceMatch[1];
+      if (fence === null) fence = marker;
+      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+      continue;
+    }
+    if (fence !== null) continue;
+    // Inline code blanked out, keeping every offset.
+    const masked = line.replace(/(`+)[^`]*?\1/g, (code) => " ".repeat(code.length));
+    for (const match of masked.matchAll(/!?\[\[([^[\]\n]+?)\]\]/g)) {
+      const inner = match[1] ?? "";
+      const target = inner.split(/[|#]/)[0] ?? "";
+      const at = start + (match.index ?? 0) + match[0].indexOf("[[") + 2;
+      out.push({
+        kind: "wiki",
+        raw: inner,
+        target,
+        targetStart: at,
+        targetEnd: at + target.length,
+        line: i + 1,
+      });
+    }
+    for (const match of masked.matchAll(/\[[^\]\n]*\]\(<?([^)\s>]+)>?(?:\s+"[^"]*")?\)/g)) {
+      const url = match[1] ?? "";
+      if (/^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith("#") || url.startsWith("/")) continue;
+      const target = url.split("#")[0] ?? "";
+      const at = start + (match.index ?? 0) + match[0].indexOf(url, match[0].indexOf("]("));
+      out.push({
+        kind: "markdown",
+        raw: url,
+        target,
+        targetStart: at,
+        targetEnd: at + target.length,
+        line: i + 1,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Where a link found by `findLinks` in the note `from` points, within one folder: a wikilink as
+ * `resolveLink` does, a Markdown link only as a path relative to `from`.
+ */
+export function resolveRef(
+  ref: LinkRef,
+  from: string,
+  notes: LinkNote[],
+  attachments: string[] = [],
+): string | undefined {
+  if (ref.kind === "wiki") return resolveLink(ref.raw, from, notes, attachments)?.path;
+  const path = normalize(posix.join(posix.dirname(from), normalize(ref.target)));
+  if (!path || path.startsWith("../")) return undefined;
+  return notes.some((note) => note.path === path) || attachments.includes(path) ? path : undefined;
+}

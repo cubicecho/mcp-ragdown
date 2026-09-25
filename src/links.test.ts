@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseLink, resolveLink } from "./links.ts";
+import { findLinks, parseLink, resolveLink, resolveRef } from "./links.ts";
 
 const notes = [
   { path: "Home.md", aliases: [] },
@@ -48,5 +48,34 @@ describe("resolveLink", () => {
     expect(resolve("#Top", "Home.md")).toEqual({ path: "Home.md", anchor: "Top" });
     expect(resolve("Missing")).toBeUndefined();
     expect(resolve("../outside")).toBeUndefined();
+  });
+});
+
+describe("findLinks", () => {
+  it("finds wikilinks and relative Markdown links, outside code, with the target's offsets", () => {
+    const text = [
+      "See [[Plan#Goals|the plan]] and ![[diagram.png]].",
+      "Also [kafka](../notes/Kafka.md#Setup), [web](https://x.test) and [top](#top).",
+      "`[[Not a link]]` and",
+      "```",
+      "[[Nor this]]",
+      "```",
+    ].join("\n");
+    const refs = findLinks(text);
+    expect(refs.map((ref) => [ref.kind, ref.raw, ref.target, ref.line])).toEqual([
+      ["wiki", "Plan#Goals|the plan", "Plan", 1],
+      ["wiki", "diagram.png", "diagram.png", 1],
+      ["markdown", "../notes/Kafka.md#Setup", "../notes/Kafka.md", 2],
+    ]);
+    for (const ref of refs) expect(text.slice(ref.targetStart, ref.targetEnd)).toBe(ref.target);
+  });
+
+  it("resolves a Markdown link only as a path relative to its note", () => {
+    const [ref] = findLinks("[k](../notes/Kafka.md)");
+    expect(ref && resolveRef(ref, "projects/x.md", notes)).toBe("notes/Kafka.md");
+    const [byName] = findLinks("[k](Kafka.md)");
+    expect(byName && resolveRef(byName, "projects/x.md", notes)).toBeUndefined();
+    const [wiki] = findLinks("[[Streams]]");
+    expect(wiki && resolveRef(wiki, "Home.md", notes)).toBe("notes/Kafka.md");
   });
 });

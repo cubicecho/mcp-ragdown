@@ -2,6 +2,7 @@ import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { FileText, Folder as FolderIcon, Tag } from "@/components/app-icons";
+import { Backlinks } from "@/components/backlinks";
 import { DeleteDoc, NewNote, UploadDocs } from "@/components/doc-actions";
 import { DocEditor } from "@/components/doc-editor";
 import { McpOffHint } from "@/components/folder-actions";
@@ -578,7 +579,10 @@ function DocPreview({
             <Skeleton className="h-4 w-2/3" />
           </div>
         ) : (
-          <MarkdownPreview content={parsed.body} path={path} known={known} />
+          <>
+            <MarkdownPreview content={parsed.body} path={path} known={known} />
+            <Backlinks folder={folder} path={path} />
+          </>
         )
       }
     />
