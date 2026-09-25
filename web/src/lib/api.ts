@@ -65,6 +65,8 @@ export interface Doc {
   end_line: number;
   total_lines: number;
   text: string;
+  /** Of the file's bytes on disk: what an edit is saved against, as `base_hash`. */
+  hash: string;
   tags?: string[];
   aliases?: string[];
 }
@@ -90,11 +92,14 @@ export interface Resolved {
 /** A non-2xx answer, carrying the server's `{ error }` message. */
 export class ApiError extends Error {
   readonly status: number;
+  /** The server's reason, when it gives one: `changed` for an edit to a file that moved on. */
+  readonly code: string | undefined;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -103,6 +108,8 @@ export interface DocWrite {
   path: string;
   /** Upload only: false when an existing file was overwritten. */
   created?: boolean;
+  /** Write only: the new file's `hash`, which the next save of an edit is made against. */
+  hash?: string;
   sync: { added: number; updated: number; removed: number; unchanged: number; chunks: number };
 }
 
@@ -118,10 +125,11 @@ async function send(path: string, init: { method?: string; body?: unknown } = {}
   });
   if (response.status === 401) requireAuth();
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: unknown };
+    const body = (await response.json().catch(() => ({}))) as { error?: unknown; code?: unknown };
     throw new ApiError(
       response.status,
       typeof body.error === "string" ? body.error : `${response.status} ${response.statusText}`,
+      typeof body.code === "string" ? body.code : undefined,
     );
   }
   return response;
@@ -204,6 +212,14 @@ export const getFile = async (path: string) => (await send(`/api/file${query({ p
  */
 export const uploadDoc = (upload: { path: string; text: string; overwrite?: boolean }) =>
   request<DocWrite>("/api/doc", { method: "POST", body: upload });
+
+/**
+ * Save an edit to an existing file. `base_hash` is the `hash` it was opened at: if the file has
+ * changed or gone since, this is an `ApiError` with status 409 and code `changed`, and nothing is
+ * written. Saving over it anyway is `uploadDoc` with `overwrite`.
+ */
+export const saveDoc = (save: { path: string; text: string; base_hash: string }) =>
+  request<DocWrite>("/api/doc", { method: "POST", body: save });
 
 export const deleteDoc = (path: string) =>
   request<DocWrite>(`/api/doc${query({ path })}`, { method: "DELETE" });

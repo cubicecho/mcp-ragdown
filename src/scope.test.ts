@@ -1,4 +1,4 @@
-import { mkdir, readFile, symlink } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { Ragdown } from "./engine.ts";
@@ -89,6 +89,33 @@ describe("Scope", () => {
 
     expect(await beta.deleteDoc("sub/kafka.md")).toMatchObject({ sync: { removed: 1 } });
     await expect(beta.deleteDoc("sub/kafka.md")).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("saves an edit only over the version it was made to", async () => {
+    const t = await setup();
+    const beta = await openScope(t.rag, "projects/beta");
+    if (!beta) throw new Error("no scope");
+    const full = join(t.docsDir, "projects/beta/backups.md");
+    await writeFile(full, "# Backups\r\n\r\nNightly.\r\n");
+    await t.rag.sync(false);
+
+    const opened = await beta.readIndexedDoc("backups.md");
+    expect(opened.text).toBe("# Backups\n\nNightly.\n");
+    const saved = await beta.writeDoc("backups.md", "# Backups\n\nHourly.\n", false, opened.hash);
+    expect(saved).toMatchObject({ created: false, sync: { updated: 1 } });
+    // Line endings follow the file, not the browser.
+    expect(await readFile(full, "utf8")).toBe("# Backups\r\n\r\nHourly.\r\n");
+    expect((await beta.readIndexedDoc("backups.md")).hash).toBe(saved.hash);
+
+    await expect(beta.writeDoc("backups.md", "# x", false, opened.hash)).rejects.toMatchObject({
+      status: 409,
+      code: "changed",
+    });
+    await beta.deleteDoc("backups.md");
+    await expect(beta.writeDoc("backups.md", "# x", false, saved.hash)).rejects.toMatchObject({
+      status: 409,
+      code: "changed",
+    });
   });
 
   it("keeps hook context memory per scope", async () => {

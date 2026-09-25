@@ -111,6 +111,13 @@ The web UI creates, renames and deletes folders, and **Copy MCP config** on each
 title and MCP switch can still change — they are settings, not notes — but creating, renaming and
 deleting cannot.
 
+**Edit** on an open note swaps the preview for a Markdown source editor (CodeMirror, loaded on
+first use), with a Write/Preview switch and Ctrl/Cmd+S to save. It edits the source, not rich
+text, so wikilinks, embeds and front matter come back exactly as written. A save is made against
+the version that was opened: if the file changed on disk meanwhile — in Obsidian, by an agent, by
+`git pull` — the editor says so and asks whether to save over it or discard the edit, rather than
+quietly losing either. Leaving with unsaved changes asks first.
+
 A folder keeps an agent focused, not out: one token opens every folder with MCP on.
 
 ### Subfolders
@@ -236,8 +243,8 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 | `PATCH /api/folders/<name>` | bearer | JSON `{ title?, mcp?, name? }`: change its settings, or rename it with `name` (which re-indexes it). Unknown keys in `.ragdown.json` are kept. |
 | `DELETE /api/folders/<name>?confirm=<name>` | bearer | Delete a folder and everything in it. 400 unless `confirm` repeats the name. |
 | `GET /api/docs?folder=` | bearer | The indexed files, of one folder or all: `path`, `folder`, `title`, `tags`, `aliases`, `mtime_ms`, `size`, `chunks`. |
-| `GET /api/doc?path=` | bearer | One indexed file's text, read from disk, with its tags and aliases. 404 for a file the index does not hold. |
-| `POST /api/doc` | bearer | Upload a file: JSON `{ path, text, overwrite? }`, body up to 4 MiB. Only `.md`, `.markdown` or `.mdx` inside an existing folder, somewhere the indexer reads (no `..`, dot-folders, `node_modules` or symlinked folders); subfolders are created. 201 when created, 200 when overwritten, 409 for an existing file without `overwrite: true`. |
+| `GET /api/doc?path=` | bearer | One indexed file's text, read from disk, with its tags, aliases and `hash` (SHA-256 of the bytes on disk). 404 for a file the index does not hold. |
+| `POST /api/doc` | bearer | Upload a file: JSON `{ path, text, overwrite? }`, body up to 4 MiB. Only `.md`, `.markdown` or `.mdx` inside an existing folder, somewhere the indexer reads (no `..`, dot-folders, `node_modules` or symlinked folders); subfolders are created. 201 when created, 200 when overwritten, 409 for an existing file without `overwrite: true`. An edit sends `base_hash`, the `hash` it was opened at, in place of `overwrite`: 409 with `code: "changed"` if the file has changed or gone since. Saved over a CRLF file, the text keeps CRLF. The answer carries the new `hash`. |
 | `DELETE /api/doc?path=` | bearer | Delete a Markdown file. 404 when it is not there. |
 | `GET /api/search?folder=&q=&tag=&top_k=` | bearer | Hybrid search in one folder, human-only ones included. `top_k` defaults to 10, at most 50. |
 | `GET /api/resolve?from=&link=` | bearer | A wikilink target, resolved from the note `from` within its folder: `{ path, anchor? }` or 404. |

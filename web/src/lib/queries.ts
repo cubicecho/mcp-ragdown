@@ -10,6 +10,7 @@ import {
   listDocs,
   listFolders,
   resolveLink,
+  saveDoc,
   searchDocs,
   updateFolder,
   uploadDoc,
@@ -103,6 +104,11 @@ function useInvalidateDocs() {
 export const useUploadDoc = () => {
   const invalidate = useInvalidateDocs();
   return useMutation({ mutationFn: uploadDoc, onSettled: invalidate });
+};
+
+export const useSaveDoc = () => {
+  const invalidate = useInvalidateDocs();
+  return useMutation({ mutationFn: saveDoc, onSettled: invalidate });
 };
 
 export const useDeleteDoc = () => {

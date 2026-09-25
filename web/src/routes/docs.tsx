@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { FileText, Folder as FolderIcon, Tag } from "@/components/app-icons";
 import { DeleteDoc, UploadDocs } from "@/components/doc-actions";
+import { DocEditor } from "@/components/doc-editor";
 import { McpOffHint } from "@/components/folder-actions";
 import { StickyHeaderContentFooter } from "@/components/header-content-footer";
 import { MarkdownPreview } from "@/components/markdown-preview";
@@ -11,7 +12,7 @@ import { QueryError, QueryState } from "@/components/query-state";
 import { SidebarLayout } from "@/components/split-layout";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, Search } from "@/components/ui/icons";
+import { Check, Copy, Pencil, Search } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
@@ -76,7 +77,7 @@ function FolderDocs({
       sidebar={<DocList folder={folder} title={title} info={info} docs={docs} selected={path} />}
       content={
         path ? (
-          <DocPreview folder={folder} path={path} summary={summary} known={known} />
+          <DocPreview key={path} folder={folder} path={path} summary={summary} known={known} />
         ) : (
           <NothingSelected title={title} count={docs.data?.length} />
         )
@@ -420,6 +421,7 @@ function DocPreview({
 }) {
   const doc = useDoc(path);
   const writable = useWritable();
+  const [editing, setEditing] = useState(false);
   const parsed = useMemo(() => splitFrontmatter(doc.data?.text ?? ""), [doc.data]);
   // The server's lists, which also carry inline `#tags`; the frontmatter's as a fallback.
   const frontmatter = (key: string) => {
@@ -432,13 +434,29 @@ function DocPreview({
     ([key]) => key !== "tags" && key !== "title" && key !== "aliases",
   );
   const hasBadges = tags.length > 0 || aliases.length > 0 || otherFields.length > 0;
+  const title = summary?.title ?? path.split("/").pop() ?? path;
+
+  if (editing && doc.data) {
+    return (
+      <DocEditor
+        path={path}
+        title={title}
+        doc={doc.data}
+        known={known}
+        onClose={() => {
+          setEditing(false);
+          void doc.refetch();
+        }}
+      />
+    );
+  }
 
   return (
     <StickyHeaderContentFooter
       width="prose"
       header={
         <PageHeader
-          title={summary?.title ?? path.split("/").pop()}
+          title={title}
           breadcrumbs={
             <p className="break-all font-mono text-muted-foreground text-xs">
               {withinFolder(path)}
@@ -456,6 +474,16 @@ function DocPreview({
           action={
             <>
               <CopyPath path={path} />
+              {writable && doc.data ? (
+                <ActionButton
+                  variant="ghost"
+                  size="icon-sm"
+                  label="Edit"
+                  onClick={() => setEditing(true)}
+                >
+                  <Pencil aria-hidden />
+                </ActionButton>
+              ) : null}
               {writable && summary ? <DeleteDoc path={path} /> : null}
             </>
           }
@@ -509,7 +537,7 @@ function DocPreview({
   );
 }
 
-/** Upload and delete are offered only once status says the server takes writes. */
+/** Upload, edit and delete are offered only once status says the server takes writes. */
 function useWritable(): boolean {
   const status = useStatus();
   return status.data?.ready === true && status.data.read_only === false;
