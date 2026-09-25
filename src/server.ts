@@ -16,7 +16,7 @@ export const VERSION: string = (
 
 /**
  * The MCP surface, and the only way an agent or a hook reaches the notes. Tool names are `ragdown_*`,
- * after zeromem's `zeromem_*`: recall, read, remember, stats, plus reindex and context (for hooks). Under `RAGDOWN_READ_ONLY` the two write tools are not listed at all — an
+ * after zeromem's `zeromem_*`: recall, read, list, remember, edit, stats, plus reindex and context (for hooks). Under `RAGDOWN_READ_ONLY` the write tools are not listed at all — an
  * agent should never see a tool it cannot call.
  *
  * @param ready resolves to the scope — the folder these tools treat as the root — once the model is
@@ -134,7 +134,7 @@ export function createMcpServer(
     {
       title: "Read a note",
       description:
-        "Read a Markdown file from the notes folder, whole or by line range, straight from disk. Never clipped. Use it to see the context around a ragdown_recall hit, or to follow a [[wikilink]] in a note.",
+        "Read a Markdown file from the notes folder, whole or by line range, straight from disk. Never clipped. Use it to see the context around a ragdown_recall hit, or to follow a [[wikilink]] in a note. The result's hash is the whole file's, for ragdown_edit's base_hash.",
       inputSchema: {
         path: z
           .string()
@@ -148,6 +148,39 @@ export function createMcpServer(
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     (args) => run(ready, (rag) => rag.readDoc(args.path, args.start_line, args.end_line)),
+  );
+
+  server.registerTool(
+    "ragdown_list",
+    {
+      title: "List notes",
+      description:
+        "Browse the notes rather than search them: every note's path, title, tags and last change, optionally under a subfolder or with a tag. sort: 'recent' puts the most recently changed first.",
+      inputSchema: {
+        path_prefix: z
+          .string()
+          .optional()
+          .describe(
+            "Only notes under this subfolder, relative to the notes root, e.g. 'projects/'",
+          ),
+        tag: z
+          .string()
+          .optional()
+          .describe("Only notes with this tag; 'project' also matches 'project/alpha'"),
+        sort: z.enum(["path", "recent"]).default("path"),
+        limit: z.number().int().min(1).max(1000).default(100),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    (args) =>
+      run(ready, (rag) =>
+        rag.listDocs({
+          pathPrefix: args.path_prefix,
+          tag: args.tag,
+          sort: args.sort,
+          limit: args.limit,
+        }),
+      ),
   );
 
   server.registerTool(
@@ -200,6 +233,42 @@ export function createMcpServer(
           rag.remember(args.title, args.content, args.tags, args.name, {
             supersedes: args.supersedes,
             sessionId: args.session_id,
+          }),
+        ),
+    );
+
+    server.registerTool(
+      "ragdown_edit",
+      {
+        title: "Edit a note",
+        description:
+          "Change an existing note, or create one at a path you choose. By default text replaces the whole file (frontmatter included), which for an existing note needs base_hash: the hash ragdown_read_doc returned, so you never overwrite a version you have not read. append: true adds text at the end of the note, or with heading at the end of that section, leaving the rest as it is. If the file changed since base_hash, nothing is written: read it again and redo the edit.",
+        inputSchema: {
+          path: z
+            .string()
+            .min(1)
+            .describe(
+              "Path of a Markdown file relative to the notes root, e.g. 'projects/alpha.md'",
+            ),
+          text: z.string().min(1).describe("The note's new Markdown, or with append, what to add"),
+          base_hash: z
+            .string()
+            .optional()
+            .describe("The hash from ragdown_read_doc; required to replace an existing note"),
+          append: z.boolean().default(false),
+          heading: z
+            .string()
+            .optional()
+            .describe("With append: add to the end of the section under this heading"),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      },
+      (args) =>
+        run(ready, (rag) =>
+          rag.editDoc(args.path, args.text, {
+            append: args.append,
+            heading: args.heading,
+            baseHash: args.base_hash,
           }),
         ),
     );

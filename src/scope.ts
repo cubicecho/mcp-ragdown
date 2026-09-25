@@ -169,7 +169,8 @@ export class Scope {
       anchor = link.anchor;
       resolvedFrom = path;
     }
-    const lines = (await readFile(full, "utf8")).split(/\r?\n/);
+    const bytes = await readFile(full);
+    const lines = bytes.toString("utf8").split(/\r?\n/);
     const section =
       anchor && startLine === undefined && endLine === undefined
         ? headingRange(lines, anchor)
@@ -183,6 +184,9 @@ export class Scope {
       end_line: end,
       total_lines: lines.length,
       text: lines.slice(start - 1, end).join("\n"),
+      // Of the whole file as it is on disk, whatever range was read: what an edit hands back as
+      // `baseHash` to say which version it was made to.
+      hash: contentHash(bytes),
     };
   }
 
@@ -242,11 +246,7 @@ export class Scope {
     if (!doc) {
       throw Object.assign(new Error(`not an indexed document: ${path}`), { status: 404 });
     }
-    // Hashed from the bytes on disk, not `text`, which has its line endings normalised: an editor
-    // hands it back as `baseHash` to say which version its changes were made to. Hashed before the
-    // text is read: a write in between costs a needless conflict, never a lost one.
-    const hash = contentHash(await readFile(full));
-    return { ...(await this.readDoc(path)), hash, tags: doc.tags, aliases: doc.aliases };
+    return { ...(await this.readDoc(path)), tags: doc.tags, aliases: doc.aliases };
   }
 
   /**
@@ -384,6 +384,105 @@ export class Scope {
       created: !existing,
       hash: contentHash(text),
       sync: await this.rag.sync(false),
+    };
+  }
+
+  /**
+   * An agent's edit (`ragdown_edit`): replace a note's text, or append to it — at the end, or at the
+   * end of the section under `heading`. Written through `writeDoc`, so it is atomic and indexed
+   * before returning.
+   *
+   * @param baseHash the `hash` `readDoc` gave. Replacing an existing note requires it, so an agent
+   *   never overwrites a version it has not read; an append checks it when given. Either way the
+   *   write fails with `code: "changed"` if the file changed after the version edited was read.
+   * @throws with `status: 404` to append to a missing note or under a missing heading.
+   */
+  async editDoc(
+    path: string,
+    text: string,
+    options: { append?: boolean; heading?: string; baseHash?: string } = {},
+  ) {
+    if (options.heading !== undefined && !options.append) {
+      throw Object.assign(new Error("heading is for append: true"), { status: 400 });
+    }
+    const { full, relPath } = await this.resolvePath(path, { create: false, markdownOnly: true });
+    const current = (await lstat(full).catch(() => undefined))?.isFile()
+      ? await readFile(full)
+      : undefined;
+    if (!options.append) {
+      if (current && options.baseHash === undefined) {
+        throw Object.assign(
+          new Error(
+            `${relPath} exists: pass the hash ragdown_read_doc returned as base_hash to replace it`,
+          ),
+          { status: 409 },
+        );
+      }
+      return this.writeDoc(relPath, text, false, options.baseHash);
+    }
+    if (!current) throw Object.assign(new Error(`no such note: ${path}`), { status: 404 });
+    const hash = contentHash(current);
+    if (options.baseHash !== undefined && options.baseHash !== hash) {
+      throw Object.assign(new Error(`${relPath} was changed on disk since it was opened`), {
+        status: 409,
+        code: "changed",
+      });
+    }
+    const lines = current.toString("utf8").split(/\r?\n/);
+    const added = text.trimEnd().split(/\r?\n/);
+    let start = 0;
+    let end = lines.length;
+    if (options.heading) {
+      const section = headingRange(lines, options.heading);
+      if (!section) {
+        throw Object.assign(new Error(`no heading "${options.heading}" in ${relPath}`), {
+          status: 404,
+        });
+      }
+      start = section.start;
+      end = section.end;
+    }
+    // After the section's last non-blank line, with one blank line on each side.
+    let last = end;
+    while (last > start && !lines[last - 1]?.trim()) last--;
+    const next = [
+      ...lines.slice(0, last),
+      ...(last > 0 ? [""] : []),
+      ...added,
+      "",
+      ...lines.slice(end),
+    ];
+    // Hashed from what was read, so a write since then is a conflict rather than lost.
+    return this.writeDoc(relPath, next.join("\n"), false, hash);
+  }
+
+  /**
+   * The notes in this scope, for an agent to browse (`ragdown_list`) rather than search.
+   *
+   * @param pathPrefix only notes under this folder, relative to the scope.
+   * @param tag only notes with this tag or one nested under it, as `recall` filters.
+   * @param sort `path`, or `recent` for the most recently changed first.
+   */
+  async listDocs(
+    options: { pathPrefix?: string; tag?: string; sort?: "path" | "recent"; limit?: number } = {},
+  ) {
+    const folder = [this.dir, normalizeFolder(options.pathPrefix)].filter(Boolean).join("/");
+    const tag = options.tag?.trim().replace(/^#+/, "").replace(/\/+$/, "").toLowerCase();
+    const docs = (await this.rag.documents()).filter(
+      (doc) =>
+        (!folder || doc.path.startsWith(`${folder}/`)) &&
+        (!tag || doc.tags.some((t) => t === tag || t.startsWith(`${tag}/`))),
+    );
+    if (options.sort === "recent") docs.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    return {
+      total: docs.length,
+      notes: docs.slice(0, options.limit ?? docs.length).map((doc) => ({
+        path: this.toScoped(doc.path),
+        title: doc.title,
+        ...(doc.tags.length > 0 ? { tags: doc.tags } : {}),
+        ...(doc.aliases.length > 0 ? { aliases: doc.aliases } : {}),
+        modified: new Date(doc.mtimeMs).toISOString(),
+      })),
     };
   }
 
