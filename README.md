@@ -201,12 +201,15 @@ middle. A hook that fails or takes longer than min-agent's 3 seconds only loses 
 | --- | --- |
 | `ragdown_context` | For hooks: the sections related to a `prompt` as a `<ragdown-context>` block, or empty text. Filters by similarity, skips short prompts and slash commands, and never repeats a section for the same `session_id`. Takes `top_k`, `min_score`, `min_ratio` and `max_chars` to override the `RAGDOWN_HOOK_*` defaults. |
 | `ragdown_recall` | Hybrid search. Returns path, line range, heading breadcrumb, tags and similarity for each hit. Takes `top_k`, `path_prefix`, `tag`, `format: text\|json` and `max_chars`. |
-| `ragdown_read_doc` | Reads a file, or a line range of one, straight from disk. Never clipped. Also takes a wikilink target (`Note#Heading`); see [Obsidian](#obsidian). |
+| `ragdown_read_doc` | Reads a file, or a line range of one, straight from disk. Never clipped. Also takes a wikilink target (`Note#Heading`); see [Obsidian](#obsidian). Returns the whole file's `hash`, for `ragdown_edit`. |
+| `ragdown_list` | Browses rather than searches: each note's path, title, tags and last change. Takes `path_prefix`, `tag`, `sort: path\|recent` and `limit`. |
 | `ragdown_stats` | Folder, index size, embedder, role (primary or reader), whether a sync is running, and the last sync. |
 | `ragdown_remember` | Writes a new note (with frontmatter) under `RAGDOWN_NOTES_DIR` and indexes it before returning. Never overwrites a file. `supersedes` lists the notes this one replaces, which search then skips; `session_id` is recorded as provenance. |
+| `ragdown_edit` | Changes a note at a `path`, or creates one. `text` replaces the whole file, which for an existing note needs `base_hash` — the `hash` `ragdown_read_doc` gave — so an agent never overwrites a version it has not read. `append: true` adds `text` at the end instead, or with `heading` at the end of that section. A file that changed since `base_hash` is not written. |
 | `ragdown_reindex` | Syncs now; `full: true` re-embeds everything. |
 
-The two write tools are not listed when `RAGDOWN_READ_ONLY=true`.
+The write tools (`ragdown_remember`, `ragdown_edit`, `ragdown_reindex`) are not listed when
+`RAGDOWN_READ_ONLY=true`.
 
 ## Configuration
 
@@ -259,7 +262,7 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 Every `path` in `/api` includes the folder: `work/notes/a.md`. Writes answer after the index has
 synced, so the next `GET /api/docs` already shows them, and uploads, deletes, and creating,
 renaming or deleting a folder are a 403 under `RAGDOWN_READ_ONLY`. They are for the web UI; agents
-write with `ragdown_remember`.
+write with `ragdown_remember` and `ragdown_edit`.
 
 The web UI asks for the token once and keeps it in the browser's local storage. Its static files
 hold no notes, so they need none; everything it shows comes from the bearer routes. It is built by

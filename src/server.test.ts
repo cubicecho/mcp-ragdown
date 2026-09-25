@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -44,6 +44,8 @@ describe("MCP server", () => {
     const writable = await connect();
     expect((await writable.client.listTools()).tools.map((t) => t.name).sort()).toEqual([
       "ragdown_context",
+      "ragdown_edit",
+      "ragdown_list",
       "ragdown_read_doc",
       "ragdown_recall",
       "ragdown_reindex",
@@ -53,6 +55,7 @@ describe("MCP server", () => {
     const readOnly = await connect({ RAGDOWN_READ_ONLY: "true" });
     expect((await readOnly.client.listTools()).tools.map((t) => t.name).sort()).toEqual([
       "ragdown_context",
+      "ragdown_list",
       "ragdown_read_doc",
       "ragdown_recall",
       "ragdown_stats",
@@ -137,6 +140,102 @@ describe("MCP server", () => {
 
     const outside = await t.call("ragdown_remember", { ...args, name: "../../outside" });
     expect(outside.isError).toBe(true);
+  });
+
+  it("edits a note only over the version it read, and appends under a heading", async () => {
+    const t = await connect();
+    const read = async () =>
+      JSON.parse((await t.call("ragdown_read_doc", { path: "ops/backups.md" })).text);
+    const { hash } = await read();
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+
+    const blind = await t.call("ragdown_edit", { path: "ops/backups.md", text: "# Gone" });
+    expect(blind).toMatchObject({ isError: true, text: expect.stringMatching(/base_hash/) });
+
+    const appended = await t.call("ragdown_edit", {
+      path: "ops/backups.md",
+      text: "Check the checksum first.",
+      append: true,
+      heading: "Backups",
+      base_hash: hash,
+    });
+    expect(appended.isError).toBe(false);
+    // Nightly snapshots… is under Backups, and Restore is nested in it: the section ends at EOF.
+    await t.call("ragdown_edit", {
+      path: "ops/backups.md",
+      text: "## Offsite\n\nS3, weekly.",
+      append: true,
+    });
+    const after = await read();
+    expect(after.text).toBe(
+      "# Backups\n\nNightly snapshots.\n\n## Restore\n\nRun pg_restore twice.\n\nCheck the checksum first.\n\n## Offsite\n\nS3, weekly.\n",
+    );
+
+    const stale = await t.call("ragdown_edit", {
+      path: "ops/backups.md",
+      text: "# Backups",
+      base_hash: hash,
+    });
+    expect(stale).toMatchObject({ isError: true, text: expect.stringMatching(/changed on disk/) });
+
+    const replaced = await t.call("ragdown_edit", {
+      path: "ops/backups.md",
+      text: "# Backups\n\nNone.\n",
+      base_hash: after.hash,
+    });
+    expect(JSON.parse(replaced.text)).toMatchObject({ path: "ops/backups.md", created: false });
+    expect(await readFile(join(t.docsDir, "ops/backups.md"), "utf8")).toBe("# Backups\n\nNone.\n");
+
+    const created = await t.call("ragdown_edit", { path: "ops/new.md", text: "# New\n" });
+    expect(JSON.parse(created.text)).toMatchObject({ created: true });
+    const noHeading = await t.call("ragdown_edit", {
+      path: "ops/new.md",
+      text: "x",
+      append: true,
+      heading: "Nope",
+    });
+    expect(noHeading).toMatchObject({ isError: true, text: expect.stringMatching(/no heading/) });
+    const hidden = await t.call("ragdown_edit", { path: ".obsidian/x.md", text: "x" });
+    expect(hidden.isError).toBe(true);
+  });
+
+  it("appends between sections, keeping the next heading", async () => {
+    const t = await connect();
+    await t.write("a.md", "# A\n\n## One\n\nfirst\n\n\n## Two\n\nsecond\n");
+    await t.rag.sync(false);
+    await t.call("ragdown_edit", { path: "a.md", text: "more", append: true, heading: "One" });
+    expect(await readFile(join(t.docsDir, "a.md"), "utf8")).toBe(
+      "# A\n\n## One\n\nfirst\n\nmore\n\n## Two\n\nsecond\n",
+    );
+  });
+
+  it("lists notes by folder and tag, most recent first", async () => {
+    const t = await connect();
+    await t.write("notes/a.md", "---\ntitle: Alpha\ntags: [project/alpha]\n---\nA.");
+    await t.write("notes/b.md", "# Beta\n\n#ops");
+    await t.rag.sync(false);
+    const list = async (args: Record<string, unknown>) =>
+      JSON.parse((await t.call("ragdown_list", args)).text);
+
+    expect((await list({})).notes.map((n: { path: string }) => n.path)).toEqual([
+      "notes/a.md",
+      "notes/b.md",
+      "ops/backups.md",
+    ]);
+    const tagged = await list({ tag: "#project" });
+    expect(tagged).toMatchObject({
+      total: 1,
+      notes: [{ path: "notes/a.md", title: "Alpha", tags: ["project/alpha"] }],
+    });
+    expect((await list({ path_prefix: "notes/", limit: 1 })).total).toBe(2);
+    expect((await list({ path_prefix: "notes/", limit: 1 })).notes).toHaveLength(1);
+
+    const past = new Date(Date.now() - 60_000);
+    await utimes(join(t.docsDir, "notes/a.md"), past, past);
+    await utimes(join(t.docsDir, "notes/b.md"), new Date(), new Date());
+    await t.rag.sync(false);
+    const recent = await list({ sort: "recent", path_prefix: "notes" });
+    expect(recent.notes.map((n: { path: string }) => n.path)).toEqual(["notes/b.md", "notes/a.md"]);
   });
 
   it("reports stats", async () => {
