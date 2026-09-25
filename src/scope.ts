@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import {
   lstat,
@@ -242,7 +242,11 @@ export class Scope {
     if (!doc) {
       throw Object.assign(new Error(`not an indexed document: ${path}`), { status: 404 });
     }
-    return { ...(await this.readDoc(path)), tags: doc.tags, aliases: doc.aliases };
+    // Hashed from the bytes on disk, not `text`, which has its line endings normalised: an editor
+    // hands it back as `baseHash` to say which version its changes were made to. Hashed before the
+    // text is read: a write in between costs a needless conflict, never a lost one.
+    const hash = contentHash(await readFile(full));
+    return { ...(await this.readDoc(path)), hash, tags: doc.tags, aliases: doc.aliases };
   }
 
   /**
@@ -329,17 +333,32 @@ export class Scope {
    * web UI's upload: unlike `remember`, the caller names the file and the text is written as given.
    *
    * @param overwrite replace an existing file; without it, an existing file is refused.
+   * @param baseHash for an edit: the `hash` of the version the changes were made to. The file must
+   *   still be exactly that, so an edit never silently replaces what an agent or another tab wrote
+   *   meanwhile, and it keeps that version's CRLF line endings if it had them.
    * @throws with `status: 400` for a path the indexer would not index (see `resolveWritable`), and
-   *   `409` for an existing file without `overwrite`, or a folder where the file would go.
+   *   `409` for an existing file without `overwrite`, a folder where the file would go, or a file
+   *   that is no longer `baseHash` (with `code: "changed"`).
    */
-  async writeDoc(path: string, text: string, overwrite = false) {
+  async writeDoc(path: string, text: string, overwrite = false, baseHash?: string) {
     const { full, relPath } = await this.resolvePath(path, { create: true, markdownOnly: true });
     const existing = await lstat(full).catch(() => undefined);
     if (existing && !existing.isFile()) {
       throw Object.assign(new Error(`not a file: ${path}`), { status: 409 });
     }
-    if (existing && !overwrite) {
+    if (existing && !overwrite && baseHash === undefined) {
       throw Object.assign(new Error(`already exists: ${path}`), { status: 409 });
+    }
+    if (baseHash !== undefined) {
+      const current = existing ? await readFile(full) : undefined;
+      if (!current || contentHash(current) !== baseHash) {
+        const what = current ? "changed on disk" : "deleted";
+        throw Object.assign(new Error(`${path} was ${what} since it was opened`), {
+          status: 409,
+          code: "changed",
+        });
+      }
+      if (current.includes("\r\n")) text = text.replace(/\r?\n/g, "\r\n");
     }
     if (existing) {
       // Written beside it and renamed over it: a sync never reads half a file. The dot name keeps
@@ -360,7 +379,12 @@ export class Scope {
         throw Object.assign(new Error(`already exists: ${path}`), { status: 409 });
       }
     }
-    return { path: relPath, created: !existing, sync: await this.rag.sync(false) };
+    return {
+      path: relPath,
+      created: !existing,
+      hash: contentHash(text),
+      sync: await this.rag.sync(false),
+    };
   }
 
   /**
@@ -558,3 +582,7 @@ function slug(title: string): string {
       .slice(0, 60) || "note"
   );
 }
+
+/** What `readIndexedDoc` calls a file's `hash`, and `writeDoc` checks a `baseHash` against. */
+export const contentHash = (bytes: Buffer | string) =>
+  createHash("sha256").update(bytes).digest("hex");

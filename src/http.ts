@@ -88,10 +88,12 @@ const FILE_TYPES: Record<string, string> = {
  *   `/api/folders/<name>` — change a folder's settings or rename it (`PATCH { title?, mcp?, name? }`)
  *   and delete it with everything in it (`DELETE ?confirm=<name>`).
  * - `GET /api/docs[?folder=]` and `GET /api/doc?path=` — the indexed files and one file's text.
- * - `POST /api/doc` with `{ path, text, overwrite? }` and `DELETE /api/doc?path=` — upload and
- *   remove a Markdown file inside a folder. Paths are held to what the indexer would index
- *   (`Scope.writeDoc`); an existing file is a 409 unless `overwrite`, a missing one a 404. Each
- *   answers once the index has synced, so the next `/api/docs` already reflects it.
+ * - `POST /api/doc` with `{ path, text, overwrite?, base_hash? }` and `DELETE /api/doc?path=` —
+ *   upload, edit and remove a Markdown file inside a folder. Paths are held to what the indexer
+ *   would index (`Scope.writeDoc`); an existing file is a 409 unless `overwrite` or `base_hash`,
+ *   a missing one a 404. `base_hash` is the `hash` `GET /api/doc` gave: the editor's save, a 409
+ *   with `code: "changed"` when the file has changed or gone since. Each answers once the index
+ *   has synced, so the next `/api/docs` already reflects it.
  * - `GET /api/search?folder=&q=[&tag=&top_k=]` — hybrid search within one folder, human-only ones
  *   included: the UI is for people.
  * - `GET /api/resolve?from=&link=` — a wikilink in the note `from`, resolved within its folder.
@@ -116,7 +118,12 @@ export function createHttpServer(
     handle(ready, config, webDir, req, res).catch((error: unknown) => {
       const status = (error as { status?: number }).status ?? 500;
       if (status >= 500) console.error(`[http] ${req.method} ${req.url}: ${errorMessage(error)}`);
-      if (!res.headersSent) json(res, status, { error: errorMessage(error) });
+      const code = (error as { code?: unknown }).code;
+      const body =
+        typeof code === "string" && status < 500
+          ? { error: errorMessage(error), code }
+          : { error: errorMessage(error) };
+      if (!res.headersSent) json(res, status, body);
       else res.end();
     });
   });
@@ -333,7 +340,12 @@ async function handleApi(
         return;
       }
       await assertInFolder(config, body.path);
-      const written = await root.writeDoc(body.path, body.text, body.overwrite === true);
+      const written = await root.writeDoc(
+        body.path,
+        body.text,
+        body.overwrite === true,
+        typeof body.base_hash === "string" ? body.base_hash : undefined,
+      );
       json(res, written.created ? 201 : 200, written);
       return;
     }

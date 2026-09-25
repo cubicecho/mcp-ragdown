@@ -138,7 +138,22 @@ describe("HTTP server", () => {
     expect(replaced.status).toBe(200);
     expect(await replaced.json()).toMatchObject({ created: false, sync: { updated: 1 } });
     const doc = await fetch(`${t.url}/api/doc?path=ops%2Fdeep%2Fkafka.md`, { headers: auth });
-    expect(((await doc.json()) as { text: string }).text).toContain("Two weeks");
+    const opened = (await doc.json()) as { text: string; hash: string };
+    expect(opened.text).toContain("Two weeks");
+
+    // An edit: saved against the hash it was opened at, refused once the file moves on.
+    const edited = await upload({
+      path: "ops/deep/kafka.md",
+      text: "# Kafka\n\nThree weeks.",
+      base_hash: opened.hash,
+    });
+    expect(edited.status).toBe(200);
+    const saved = (await edited.json()) as { hash: string };
+    expect(saved.hash).not.toBe(opened.hash);
+    const stale = await upload({ path: "ops/deep/kafka.md", text: "# x", base_hash: opened.hash });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ code: "changed" });
+    expect(await readFile(join(t.docsDir, "ops/deep/kafka.md"), "utf8")).toContain("Three");
 
     // Outside every folder, absolute, somewhere the indexer skips, or not Markdown.
     await symlink(t.root, join(t.docsDir, "out"));
