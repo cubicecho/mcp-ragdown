@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
@@ -6,7 +7,12 @@ import { formatHits, hitJson } from "./format.ts";
 import type { Scope } from "./scope.ts";
 
 export const SERVER_NAME = "ragdown";
-export const VERSION = "0.1.0";
+/** The package's own version: semantic-release bumps `package.json`, which ships beside `src`. */
+export const VERSION: string = (
+  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+    version: string;
+  }
+).version;
 
 /**
  * The MCP surface, and the only way an agent or a hook reaches the notes. Tool names are `ragdown_*`,
