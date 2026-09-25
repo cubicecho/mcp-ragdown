@@ -25,7 +25,7 @@ import {
   resolveLink,
   resolveRef,
 } from "./links.ts";
-import type { Hit } from "./store.ts";
+import { type Hit, supersededBy } from "./store.ts";
 
 /** Sessions whose returned chunks are remembered; past this the oldest is forgotten. */
 const MAX_SESSIONS = 200;
@@ -177,6 +177,10 @@ export class Scope {
       resolvedFrom = path;
     }
     const bytes = await readFile(full);
+    const replacedBy = this.replacedBy(
+      supersededBy(await this.rag.documents()),
+      toPosix(relative(this.rag.config.docsDir, full)),
+    );
     const lines = bytes.toString("utf8").split(/\r?\n/);
     const section =
       anchor && startLine === undefined && endLine === undefined
@@ -194,7 +198,23 @@ export class Scope {
       // Of the whole file as it is on disk, whatever range was read: what an edit hands back as
       // `baseHash` to say which version it was made to.
       hash: contentHash(bytes),
+      ...withSupersededBy(replacedBy),
     };
+  }
+
+  /**
+   * The notes in this scope whose frontmatter says they replace `rootPath`, relative to the scope.
+   * Search already skips a superseded note; this is for whoever opens one anyway.
+   */
+  private replacedBy(by: Map<string, string[]>, rootPath: string): string[] {
+    return (by.get(rootPath) ?? [])
+      .filter((path) => this.contains(path))
+      .map((path) => this.toScoped(path));
+  }
+
+  /** Whether a root-relative path is inside this scope. */
+  private contains(rootPath: string): boolean {
+    return !this.dir || rootPath.startsWith(`${this.dir}/`);
   }
 
   /**
@@ -524,7 +544,9 @@ export class Scope {
   ) {
     const folder = [this.dir, normalizeFolder(options.pathPrefix)].filter(Boolean).join("/");
     const tag = options.tag?.trim().replace(/^#+/, "").replace(/\/+$/, "").toLowerCase();
-    const docs = (await this.rag.documents()).filter(
+    const all = await this.rag.documents();
+    const by = supersededBy(all);
+    const docs = all.filter(
       (doc) =>
         (!folder || doc.path.startsWith(`${folder}/`)) &&
         (!tag || doc.tags.some((t) => t === tag || t.startsWith(`${tag}/`))),
@@ -538,6 +560,7 @@ export class Scope {
         ...(doc.tags.length > 0 ? { tags: doc.tags } : {}),
         ...(doc.aliases.length > 0 ? { aliases: doc.aliases } : {}),
         modified: new Date(doc.mtimeMs).toISOString(),
+        ...withSupersededBy(this.replacedBy(by, doc.path)),
       })),
     };
   }
@@ -859,6 +882,11 @@ function normalizeFolder(prefix: string | undefined): string {
 }
 
 /** A relative path with `/` separators, which is what frontmatter and the index both use. */
+/** `superseded_by` on a note that something replaces, and nothing on one that nothing does. */
+function withSupersededBy(paths: string[]): { superseded_by?: string[] } {
+  return paths.length > 0 ? { superseded_by: paths } : {};
+}
+
 function toPosix(path: string): string {
   return path.split(sep).join("/");
 }

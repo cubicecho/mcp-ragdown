@@ -1,3 +1,10 @@
+import {
+  autocompletion,
+  type Completion,
+  type CompletionContext,
+  type CompletionResult,
+  completionKeymap,
+} from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
@@ -33,7 +40,66 @@ const theme = EditorView.theme({
     backgroundColor: "color-mix(in oklch, var(--ring) 35%, transparent) !important",
   },
   ".cm-placeholder": { color: "var(--muted-foreground)" },
+  ".cm-tooltip": {
+    backgroundColor: "var(--popover)",
+    color: "var(--popover-foreground)",
+    border: "1px solid var(--border)",
+    borderRadius: "calc(var(--radius) - 2px)",
+    overflow: "hidden",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul": { fontFamily: "inherit", maxHeight: "16rem" },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li": { padding: "0.25rem 0.5rem" },
+  ".cm-tooltip-autocomplete ul li[aria-selected]": {
+    backgroundColor: "var(--accent)",
+    color: "var(--accent-foreground)",
+  },
+  ".cm-completionDetail": { color: "var(--muted-foreground)", fontStyle: "normal" },
 });
+
+/**
+ * What `[[` offers: each note by the shortest name that finds it, as a wikilink resolves — the
+ * file name when no other note shares it, else as much of the path as tells them apart.
+ *
+ * @param notes paths relative to the folder, with `.md`.
+ */
+export function wikilinkOptions(notes: readonly string[]): Completion[] {
+  const bare = notes.map((path) => path.replace(/\.md$/i, ""));
+  return bare.map((path, index) => {
+    const parts = path.split("/");
+    let label = path;
+    for (let take = 1; take <= parts.length; take++) {
+      const tail = parts.slice(-take).join("/").toLowerCase();
+      const clashes = bare.some(
+        (other, at) =>
+          at !== index &&
+          (other.toLowerCase() === tail || other.toLowerCase().endsWith(`/${tail}`)),
+      );
+      if (!clashes) {
+        label = parts.slice(-take).join("/");
+        break;
+      }
+    }
+    return { label, detail: label === path ? undefined : path, type: "text" };
+  });
+}
+
+/** Completes a wikilink's target, from `[[` up to a `|`, `#` or the closing `]]`. */
+function wikilinkSource(options: () => Completion[]) {
+  return (context: CompletionContext): CompletionResult | null => {
+    const before = context.matchBefore(/\[\[[^\]|#\n]*$/);
+    if (!before) return null;
+    const after = context.state.sliceDoc(context.pos, context.pos + 2);
+    return {
+      from: before.from + 2,
+      options: options().map((option) => ({
+        ...option,
+        // Close the link, unless it already is.
+        apply: after === "]]" ? option.label : `${option.label}]]`,
+      })),
+      validFor: /^[^\]|#\n]*$/,
+    };
+  };
+}
 
 /** Markdown's structure, muted, so the prose stays the thing you read. */
 const highlight = HighlightStyle.define([
@@ -65,17 +131,24 @@ export default function MarkdownEditor({
   onChange,
   onSave,
   label,
+  notes = [],
 }: {
   value: string;
   onChange: (text: string) => void;
   /** Ctrl/Cmd+S, which would otherwise save the web page. */
   onSave: () => void;
   label: string;
+  /** The folder's notes, relative to it, which `[[` offers to link to. */
+  notes?: readonly string[];
 }) {
   const host = useRef<HTMLDivElement>(null);
   // Read through refs: the view is built once, and the callbacks change every render.
   const callbacks = useRef({ onChange, onSave });
   callbacks.current = { onChange, onSave };
+  const links = useRef<Completion[]>([]);
+  useEffect(() => {
+    links.current = wikilinkOptions(notes);
+  }, [notes]);
   const initial = useRef(value);
 
   useEffect(() => {
@@ -94,6 +167,7 @@ export default function MarkdownEditor({
           markdown({ base: markdownLanguage, codeLanguages: languages }),
           syntaxHighlighting(highlight),
           theme,
+          autocompletion({ override: [wikilinkSource(() => links.current)], icons: false }),
           keymap.of([
             {
               key: "Mod-s",
@@ -103,6 +177,7 @@ export default function MarkdownEditor({
                 return true;
               },
             },
+            ...completionKeymap,
             ...defaultKeymap,
             ...historyKeymap,
           ]),

@@ -1,4 +1,5 @@
 import {
+  ArrowDownWideNarrow as ArrowDownWideNarrowSource,
   Ellipsis as EllipsisSource,
   FilePen as FilePenSource,
   FileText as FileTextSource,
@@ -16,6 +17,8 @@ import { icon } from "@/components/ui/icons";
  * The glyphs this app uses that `@cubeui/icons` does not ship. Wrapped here rather than added to
  * `ui/icons.tsx`, which the next `shadcn add @cubeui/icons` overwrites.
  */
+/** How the file list is sorted. */
+export const ArrowDownWideNarrow = icon(ArrowDownWideNarrowSource);
 export const Ellipsis = icon(EllipsisSource);
 /** Rename or move a note. */
 export const FilePen = icon(FilePenSource);

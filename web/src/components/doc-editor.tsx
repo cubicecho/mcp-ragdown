@@ -95,6 +95,10 @@ export function DocEditor({
   };
 
   const body = useMemo(() => splitFrontmatter(draft).body, [draft]);
+  const notes = useMemo(
+    () => [...known].filter((each) => each !== path).map((each) => withinFolder(each)),
+    [known, path],
+  );
 
   return (
     <>
@@ -173,6 +177,7 @@ export function DocEditor({
                   onChange={setDraft}
                   onSave={onSave}
                   label={`Markdown of ${withinFolder(path)}`}
+                  notes={notes}
                 />
               </Suspense>
             </div>
