@@ -231,5 +231,15 @@ export const uploadDoc = (upload: { path: string; text: string; overwrite?: bool
 export const saveDoc = (save: { path: string; text: string; base_hash: string }) =>
   request<DocWrite>("/api/doc", { method: "POST", body: save });
 
+/**
+ * Rename or move a note within its folder. The server rewrites the links that pointed at it and
+ * answers with the notes it changed; something already at `to` is an `ApiError` with status 409.
+ */
+export const moveDoc = (move: { from: string; to: string }) =>
+  request<{ from: string; to: string; updated: string[]; sync: DocWrite["sync"] }>("/api/move", {
+    method: "POST",
+    body: move,
+  });
+
 export const deleteDoc = (path: string) =>
   request<DocWrite>(`/api/doc${query({ path })}`, { method: "DELETE" });

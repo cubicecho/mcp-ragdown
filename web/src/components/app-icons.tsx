@@ -1,5 +1,6 @@
 import {
   Ellipsis as EllipsisSource,
+  FilePen as FilePenSource,
   FileText as FileTextSource,
   Folder as FolderSource,
   KeyRound as KeyRoundSource,
@@ -16,6 +17,8 @@ import { icon } from "@/components/ui/icons";
  * `ui/icons.tsx`, which the next `shadcn add @cubeui/icons` overwrites.
  */
 export const Ellipsis = icon(EllipsisSource);
+/** Rename or move a note. */
+export const FilePen = icon(FilePenSource);
 export const FileText = icon(FileTextSource);
 export const Folder = icon(FolderSource);
 export const KeyRound = icon(KeyRoundSource);

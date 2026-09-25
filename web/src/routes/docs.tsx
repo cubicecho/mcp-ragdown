@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { FileText, Folder as FolderIcon, Tag } from "@/components/app-icons";
 import { Backlinks } from "@/components/backlinks";
-import { DeleteDoc, NewNote, UploadDocs } from "@/components/doc-actions";
+import { DeleteDoc, NewNote, RenameDoc, UploadDocs } from "@/components/doc-actions";
 import { DocEditor } from "@/components/doc-editor";
 import { McpOffHint } from "@/components/folder-actions";
 import { StickyHeaderContentFooter } from "@/components/header-content-footer";
@@ -533,6 +533,7 @@ function DocPreview({
                   <Pencil aria-hidden />
                 </ActionButton>
               ) : null}
+              {writable && summary ? <RenameDoc path={path} /> : null}
               {writable && summary ? <DeleteDoc path={path} /> : null}
             </>
           }

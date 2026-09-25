@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { InputField, useAppForm } from "@/components/app-form";
+import { FilePen } from "@/components/app-icons";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DialogLayout } from "@/components/dialog-layout";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { ApiError } from "@/lib/api";
 import { folderOf, inFolder, withinFolder } from "@/lib/folders";
 import { errorMessage, serverError } from "@/lib/form-errors";
 import { formatCount } from "@/lib/format";
-import { useDeleteDoc, useUploadDoc } from "@/lib/queries";
+import { useDeleteDoc, useMoveDoc, useUploadDoc } from "@/lib/queries";
 
 const MARKDOWN = /\.(md|markdown|mdx)$/i;
 
@@ -386,6 +387,124 @@ export function NewNote({
           <form.AppForm>
             <form.SubmitButton form="new-note" pendingLabel="Creating…">
               Create
+            </form.SubmitButton>
+          </form.AppForm>
+        </>
+      )}
+    />
+  );
+}
+
+/** What was typed as a path within the folder: tidied, and a note even without its extension. */
+function movedTo(typed: string): string {
+  const path = joinPath("", typed.trim());
+  return !path || MARKDOWN.test(path) ? path : `${path}.md`;
+}
+
+/**
+ * Rename or move the previewed note (root-relative `path`) within its folder. The server rewrites
+ * every link in the folder that pointed at it, so nothing that linked here breaks.
+ */
+export function RenameDoc({ path }: { path: string }) {
+  const [open, setOpen] = useState(false);
+  const move = useMoveDoc();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const folder = folderOf(path);
+  const current = withinFolder(path);
+  const form = useAppForm({
+    defaultValues: { to: current },
+    onSubmit: async ({ value }) => {
+      const to = movedTo(value.to);
+      try {
+        const moved = await move.mutateAsync({ from: path, to: inFolder(folder, to) });
+        setOpen(false);
+        const links = moved.updated.length;
+        toast(
+          links > 0 ? `Moved, and updated links in ${formatCount(links, "note")}` : "Moved",
+          "success",
+        );
+        void navigate({
+          to: "/f/$folder",
+          params: { folder },
+          search: (prev) => ({ ...prev, doc: withinFolder(moved.to) }),
+        });
+      } catch (error) {
+        form.setFieldMeta(
+          "to",
+          serverError(
+            isExisting(error) ? "Something is already at that path." : errorMessage(error),
+          ),
+        );
+      }
+    },
+  });
+  const reset = (next: boolean) => {
+    setOpen(next);
+    form.reset({ to: current });
+    move.reset();
+  };
+
+  return (
+    <DialogLayout
+      open={open}
+      onOpenChange={reset}
+      trigger={
+        <ActionButton label="Rename or move" variant="ghost" size="icon-sm">
+          <FilePen aria-hidden />
+        </ActionButton>
+      }
+      title="Rename or move"
+      description="Links to this note from anywhere in the folder are rewritten to follow it."
+      hasUnsavedChanges={() => movedTo(form.state.values.to) !== current}
+      content={
+        <form
+          id="rename-doc"
+          className="flex flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void form.handleSubmit();
+          }}
+        >
+          <form.Subscribe selector={(state) => movedTo(state.values.to)}>
+            {(to) => (
+              <InputField
+                form={form}
+                name="to"
+                label="Path"
+                required
+                autoFocus
+                description={
+                  to && to !== current ? (
+                    <>
+                      Saved as <span className="break-all font-mono">{to}</span>
+                    </>
+                  ) : (
+                    "Relative to the folder. Missing subfolders are created."
+                  )
+                }
+                validators={{
+                  onChange: ({ value: typed }) => {
+                    const to = movedTo(typed);
+                    if (!to) return "A note needs a path.";
+                    if (to === current) return "That is where it is now.";
+                    return undefined;
+                  },
+                }}
+                listeners={{ onChange: () => form.setFieldMeta("to", serverError(undefined)) }}
+              />
+            )}
+          </form.Subscribe>
+        </form>
+      }
+      footerActions={(close) => (
+        <>
+          <Button variant="ghost" onClick={close}>
+            Cancel
+          </Button>
+          <form.AppForm>
+            <form.SubmitButton form="rename-doc" pendingLabel="Moving…">
+              Move
             </form.SubmitButton>
           </form.AppForm>
         </>

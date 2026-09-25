@@ -1,4 +1,4 @@
-import { readFile, utimes } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -232,9 +232,9 @@ describe("MCP server", () => {
     expect((await list({ path_prefix: "notes/", limit: 1 })).total).toBe(2);
     expect((await list({ path_prefix: "notes/", limit: 1 })).notes).toHaveLength(1);
 
-    const past = new Date(Date.now() - 60_000);
-    await utimes(join(t.docsDir, "notes/a.md"), past, past);
-    await utimes(join(t.docsDir, "notes/b.md"), new Date(), new Date());
+    // The index keeps a file's mtime until its content changes, so b is changed, not only touched.
+    await new Promise((done) => setTimeout(done, 20));
+    await t.write("notes/b.md", "# Beta\n\n#ops, changed");
     await t.rag.sync(false);
     const recent = await list({ sort: "recent", path_prefix: "notes" });
     expect(recent.notes.map((n: { path: string }) => n.path)).toEqual(["notes/b.md", "notes/a.md"]);

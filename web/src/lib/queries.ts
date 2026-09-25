@@ -10,6 +10,7 @@ import {
   getStatus,
   listDocs,
   listFolders,
+  moveDoc,
   resolveLink,
   saveDoc,
   searchDocs,
@@ -99,43 +100,60 @@ export function useFileUrl(path: string | undefined) {
   return { url, isError: file.isError, isPending: file.isPending };
 }
 
-/** The server answers a write after the index has synced, so everything it touched is stale. */
+/**
+ * The server answers a write after the index has synced, so everything it touched is stale.
+ *
+ * @param gone a path that no longer exists: its queries are left alone rather than refetched into a
+ *   404 while the page is still on it.
+ */
 function useInvalidateDocs() {
   const client = useQueryClient();
-  return () =>
+  return (gone?: string) =>
     Promise.all(
       [["docs"], ["doc"], ["status"], ["folders"], ["search"], ["resolve"], ["backlinks"]].map(
-        (queryKey) => client.invalidateQueries({ queryKey }),
+        (queryKey) =>
+          client.invalidateQueries({
+            queryKey,
+            predicate: (query) => gone === undefined || query.queryKey[1] !== gone,
+          }),
       ),
     );
 }
 
 export const useUploadDoc = () => {
   const invalidate = useInvalidateDocs();
-  return useMutation({ mutationFn: uploadDoc, onSettled: invalidate });
+  return useMutation({ mutationFn: uploadDoc, onSettled: () => invalidate() });
 };
 
 export const useSaveDoc = () => {
   const invalidate = useInvalidateDocs();
-  return useMutation({ mutationFn: saveDoc, onSettled: invalidate });
+  return useMutation({ mutationFn: saveDoc, onSettled: () => invalidate() });
+};
+
+export const useMoveDoc = () => {
+  const invalidate = useInvalidateDocs();
+  return useMutation({
+    mutationFn: moveDoc,
+    onSettled: (moved, _error, { from }) => invalidate(moved ? from : undefined),
+  });
 };
 
 export const useDeleteDoc = () => {
   const invalidate = useInvalidateDocs();
-  return useMutation({ mutationFn: deleteDoc, onSettled: invalidate });
+  return useMutation({ mutationFn: deleteDoc, onSettled: () => invalidate() });
 };
 
 export const useCreateFolder = () => {
   const invalidate = useInvalidateDocs();
-  return useMutation({ mutationFn: createFolder, onSettled: invalidate });
+  return useMutation({ mutationFn: createFolder, onSettled: () => invalidate() });
 };
 
 export const useUpdateFolder = () => {
   const invalidate = useInvalidateDocs();
-  return useMutation({ mutationFn: updateFolder, onSettled: invalidate });
+  return useMutation({ mutationFn: updateFolder, onSettled: () => invalidate() });
 };
 
 export const useDeleteFolder = () => {
   const invalidate = useInvalidateDocs();
-  return useMutation({ mutationFn: deleteFolder, onSettled: invalidate });
+  return useMutation({ mutationFn: deleteFolder, onSettled: () => invalidate() });
 };

@@ -459,6 +459,24 @@ describe("HTTP server", () => {
     });
     expect((await get("/api/backlinks?path=ops%2Fnope.md")).status).toBe(404);
 
+    const move = (body: unknown) =>
+      fetch(`${t.url}/api/move`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    expect((await move({ from: "ops/backups.md", to: "other/backups.md" })).status).toBe(400);
+    const moved = await move({ from: "ops/backups.md", to: "ops/runbooks/backups-v2.md" });
+    expect(await moved.json()).toMatchObject({
+      from: "ops/backups.md",
+      to: "ops/runbooks/backups-v2.md",
+      updated: ["ops/db/pg.md"],
+    });
+    expect(await readFile(join(t.docsDir, "ops/db/pg.md"), "utf8")).toContain(
+      "See [[backups-v2#Restore]]",
+    );
+    expect((await get("/api/move")).status).toBe(405);
+
     const file = await get("/api/file?path=ops%2Fimg%2Fdiagram.png");
     expect(file.status).toBe(200);
     expect(file.headers.get("content-type")).toBe("image/png");

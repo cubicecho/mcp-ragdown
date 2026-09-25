@@ -257,6 +257,7 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 | `DELETE /api/doc?path=` | bearer | Delete a Markdown file. 404 when it is not there. |
 | `GET /api/search?folder=&q=&tag=&top_k=` | bearer | Hybrid search in one folder, human-only ones included. `top_k` defaults to 10, at most 50. |
 | `GET /api/resolve?from=&link=` | bearer | A wikilink target, resolved from the note `from` within its folder: `{ path, anchor? }` or 404. |
+| `POST /api/move` | bearer | `{ from, to }`: rename or move a note within its folder. Every link in the folder that pointed at it — wikilinks and relative Markdown links, its own included — is rewritten to follow it, with the shortest target that still resolves. Answers with the notes it `updated`. |
 | `GET /api/backlinks?path=` | bearer | The notes in the same folder that link to `path`, with the linking lines. The UI shows them under the preview. |
 | `GET /api/file?path=` | bearer | Any file inside a folder — an image, a PDF — as raw bytes, sandboxed and `nosniff`. Never a dot-path or a symlink out. |
 | `GET /*` | none | The web UI from `web/dist`, with `index.html` for any other path. |
