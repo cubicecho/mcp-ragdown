@@ -1,5 +1,5 @@
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { Link, useBlocker, useNavigate, useSearch } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { CardLayout } from "@/components/card-layout";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DescriptionList, PropertyRow } from "@/components/description-list";
@@ -11,6 +11,7 @@ import {
   RenameFolder,
 } from "@/components/folder-actions";
 import { FormField } from "@/components/form-field";
+import { LeaveDialog } from "@/components/leave-dialog";
 import { PageLayout } from "@/components/page-layout";
 import { QueryError, QueryState } from "@/components/query-state";
 import { Section } from "@/components/section";
@@ -138,6 +139,18 @@ function FoldersSection({ writable }: { writable: boolean }) {
   const folders = useFolders();
   const navigate = useNavigate();
   const loose = folders.data?.loose_files ?? [];
+  // The folders with unsaved edits. One blocker for the section rather than one per card, so
+  // leaving asks once however many cards are part-edited.
+  const unsaved = useRef(new Set<string>());
+  const onDirty = (name: string, dirty: boolean) => {
+    if (dirty) unsaved.current.add(name);
+    else unsaved.current.delete(name);
+  };
+  const blocker = useBlocker({
+    shouldBlockFn: () => unsaved.current.size > 0,
+    enableBeforeUnload: () => unsaved.current.size > 0,
+    withResolver: true,
+  });
 
   return (
     <Section
@@ -195,8 +208,14 @@ function FoldersSection({ writable }: { writable: boolean }) {
             }
           />
           {folders.data?.folders.map((folder) => (
-            <FolderCard key={folder.name} folder={folder} writable={writable} />
+            <FolderCard key={folder.name} folder={folder} writable={writable} onDirty={onDirty} />
           ))}
+          <LeaveDialog
+            open={blocker.status === "blocked"}
+            description="A folder's settings have changes that are not saved, and leaving throws them away."
+            onStay={() => blocker.reset?.()}
+            onLeave={() => blocker.proceed?.()}
+          />
         </div>
       }
     />
@@ -207,7 +226,15 @@ function FoldersSection({ writable }: { writable: boolean }) {
  * A folder's settings as one form: change the title and the MCP switch, then Save sends both.
  * Nothing is saved on leaving a field, so a half-typed title never reaches agents.
  */
-function FolderCard({ folder, writable }: { folder: Folder; writable: boolean }) {
+function FolderCard({
+  folder,
+  writable,
+  onDirty,
+}: {
+  folder: Folder;
+  writable: boolean;
+  onDirty: (name: string, dirty: boolean) => void;
+}) {
   const update = useUpdateFolder();
   const toast = useToast();
   const [title, setTitle] = useState(folder.title);
@@ -225,6 +252,10 @@ function FolderCard({ folder, writable }: { folder: Folder; writable: boolean })
     ...(mcp !== folder.mcp ? { mcp } : {}),
   };
   const dirty = Object.keys(patch).length > 0;
+  useEffect(() => {
+    onDirty(folder.name, dirty);
+    return () => onDirty(folder.name, false);
+  }, [onDirty, folder.name, dirty]);
   const formId = `folder-${folder.name}`;
   const disabled = !writable || update.isPending;
 
