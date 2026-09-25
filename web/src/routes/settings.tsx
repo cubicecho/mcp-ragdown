@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { CardLayout } from "@/components/card-layout";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DescriptionList, PropertyRow } from "@/components/description-list";
@@ -10,6 +10,7 @@ import {
   McpOffHint,
   RenameFolder,
 } from "@/components/folder-actions";
+import { FormField } from "@/components/form-field";
 import { PageLayout } from "@/components/page-layout";
 import { QueryError, QueryState } from "@/components/query-state";
 import { Section } from "@/components/section";
@@ -17,7 +18,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Plus, TriangleAlert } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
-import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemePicker } from "@/components/ui/theme-picker";
@@ -203,17 +203,45 @@ function FoldersSection({ writable }: { writable: boolean }) {
   );
 }
 
+/**
+ * A folder's settings as one form: change the title and the MCP switch, then Save sends both.
+ * Nothing is saved on leaving a field, so a half-typed title never reaches agents.
+ */
 function FolderCard({ folder, writable }: { folder: Folder; writable: boolean }) {
   const update = useUpdateFolder();
   const toast = useToast();
-  const save = (patch: { title?: string; mcp?: boolean }, done: string) =>
+  const [title, setTitle] = useState(folder.title);
+  const [mcp, setMcp] = useState(folder.mcp);
+  // A save, or a change from another tab, lands here as the new starting point.
+  useEffect(() => {
+    setTitle(folder.title);
+    setMcp(folder.mcp);
+  }, [folder.title, folder.mcp]);
+
+  // An empty title means the name, which is also what an untitled folder shows.
+  const nextTitle = title.trim() || folder.name;
+  const patch = {
+    ...(nextTitle !== folder.title ? { title: title.trim() } : {}),
+    ...(mcp !== folder.mcp ? { mcp } : {}),
+  };
+  const dirty = Object.keys(patch).length > 0;
+  const formId = `folder-${folder.name}`;
+  const disabled = !writable || update.isPending;
+
+  const reset = () => {
+    setTitle(folder.title);
+    setMcp(folder.mcp);
+  };
+  const submit = () => {
+    if (!dirty || update.isPending) return;
     update.mutate(
       { name: folder.name, patch },
       {
-        onSuccess: () => toast(done, "success"),
+        onSuccess: () => toast(`Saved ${nextTitle}`, "success"),
         onError: (error) => toast(`Could not update ${folder.name}: ${error.message}`),
       },
     );
+  };
 
   return (
     <CardLayout
@@ -238,11 +266,35 @@ function FolderCard({ folder, writable }: { folder: Folder; writable: boolean })
         </Badge>
       }
       content={
-        <div className="flex flex-col">
-          <Row
+        <form
+          id={formId}
+          className="flex flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && dirty) reset();
+          }}
+        >
+          <FormField
+            label="Title"
+            description="How the folder is shown here and to agents. The name, if left empty."
+            control={
+              <Input
+                className="sm:max-w-xs"
+                value={title}
+                placeholder={folder.name}
+                disabled={disabled}
+                onChange={(event) => setTitle(event.target.value)}
+              />
+            }
+          />
+          <FormField
+            orientation="horizontal"
             label="Serve over MCP"
-            hint={
-              folder.mcp ? (
+            description={
+              mcp ? (
                 <>
                   Agents reach it at <code className="text-xs">{folder.mcp_path}</code>.
                 </>
@@ -250,29 +302,21 @@ function FolderCard({ folder, writable }: { folder: Folder; writable: boolean })
                 "Off, it is searchable here but agents never see it."
               )
             }
-            value={
-              <Switch
-                aria-label={`Serve ${folder.title} over MCP`}
-                checked={folder.mcp}
-                disabled={!writable || update.isPending}
-                onCheckedChange={(mcp) =>
-                  save({ mcp }, mcp ? `${folder.title} is on MCP` : `${folder.title} is human-only`)
-                }
-              />
-            }
+            control={<Switch checked={mcp} disabled={disabled} onCheckedChange={setMcp} />}
           />
-          <Row
-            label="Title"
-            hint="How the folder is shown here and to agents. Empty, the name."
-            value={
-              <TitleInput
-                folder={folder}
-                disabled={!writable || update.isPending}
-                onSave={(title) => save({ title }, "Title saved")}
-              />
-            }
-          />
-        </div>
+          {writable ? (
+            <div className="flex items-center justify-end gap-2">
+              {dirty ? (
+                <Button type="button" variant="ghost" disabled={update.isPending} onClick={reset}>
+                  Reset
+                </Button>
+              ) : null}
+              <Button type="submit" disabled={!dirty || update.isPending}>
+                {update.isPending ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          ) : null}
+        </form>
       }
       // The shell's action row does not wrap, and three buttons outrun a phone's card.
       footerClassName="[&>div]:min-w-0 [&>div]:shrink [&>div]:flex-wrap [&>div]:justify-end"
@@ -287,40 +331,6 @@ function FolderCard({ folder, writable }: { folder: Folder; writable: boolean })
           ) : null}
         </>
       }
-    />
-  );
-}
-
-/** Saved on Enter or on leaving the field; Escape puts the saved title back. */
-function TitleInput({
-  folder,
-  disabled,
-  onSave,
-}: {
-  folder: Folder;
-  disabled: boolean;
-  onSave: (title: string) => void;
-}) {
-  const [draft, setDraft] = useState(folder.title);
-  useEffect(() => setDraft(folder.title), [folder.title]);
-  const commit = () => {
-    const title = draft.trim();
-    if (title === folder.title || (title === "" && folder.title === folder.name)) return;
-    onSave(title);
-  };
-  return (
-    <Input
-      aria-label={`Title of ${folder.name}`}
-      className="h-8 w-48 max-w-full"
-      value={draft}
-      placeholder={folder.name}
-      disabled={disabled}
-      onChangeText={setDraft}
-      onSubmitEditing={commit}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") setDraft(folder.title);
-      }}
-      onBlur={commit}
     />
   );
 }
@@ -543,19 +553,6 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
         ) : null
       }
     />
-  );
-}
-
-/** A folder's editable rows: what the control sets on the left, the control on the right. */
-function Row({ label, hint, value }: { label: string; hint?: ReactNode; value: ReactNode }) {
-  return (
-    <Item size="sm" className="px-0">
-      <ItemContent>
-        <ItemTitle>{label}</ItemTitle>
-        {hint ? <ItemDescription>{hint}</ItemDescription> : null}
-      </ItemContent>
-      <ItemActions className="max-w-1/2 text-right tabular-nums">{value}</ItemActions>
-    </Item>
   );
 }
 
