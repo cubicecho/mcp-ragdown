@@ -2,7 +2,7 @@ import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { FileText, Folder as FolderIcon, Tag } from "@/components/app-icons";
-import { DeleteDoc, UploadDocs } from "@/components/doc-actions";
+import { DeleteDoc, NewNote, UploadDocs } from "@/components/doc-actions";
 import { DocEditor } from "@/components/doc-editor";
 import { McpOffHint } from "@/components/folder-actions";
 import { StickyHeaderContentFooter } from "@/components/header-content-footer";
@@ -12,7 +12,7 @@ import { QueryError, QueryState } from "@/components/query-state";
 import { SidebarLayout } from "@/components/split-layout";
 import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, Pencil, Search } from "@/components/ui/icons";
+import { Check, Copy, Pencil, Plus, Search } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
@@ -26,6 +26,10 @@ import { useDoc, useDocs, useFolders, useSearch, useStatus } from "@/lib/queries
 import { cn } from "@/lib/utils";
 
 const route = getRouteApi("/f/$folder");
+
+/** `notes/ideas/a.md` → `notes/ideas`: where a new note goes beside the open one. */
+const dirOf = (path: string | undefined) =>
+  path ? withinFolder(path).split("/").slice(0, -1).join("/") : "";
 
 /** A tag filter takes the nested tags under it too: `project` also matches `project/alpha`. */
 const hasTag = (tags: readonly string[], tag: string) =>
@@ -79,7 +83,7 @@ function FolderDocs({
         path ? (
           <DocPreview key={path} folder={folder} path={path} summary={summary} known={known} />
         ) : (
-          <NothingSelected title={title} count={docs.data?.length} />
+          <NothingSelected folder={folder} title={title} count={docs.data?.length} />
         )
       }
     />
@@ -144,9 +148,19 @@ function DocList({
       header={
         <PageHeader
           level={2}
+          // A narrow pane: the folder's name keeps 10rem, not the page header's 16, before its two
+          // buttons drop to a line of their own.
+          className="[&_[data-slot=page-header-titles]]:basis-40"
           title={title}
           icon={<FolderIcon className="size-4 text-muted-foreground" aria-hidden />}
-          action={writable ? <UploadDocs folder={folder} title={title} /> : undefined}
+          action={
+            writable ? (
+              <div className="flex shrink-0 items-center gap-1">
+                <NewNote folder={folder} title={title} dir={dirOf(selected)} />
+                <UploadDocs folder={folder} title={title} />
+              </div>
+            ) : undefined
+          }
           loading={docs.isPending}
           description={
             docs.data ? (
@@ -378,7 +392,16 @@ function DocRow({ folder, doc, active }: { folder: string; doc: DocSummary; acti
   );
 }
 
-function NothingSelected({ title, count }: { title: string; count: number | undefined }) {
+function NothingSelected({
+  folder,
+  title,
+  count,
+}: {
+  folder: string;
+  title: string;
+  count: number | undefined;
+}) {
+  const writable = useWritable();
   return (
     <div className="flex h-full min-h-60 flex-col items-center justify-center gap-2 p-8 text-center">
       <FileText className="size-8 text-muted-foreground/60" aria-hidden />
@@ -388,6 +411,17 @@ function NothingSelected({ title, count }: { title: string; count: number | unde
           ? `${title} holds ${formatCount(count, "file")}. What you see here is read from disk, so it is current even while the index catches up.`
           : `The list fills in as the index syncs with ${title}.`}
       </p>
+      {writable ? (
+        <NewNote
+          folder={folder}
+          title={title}
+          trigger={
+            <Button variant="outline" size="sm" className="mt-2">
+              <Plus aria-hidden /> New note
+            </Button>
+          }
+        />
+      ) : null}
     </div>
   );
 }
@@ -422,6 +456,20 @@ function DocPreview({
   const doc = useDoc(path);
   const writable = useWritable();
   const [editing, setEditing] = useState(false);
+  const { edit } = route.useSearch();
+  const navigate = useNavigate();
+
+  // `?edit` (from New note) opens the editor once the note has loaded, then leaves the URL.
+  useEffect(() => {
+    if (!edit || !doc.data || !writable) return;
+    setEditing(true);
+    void navigate({
+      to: "/f/$folder",
+      params: { folder },
+      search: ({ edit: _, ...rest }) => rest,
+      replace: true,
+    });
+  }, [edit, doc.data, writable, folder, navigate]);
   const parsed = useMemo(() => splitFrontmatter(doc.data?.text ?? ""), [doc.data]);
   // The server's lists, which also carry inline `#tags`; the frontmatter's as a fallback.
   const frontmatter = (key: string) => {

@@ -13,7 +13,8 @@ const homeRoute = createRoute({
   component: HomePage,
 });
 
-export type DocsSearch = { doc?: string; tag?: string };
+/** `edit` opens `doc` in the editor, once: the page drops it as soon as the editor is open. */
+export type DocsSearch = { doc?: string; tag?: string; edit?: boolean };
 
 /**
  * One folder's documents. The selected file (relative to the folder) and the tag filter live in
@@ -26,6 +27,7 @@ const docsRoute = createRoute({
   validateSearch: (search: Record<string, unknown>): DocsSearch => ({
     ...(typeof search.doc === "string" && search.doc ? { doc: search.doc } : {}),
     ...(typeof search.tag === "string" && search.tag ? { tag: search.tag } : {}),
+    ...(search.edit === true || search.edit === "true" ? { edit: true } : {}),
   }),
   component: DocsPage,
 });

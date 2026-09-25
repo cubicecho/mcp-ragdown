@@ -111,6 +111,11 @@ The web UI creates, renames and deletes folders, and **Copy MCP config** on each
 title and MCP switch can still change — they are settings, not notes — but creating, renaming and
 deleting cannot.
 
+**New note** (the **+** beside Upload in a folder's list, or the button in an empty folder) asks
+for a title and an optional subfolder, created if missing. It starts beside the open note, writes
+`# <title>` to `<subfolder>/<title>.md`, and opens it in the editor. A name that is already taken
+offers to open that note instead.
+
 **Edit** on an open note swaps the preview for a Markdown source editor (CodeMirror, loaded on
 first use), with a Write/Preview switch and Ctrl/Cmd+S to save. It edits the source, not rich
 text, so wikilinks, embeds and front matter come back exactly as written. A save is made against

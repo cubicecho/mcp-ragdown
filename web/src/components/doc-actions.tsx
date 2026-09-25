@@ -1,12 +1,12 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DialogLayout } from "@/components/dialog-layout";
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { FilePicker } from "@/components/ui/file-picker";
-import { Trash2, Upload, X } from "@/components/ui/icons";
+import { Plus, Trash2, Upload, X } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api";
@@ -195,6 +195,168 @@ export function UploadDocs({ folder, title }: { folder: string; title: string })
             {busy
               ? "Uploading…"
               : `Upload ${ready.length > 0 ? formatCount(ready.length, "file") : ""}`}
+          </Button>
+        </>
+      )}
+    />
+  );
+}
+
+/**
+ * A note's file name from its title: the title itself, as Obsidian does, less the characters a
+ * file system or a wikilink cannot hold.
+ */
+const fileName = (title: string) =>
+  `${title.replace(/[\\/:*?"<>|#^[\]]+/g, "-").replace(/^[.\s-]+|\s+$/g, "")}.md`;
+
+/**
+ * Start a new note in a folder, optionally in a subfolder of it (created if missing), and open it
+ * in the editor. `dir` is where it goes unless changed: the open note's subfolder, so a new note
+ * lands beside the one being read.
+ */
+export function NewNote({
+  folder,
+  title: folderTitle,
+  dir = "",
+  trigger,
+}: {
+  folder: string;
+  title: string;
+  dir?: string | undefined;
+  trigger?: ReactNode | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [subfolder, setSubfolder] = useState(dir);
+  const [touched, setTouched] = useState(false);
+  const create = useUploadDoc();
+  const navigate = useNavigate();
+
+  // Typed with an extension, the title is the file name: `Kafka.md` is `Kafka.md`, not `Kafka.md.md`.
+  const heading = title.trim().replace(MARKDOWN, "");
+  const name = fileName(heading);
+  const relative = joinPath(subfolder, name);
+  const invalid = name === ".md" ? "A note needs a title." : undefined;
+  const exists = create.error instanceof ApiError && create.error.status === 409;
+
+  const reset = (next: boolean) => {
+    setOpen(next);
+    if (next) setSubfolder(dir);
+    else {
+      setTitle("");
+      setTouched(false);
+      create.reset();
+    }
+  };
+  const openNote = (edit: boolean) =>
+    void navigate({
+      to: "/f/$folder",
+      params: { folder },
+      search: (prev) => ({ ...prev, doc: relative, ...(edit ? { edit: true } : {}) }),
+    });
+  const submit = () => {
+    setTouched(true);
+    if (invalid) return;
+    create.mutate(
+      { path: inFolder(folder, relative), text: `# ${heading}\n\n` },
+      {
+        onSuccess: () => {
+          reset(false);
+          openNote(true);
+        },
+      },
+    );
+  };
+
+  return (
+    <DialogLayout
+      open={open}
+      onOpenChange={reset}
+      trigger={
+        trigger ?? (
+          <ActionButton label="New note" variant="ghost" size="icon-sm">
+            <Plus aria-hidden />
+          </ActionButton>
+        )
+      }
+      title="New note"
+      description={`A Markdown file in ${folderTitle}, opened in the editor once it is created.`}
+      hasUnsavedChanges={() => title !== ""}
+      content={
+        <form
+          id="new-note"
+          className="flex flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          <FormField
+            label="Title"
+            required
+            description={
+              invalid ? undefined : (
+                <>
+                  Saved as <span className="break-all font-mono">{relative}</span>
+                </>
+              )
+            }
+            error={
+              (touched && invalid) ||
+              (exists
+                ? "A note with that name is already there."
+                : create.error
+                  ? create.error.message
+                  : undefined)
+            }
+            control={
+              <Input
+                autoFocus
+                placeholder="Kafka retention"
+                value={title}
+                onChange={(event) => {
+                  setTitle(event.target.value);
+                  create.reset();
+                }}
+              />
+            }
+          />
+          <FormField
+            label="Subfolder"
+            description={`Optional, relative to ${folderTitle}. Missing subfolders are created.`}
+            control={
+              <Input
+                placeholder="notes/ideas"
+                value={subfolder}
+                onChange={(event) => {
+                  setSubfolder(event.target.value);
+                  create.reset();
+                }}
+              />
+            }
+          />
+        </form>
+      }
+      footer={
+        exists ? (
+          <Button
+            variant="outline"
+            onClick={() => {
+              reset(false);
+              openNote(false);
+            }}
+          >
+            Open it
+          </Button>
+        ) : undefined
+      }
+      footerActions={(close) => (
+        <>
+          <Button variant="ghost" onClick={close}>
+            Cancel
+          </Button>
+          <Button type="submit" form="new-note" disabled={create.isPending}>
+            {create.isPending ? "Creating…" : "Create"}
           </Button>
         </>
       )}
