@@ -43,6 +43,7 @@ describe("MCP server", () => {
   it("lists the write tools only when writable", async () => {
     const writable = await connect();
     expect((await writable.client.listTools()).tools.map((t) => t.name).sort()).toEqual([
+      "ragdown_backlinks",
       "ragdown_context",
       "ragdown_edit",
       "ragdown_list",
@@ -54,6 +55,7 @@ describe("MCP server", () => {
     ]);
     const readOnly = await connect({ RAGDOWN_READ_ONLY: "true" });
     expect((await readOnly.client.listTools()).tools.map((t) => t.name).sort()).toEqual([
+      "ragdown_backlinks",
       "ragdown_context",
       "ragdown_list",
       "ragdown_read_doc",
@@ -236,6 +238,35 @@ describe("MCP server", () => {
     await t.rag.sync(false);
     const recent = await list({ sort: "recent", path_prefix: "notes" });
     expect(recent.notes.map((n: { path: string }) => n.path)).toEqual(["notes/b.md", "notes/a.md"]);
+  });
+
+  it("lists the notes that link to a note, by wikilink, alias and relative link", async () => {
+    const t = await connect();
+    await t.write("ops/restore.md", "---\naliases: [DR]\n---\n# Restore\n");
+    await t.write("a.md", "# A\n\nSee [[restore]].\n\nAnd [[DR|disaster recovery]].");
+    await t.write("b.md", "# B\n\n[steps](ops/restore.md) but `[[restore]]` is code.");
+    await t.write("c.md", "# C\n\nNothing.");
+    await t.rag.sync(false);
+    const found = JSON.parse((await t.call("ragdown_backlinks", { path: "ops/restore.md" })).text);
+    expect(found).toEqual({
+      path: "ops/restore.md",
+      backlinks: [
+        {
+          path: "a.md",
+          title: "A",
+          lines: [
+            { line: 3, text: "See [[restore]]." },
+            { line: 5, text: "And [[DR|disaster recovery]]." },
+          ],
+        },
+        {
+          path: "b.md",
+          title: "B",
+          lines: [{ line: 3, text: "[steps](ops/restore.md) but `[[restore]]` is code." }],
+        },
+      ],
+    });
+    expect((await t.call("ragdown_backlinks", { path: "nope.md" })).isError).toBe(true);
   });
 
   it("reports stats", async () => {

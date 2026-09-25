@@ -4,6 +4,7 @@ import {
   createFolder,
   deleteDoc,
   deleteFolder,
+  getBacklinks,
   getDoc,
   getFile,
   getStatus,
@@ -44,6 +45,14 @@ export const useDoc = (path: string | undefined) =>
     queryKey: ["doc", path],
     queryFn: () => getDoc(path ?? ""),
     enabled: path !== undefined,
+    refetchInterval: 15_000,
+  });
+
+/** Polled with the doc, since any note in the folder may start or stop linking to it. */
+export const useBacklinks = (path: string) =>
+  useQuery({
+    queryKey: ["backlinks", path],
+    queryFn: () => getBacklinks(path),
     refetchInterval: 15_000,
   });
 
@@ -95,8 +104,8 @@ function useInvalidateDocs() {
   const client = useQueryClient();
   return () =>
     Promise.all(
-      [["docs"], ["doc"], ["status"], ["folders"], ["search"], ["resolve"]].map((queryKey) =>
-        client.invalidateQueries({ queryKey }),
+      [["docs"], ["doc"], ["status"], ["folders"], ["search"], ["resolve"], ["backlinks"]].map(
+        (queryKey) => client.invalidateQueries({ queryKey }),
       ),
     );
 }

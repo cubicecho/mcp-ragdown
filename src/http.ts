@@ -97,6 +97,7 @@ const FILE_TYPES: Record<string, string> = {
  * - `GET /api/search?folder=&q=[&tag=&top_k=]` — hybrid search within one folder, human-only ones
  *   included: the UI is for people.
  * - `GET /api/resolve?from=&link=` — a wikilink in the note `from`, resolved within its folder.
+ * - `GET /api/backlinks?path=` — the notes in the same folder that link to `path`.
  * - `GET /api/file?path=` — any file inside a folder, raw, for the UI's images and embeds.
  * - Anything else under `GET` — the web UI from `webDir`, when it has been built.
  *
@@ -209,6 +210,7 @@ const API_ROUTES = new Set([
   "/api/doc",
   "/api/search",
   "/api/resolve",
+  "/api/backlinks",
   "/api/file",
 ]);
 
@@ -427,6 +429,17 @@ async function handleApi(
       return;
     }
     json(res, 200, { ...resolved, path: `${name}/${resolved.path}` });
+    return;
+  }
+
+  if (path === "/api/backlinks") {
+    const docPath = required("path");
+    const name = await assertInFolder(config, docPath);
+    const found = await new Scope(rag, name).backlinks(docPath.slice(name.length + 1));
+    json(res, 200, {
+      path: docPath,
+      backlinks: found.backlinks.map((link) => ({ ...link, path: `${name}/${link.path}` })),
+    });
     return;
   }
 

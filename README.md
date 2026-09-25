@@ -202,6 +202,7 @@ middle. A hook that fails or takes longer than min-agent's 3 seconds only loses 
 | `ragdown_context` | For hooks: the sections related to a `prompt` as a `<ragdown-context>` block, or empty text. Filters by similarity, skips short prompts and slash commands, and never repeats a section for the same `session_id`. Takes `top_k`, `min_score`, `min_ratio` and `max_chars` to override the `RAGDOWN_HOOK_*` defaults. |
 | `ragdown_recall` | Hybrid search. Returns path, line range, heading breadcrumb, tags and similarity for each hit. Takes `top_k`, `path_prefix`, `tag`, `format: text\|json` and `max_chars`. |
 | `ragdown_read_doc` | Reads a file, or a line range of one, straight from disk. Never clipped. Also takes a wikilink target (`Note#Heading`); see [Obsidian](#obsidian). Returns the whole file's `hash`, for `ragdown_edit`. |
+| `ragdown_backlinks` | The notes that link to a `path` — by wikilink, alias or relative Markdown link — with the lines the links are on. Links in code are not links. |
 | `ragdown_list` | Browses rather than searches: each note's path, title, tags and last change. Takes `path_prefix`, `tag`, `sort: path\|recent` and `limit`. |
 | `ragdown_stats` | Folder, index size, embedder, role (primary or reader), whether a sync is running, and the last sync. |
 | `ragdown_remember` | Writes a new note (with frontmatter) under `RAGDOWN_NOTES_DIR` and indexes it before returning. Never overwrites a file. `supersedes` lists the notes this one replaces, which search then skips; `session_id` is recorded as provenance. |
@@ -256,6 +257,7 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 | `DELETE /api/doc?path=` | bearer | Delete a Markdown file. 404 when it is not there. |
 | `GET /api/search?folder=&q=&tag=&top_k=` | bearer | Hybrid search in one folder, human-only ones included. `top_k` defaults to 10, at most 50. |
 | `GET /api/resolve?from=&link=` | bearer | A wikilink target, resolved from the note `from` within its folder: `{ path, anchor? }` or 404. |
+| `GET /api/backlinks?path=` | bearer | The notes in the same folder that link to `path`, with the linking lines. The UI shows them under the preview. |
 | `GET /api/file?path=` | bearer | Any file inside a folder — an image, a PDF — as raw bytes, sandboxed and `nosniff`. Never a dot-path or a symlink out. |
 | `GET /*` | none | The web UI from `web/dist`, with `index.html` for any other path. |
 

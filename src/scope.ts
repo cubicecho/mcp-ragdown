@@ -17,7 +17,7 @@ import { isInside } from "./config.ts";
 import type { Ragdown } from "./engine.ts";
 import { formatHit } from "./format.ts";
 import { MARKDOWN } from "./indexer.ts";
-import { type ResolvedLink, resolveLink } from "./links.ts";
+import { findLinks, type LinkNote, type ResolvedLink, resolveLink, resolveRef } from "./links.ts";
 import type { Hit } from "./store.ts";
 
 /** Sessions whose returned chunks are remembered; past this the oldest is forgotten. */
@@ -203,9 +203,7 @@ export class Scope {
     attachments = false,
   ): Promise<ResolvedLink | undefined> {
     const prefix = this.folder ? `${this.folder}/` : "";
-    const notes = (await this.rag.documents())
-      .filter((doc) => doc.path.startsWith(prefix))
-      .map((doc) => ({ path: doc.path.slice(prefix.length), aliases: doc.aliases }));
+    const notes = await this.folderNotes();
     const others = attachments
       ? await listAttachments(resolve(this.rag.config.docsDir, this.folder))
       : [];
@@ -217,6 +215,57 @@ export class Scope {
     const rootPath = `${prefix}${link.path}`;
     if (this.dir && !rootPath.startsWith(`${this.dir}/`)) return undefined;
     return { ...link, path: this.toScoped(rootPath) };
+  }
+
+  /**
+   * The notes in this scope that link to `path` — by wikilink, alias, or relative Markdown link — each
+   * with the lines the links are on. Read from disk, so current even mid-sync. A note's links to
+   * itself are left out.
+   *
+   * @throws with `status: 404` for a path the index does not know.
+   */
+  async backlinks(path: string) {
+    const prefix = this.folder ? `${this.folder}/` : "";
+    const docs = await this.rag.documents();
+    const rootPath = toPosix(relative(this.rag.config.docsDir, resolve(this.root, path)));
+    if (!docs.some((doc) => doc.path === rootPath)) {
+      throw Object.assign(new Error(`not an indexed document: ${path}`), { status: 404 });
+    }
+    const target = rootPath.slice(prefix.length);
+    const notes = await this.folderNotes();
+    const sources = docs.filter(
+      (doc) => doc.path !== rootPath && (!this.dir || doc.path.startsWith(`${this.dir}/`)),
+    );
+    const backlinks: { path: string; title: string; lines: { line: number; text: string }[] }[] =
+      [];
+    for (const doc of sources) {
+      const text = await readFile(resolve(this.rag.config.docsDir, doc.path), "utf8").catch(
+        () => undefined,
+      );
+      // A cheap test first: most notes link to nothing at all.
+      if (!text || (!text.includes("[[") && !text.includes("]("))) continue;
+      const from = doc.path.slice(prefix.length);
+      const lines = new Set<number>();
+      for (const ref of findLinks(text)) {
+        if (resolveRef(ref, from, notes) === target) lines.add(ref.line);
+      }
+      if (lines.size === 0) continue;
+      const all = text.split(/\r?\n/);
+      backlinks.push({
+        path: this.toScoped(doc.path),
+        title: doc.title,
+        lines: [...lines].map((line) => ({ line, text: clip((all[line - 1] ?? "").trim(), 240) })),
+      });
+    }
+    return { path: this.toScoped(rootPath), backlinks };
+  }
+
+  /** Every note in the scope's folder — not only the scope — relative to the folder, for links. */
+  private async folderNotes(): Promise<LinkNote[]> {
+    const prefix = this.folder ? `${this.folder}/` : "";
+    return (await this.rag.documents())
+      .filter((doc) => doc.path.startsWith(prefix))
+      .map((doc) => ({ path: doc.path.slice(prefix.length), aliases: doc.aliases }));
   }
 
   /**
@@ -669,6 +718,10 @@ function normalizeFolder(prefix: string | undefined): string {
 /** A relative path with `/` separators, which is what frontmatter and the index both use. */
 function toPosix(path: string): string {
   return path.split(sep).join("/");
+}
+
+function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 function slug(title: string): string {
