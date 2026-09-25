@@ -1,12 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
+import { InputField, SwitchField, useAppForm } from "@/components/app-form";
 import { DialogLayout } from "@/components/dialog-layout";
-import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Check, Copy, TriangleAlert } from "@/components/ui/icons";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import type { Folder } from "@/lib/api";
 import { getToken } from "@/lib/auth";
@@ -18,6 +16,7 @@ import {
   mcpOffEverywhere,
   setLastFolder,
 } from "@/lib/folders";
+import { errorMessage, serverError } from "@/lib/form-errors";
 import { formatCount } from "@/lib/format";
 import {
   useCreateFolder,
@@ -26,8 +25,6 @@ import {
   useStatus,
   useUpdateFolder,
 } from "@/lib/queries";
-
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /** A new top-level folder: the directory and its `.ragdown.json`. Human-only unless MCP is on. */
 export function CreateFolder({
@@ -38,37 +35,30 @@ export function CreateFolder({
   onCreated?: (folder: Folder) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [title, setTitle] = useState("");
-  const [mcp, setMcp] = useState(false);
-  const [touched, setTouched] = useState(false);
   const create = useCreateFolder();
   const toast = useToast();
+  const form = useAppForm({
+    defaultValues: { name: "", title: "", mcp: false },
+    onSubmit: async ({ value }) => {
+      const title = value.title.trim();
+      try {
+        const folder = await create.mutateAsync({
+          name: value.name.trim(),
+          ...(title ? { title } : {}),
+          mcp: value.mcp,
+        });
+        toast(`Created ${folder.title}`, "success");
+        reset(false);
+        onCreated?.(folder);
+      } catch (error) {
+        form.setFieldMeta("name", serverError(errorMessage(error)));
+      }
+    },
+  });
 
-  const invalid = folderNameError(name.trim());
   const reset = (next: boolean) => {
     setOpen(next);
-    if (!next) {
-      setName("");
-      setTitle("");
-      setMcp(false);
-      setTouched(false);
-      create.reset();
-    }
-  };
-  const submit = () => {
-    setTouched(true);
-    if (invalid) return;
-    create.mutate(
-      { name: name.trim(), ...(title.trim() ? { title: title.trim() } : {}), mcp },
-      {
-        onSuccess: (folder) => {
-          toast(`Created ${folder.title}`, "success");
-          reset(false);
-          onCreated?.(folder);
-        },
-      },
-    );
+    if (!next) form.reset();
   };
 
   return (
@@ -78,47 +68,39 @@ export function CreateFolder({
       trigger={trigger}
       title="Create folder"
       description="A top-level folder in the docs directory, with its own notes, search and MCP address."
-      hasUnsavedChanges={() => name !== "" || title !== ""}
+      hasUnsavedChanges={() => !form.state.isDefaultValue}
       content={
         <form
           id="create-folder"
           className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
-            submit();
+            void form.handleSubmit();
           }}
         >
-          <FormField
+          <InputField
+            form={form}
+            name="name"
             label="Name"
             required
             description="The directory's name, and the last part of its MCP address."
-            error={(touched && invalid) || (create.error ? message(create.error) : undefined)}
-            control={
-              <Input
-                autoFocus
-                placeholder="work"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                onBlur={() => setTouched(true)}
-              />
-            }
+            autoFocus
+            placeholder="work"
+            validators={{ onChange: ({ value }) => folderNameError(value.trim()) }}
+            listeners={{ onChange: () => form.setFieldMeta("name", serverError(undefined)) }}
           />
-          <FormField
+          <InputField
+            form={form}
+            name="title"
             label="Title"
             description="How the folder is shown. The name, if left empty."
-            control={
-              <Input
-                placeholder="Work notes"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-              />
-            }
+            placeholder="Work notes"
           />
-          <FormField
-            orientation="horizontal"
+          <SwitchField
+            form={form}
+            name="mcp"
             label="Serve over MCP"
             description="Off, the folder is human-only: searchable here, but agents never see it."
-            control={<Switch checked={mcp} onCheckedChange={setMcp} />}
           />
         </form>
       }
@@ -127,9 +109,11 @@ export function CreateFolder({
           <Button variant="ghost" onClick={close}>
             Cancel
           </Button>
-          <Button type="submit" form="create-folder" disabled={create.isPending}>
-            {create.isPending ? "Creating…" : "Create"}
-          </Button>
+          <form.AppForm>
+            <form.SubmitButton form="create-folder" pendingLabel="Creating…">
+              Create
+            </form.SubmitButton>
+          </form.AppForm>
         </>
       )}
     />
@@ -139,29 +123,28 @@ export function CreateFolder({
 /** Rename a folder's directory. Every path in it changes, so it is re-indexed. */
 export function RenameFolder({ folder }: { folder: Folder }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState(folder.name);
   const update = useUpdateFolder();
   const toast = useToast();
-  const invalid = folderNameError(name.trim());
-  const unchanged = name.trim() === folder.name;
+  const form = useAppForm({
+    defaultValues: { name: folder.name },
+    onSubmit: async ({ value }) => {
+      try {
+        const renamed = await update.mutateAsync({
+          name: folder.name,
+          patch: { name: value.name.trim() },
+        });
+        if (getLastFolder() === folder.name) setLastFolder(renamed.name);
+        toast(`Renamed ${folder.name} to ${renamed.name}`, "success");
+        reset(false);
+      } catch (error) {
+        form.setFieldMeta("name", serverError(errorMessage(error)));
+      }
+    },
+  });
 
   const reset = (next: boolean) => {
     setOpen(next);
-    setName(folder.name);
-    update.reset();
-  };
-  const submit = () => {
-    if (invalid || unchanged) return;
-    update.mutate(
-      { name: folder.name, patch: { name: name.trim() } },
-      {
-        onSuccess: (renamed) => {
-          if (getLastFolder() === folder.name) setLastFolder(renamed.name);
-          toast(`Renamed ${folder.name} to ${renamed.name}`, "success");
-          reset(false);
-        },
-      },
-    );
+    form.reset({ name: folder.name });
   };
 
   return (
@@ -177,26 +160,29 @@ export function RenameFolder({ folder }: { folder: Folder }) {
       description={
         <>
           Renames the directory, re-indexes it, and moves its MCP address to{" "}
-          <code>/mcp/{name.trim() || "…"}</code>. Agents set up with the old address stop reaching
-          it.
+          <form.Subscribe selector={(state) => state.values.name.trim()}>
+            {(name) => <code>/mcp/{name || "…"}</code>}
+          </form.Subscribe>
+          . Agents set up with the old address stop reaching it.
         </>
       }
-      hasUnsavedChanges={() => !unchanged}
+      hasUnsavedChanges={() => form.state.values.name.trim() !== folder.name}
       content={
         <form
           id="rename-folder"
           onSubmit={(event) => {
             event.preventDefault();
-            submit();
+            void form.handleSubmit();
           }}
         >
-          <FormField
+          <InputField
+            form={form}
+            name="name"
             label="New name"
             required
-            error={(!unchanged && invalid) || (update.error ? message(update.error) : undefined)}
-            control={
-              <Input autoFocus value={name} onChange={(event) => setName(event.target.value)} />
-            }
+            autoFocus
+            validators={{ onChange: ({ value }) => folderNameError(value.trim()) }}
+            listeners={{ onChange: () => form.setFieldMeta("name", serverError(undefined)) }}
           />
         </form>
       }
@@ -205,13 +191,19 @@ export function RenameFolder({ folder }: { folder: Folder }) {
           <Button variant="ghost" onClick={close}>
             Cancel
           </Button>
-          <Button
-            type="submit"
-            form="rename-folder"
-            disabled={update.isPending || unchanged || Boolean(invalid)}
-          >
-            {update.isPending ? "Renaming…" : "Rename"}
-          </Button>
+          <form.AppForm>
+            <form.Subscribe selector={(state) => state.values.name.trim() === folder.name}>
+              {(unchanged) => (
+                <form.SubmitButton
+                  form="rename-folder"
+                  pendingLabel="Renaming…"
+                  disabled={unchanged}
+                >
+                  Rename
+                </form.SubmitButton>
+              )}
+            </form.Subscribe>
+          </form.AppForm>
         </>
       )}
     />
@@ -224,25 +216,25 @@ export function RenameFolder({ folder }: { folder: Folder }) {
  */
 export function DeleteFolder({ folder }: { folder: Folder }) {
   const [open, setOpen] = useState(false);
-  const [typed, setTyped] = useState("");
   const remove = useDeleteFolder();
   const toast = useToast();
-  const matches = typed === folder.name;
-
-  const reset = (next: boolean) => {
-    setOpen(next);
-    setTyped("");
-    remove.reset();
-  };
-  const submit = () => {
-    if (!matches) return;
-    remove.mutate(folder.name, {
-      onSuccess: () => {
+  const form = useAppForm({
+    defaultValues: { typed: "" },
+    onSubmit: async () => {
+      try {
+        await remove.mutateAsync(folder.name);
         if (getLastFolder() === folder.name) setLastFolder(null);
         toast(`Deleted ${folder.name}`, "success");
         reset(false);
-      },
-    });
+      } catch (error) {
+        form.setFieldMeta("typed", serverError(errorMessage(error)));
+      }
+    },
+  });
+
+  const reset = (next: boolean) => {
+    setOpen(next);
+    form.reset();
   };
 
   return (
@@ -261,25 +253,21 @@ export function DeleteFolder({ folder }: { folder: Folder }) {
           id="delete-folder"
           onSubmit={(event) => {
             event.preventDefault();
-            submit();
+            void form.handleSubmit();
           }}
         >
-          <FormField
+          <InputField
+            form={form}
+            name="typed"
             label={
               <>
                 Type <code className="font-mono">{folder.name}</code> to confirm
               </>
             }
-            error={remove.error ? message(remove.error) : undefined}
-            control={
-              <Input
-                autoFocus
-                autoComplete="off"
-                spellCheck={false}
-                value={typed}
-                onChange={(event) => setTyped(event.target.value)}
-              />
-            }
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            listeners={{ onChange: () => form.setFieldMeta("typed", serverError(undefined)) }}
           />
         </form>
       }
@@ -288,14 +276,20 @@ export function DeleteFolder({ folder }: { folder: Folder }) {
           <Button variant="ghost" onClick={close}>
             Cancel
           </Button>
-          <Button
-            type="submit"
-            form="delete-folder"
-            variant="destructive"
-            disabled={!matches || remove.isPending}
-          >
-            {remove.isPending ? "Deleting…" : "Delete folder"}
-          </Button>
+          <form.AppForm>
+            <form.Subscribe selector={(state) => state.values.typed === folder.name}>
+              {(matches) => (
+                <form.SubmitButton
+                  form="delete-folder"
+                  variant="destructive"
+                  pendingLabel="Deleting…"
+                  disabled={!matches}
+                >
+                  Delete folder
+                </form.SubmitButton>
+              )}
+            </form.Subscribe>
+          </form.AppForm>
         </>
       )}
     />

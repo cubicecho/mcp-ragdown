@@ -1,4 +1,4 @@
-import type { Ref } from "react";
+import type { ReactNode, Ref } from "react";
 
 /**
  * Everything but `text`, `number`, `password` and the four keyboard types falls back to plain text
@@ -50,6 +50,25 @@ export type InputHandle = {
   select?: () => void;
 };
 
+/**
+ * What `onKeyPress` hands over: the key, as `nativeEvent.key`. React Native's
+ * `TextInputKeyPressEvent` is this shape, and so is a React DOM keyboard event, whose
+ * `nativeEvent` is the browser's `KeyboardEvent` — so one handler reads the key the same way on
+ * both halves. Spelled structurally because this file ships to the web too, where there is no
+ * react-native to import the type from.
+ */
+export type InputKeyPressEvent = { nativeEvent: { key: string } };
+
+/**
+ * A handler of that event, declared as a method so its parameter is checked bivariantly — the
+ * trick React's own event handler types use. A native handler annotated
+ * `(e: TextInputKeyPressEvent) => void` names a narrower event than this one and would otherwise
+ * be refused, though it reads nothing that is not here.
+ */
+export type InputKeyPressHandler = {
+  bivarianceHack(event: InputKeyPressEvent): void;
+}["bivarianceHack"];
+
 export type InputProps = {
   value?: string | undefined;
   /** Uncontrolled: where the text starts, when nothing above is holding `value`. */
@@ -58,6 +77,18 @@ export type InputProps = {
   onBlur?: (() => void) | undefined;
   /** Enter on web, the return key on native. */
   onSubmitEditing?: (() => void) | undefined;
+  /**
+   * Every key as it goes down: React Native's `onKeyPress`. On device that is a hardware keyboard
+   * and whatever the soft one reports; on the web half it fires from `keydown`, as
+   * react-native-web's does, so it hears Escape and the arrows, which a DOM `keypress` never does.
+   */
+  onKeyPress?: InputKeyPressHandler | undefined;
+  /**
+   * Escape — the key an inline edit answers with "put it back the way it was". Fires after any
+   * `onKeyPress`, on both halves. A soft keyboard has no Escape key, so a touch-only screen still
+   * needs its own way out (a blur, a cancel button).
+   */
+  onEscape?: (() => void) | undefined;
   placeholder?: string | undefined;
   type?: InputType | undefined;
   /**
@@ -71,6 +102,11 @@ export type InputProps = {
   min?: number | undefined;
   max?: number | undefined;
   disabled?: boolean | undefined;
+  /**
+   * Shown and focusable, but not editable: the value is on its way somewhere. Unlike `disabled` it
+   * keeps the focus it has, so the caret is still there when the field opens again.
+   */
+  readOnly?: boolean | undefined;
   className?: string | undefined;
   /**
    * Ties the control to its `<label>` on the web. React Native takes `id` as its `nativeID`, so on
@@ -87,9 +123,52 @@ export type InputProps = {
    * none, so a native caller that needs the name everywhere passes `aria-label` too.
    */
   "aria-labelledby"?: string | undefined;
+  /**
+   * What says more about the field — its hint, its error — by id. Web only: React Native has no
+   * description relation, so on device the error is read where it is drawn.
+   */
+  "aria-describedby"?: string | undefined;
+  /** The value was refused: a validator's error, a save that failed. Web only, as above. */
+  "aria-invalid"?: boolean | "true" | "false" | undefined;
   autoFocus?: boolean | undefined;
+  /**
+   * An icon drawn inside the field at its start — a `<Search />`, a `<Clock />` — with the text
+   * padded past it. Pass it bare: the input sizes it and mutes it, and it takes no pointer, so a
+   * press on it lands in the field. Thirteen search boxes wrote this by hand as an absolute icon
+   * and a `pl-8`, each with its own offset.
+   */
+  leading?: ReactNode | undefined;
+  /**
+   * The far end of the field, inside it: one icon-sized control, such as a clear button. The text
+   * stops short of it. Unlike `leading` it is pressable, so give a button its own name.
+   */
+  trailing?: ReactNode | undefined;
+  /**
+   * The class of the box that holds the field and its `leading` / `trailing`, which only exists
+   * when one of them is passed. `className` stays on the field itself, as it is on every input, so
+   * size the pair here: `wrapperClassName="w-64"`.
+   */
+  wrapperClassName?: string | undefined;
   ref?: Ref<InputHandle> | undefined;
 };
+
+/** The box a `leading` or `trailing` is positioned in. Full width, as the field is on its own. */
+export const INPUT_WRAPPER_CLASS = "relative w-full min-w-0";
+
+/** Where `leading` sits: an icon-wide cell at the field's start, muted, never the press target. */
+export const INPUT_LEADING_CLASS =
+  "pointer-events-none absolute inset-y-0 left-0 flex w-9 flex-row items-center justify-center";
+
+/** Where `trailing` sits: the same cell at the far end, which does take a press. */
+export const INPUT_TRAILING_CLASS =
+  "absolute inset-y-0 right-0 flex w-9 flex-row items-center justify-center";
+
+/** The icon inside either slot, handed down through `IconClassContext`: on device nothing inherits. */
+export const INPUT_SLOT_ICON_CLASS = "size-4 shrink-0 text-muted-foreground";
+
+/** The text's padding past a slot, so it never runs under the icon. */
+export const INPUT_LEADING_PAD_CLASS = "pl-9";
+export const INPUT_TRAILING_PAD_CLASS = "pr-9";
 
 export const INPUT_CLASS =
   "border-input bg-background text-foreground ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";

@@ -1,13 +1,18 @@
+import type * as React from "react";
+import { skeletonClass } from "@/components/ui/skeleton-base";
 import { cn } from "@/lib/utils";
 
-function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
+type SkeletonProps = React.ComponentProps<"div">;
+
+function Skeleton({ className, ...props }: SkeletonProps) {
   return (
     <div
       data-slot="skeleton"
-      className={cn("animate-pulse rounded-md bg-accent", className)}
+      className={cn("animate-pulse", skeletonClass, className)}
       {...props}
     />
   );
 }
 
+export type { SkeletonProps };
 export { Skeleton };

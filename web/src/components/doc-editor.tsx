@@ -1,18 +1,9 @@
 import { useBlocker } from "@tanstack/react-router";
 import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { StickyHeaderContentFooter } from "@/components/header-content-footer";
+import { LeaveDialog } from "@/components/leave-dialog";
 import { MarkdownPreview } from "@/components/markdown-preview";
 import { PageHeader } from "@/components/page-header";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { TriangleAlert } from "@/components/ui/icons";
 import { SegmentedButton, SegmentedGroup } from "@/components/ui/segmented";
@@ -192,6 +183,7 @@ export function DocEditor({
         }
       />
       <LeaveDialog
+        description="Your edits to this note have not been saved, and leaving throws them away."
         open={blocker.status === "blocked" || confirmClose}
         onStay={() => {
           setConfirmClose(false);
@@ -205,34 +197,5 @@ export function DocEditor({
         }}
       />
     </>
-  );
-}
-
-function LeaveDialog({
-  open,
-  onStay,
-  onLeave,
-}: {
-  open: boolean;
-  onStay: () => void;
-  onLeave: () => void;
-}) {
-  return (
-    <AlertDialog open={open} onOpenChange={(next) => (next ? undefined : onStay())}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Your edits to this note have not been saved, and leaving throws them away.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Keep editing</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={onLeave}>
-            Discard
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }
