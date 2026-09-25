@@ -5,6 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it } from "vitest";
+import pkg from "../package.json" with { type: "json" };
 import { Ragdown } from "./engine.ts";
 import { assertAuthConfigured, createHttpServer } from "./http.ts";
 import { tempSetup } from "./testing.ts";
@@ -47,6 +48,8 @@ describe("HTTP server", () => {
       auth_required: boolean;
     };
     expect(status).toMatchObject({ name: "ragdown", ready: true, files: 1, chunks: 1 });
+    // The released version, not a constant left behind in the source.
+    expect(status).toMatchObject({ version: pkg.version });
     expect(status).toMatchObject({
       settings: {
         watch: false,
