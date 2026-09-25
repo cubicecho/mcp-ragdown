@@ -5,7 +5,6 @@ import { CreateFolder } from "@/components/folder-actions";
 import { QueryState } from "@/components/query-state";
 import { Sidebar, SidebarNavItem, SidebarSection } from "@/components/sidebar";
 import { SidebarLayout } from "@/components/split-layout";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, Plus, Settings } from "@/components/ui/icons";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
@@ -259,9 +258,6 @@ export function AppShell() {
                 <Settings className="size-4" aria-hidden />
               </Link>
               <LockButton />
-              <div className="w-24">
-                <ThemeToggle />
-              </div>
             </div>
           </header>
           <main className="min-h-0 flex-1 overflow-y-auto md:overflow-hidden">
