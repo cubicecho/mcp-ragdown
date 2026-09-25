@@ -192,8 +192,8 @@ created_by: ragdown_remember
               <tr><td><code>PATCH /api/folders/&lt;name&gt;</code></td><td>bearer</td><td>JSON <code>{ title?, mcp?, name? }</code>: change its settings, or rename it with <code>name</code> (which re-indexes it). Unknown keys in <code>.ragdown.json</code> are kept.</td></tr>
               <tr><td><code>DELETE /api/folders/&lt;name&gt;?confirm=&lt;name&gt;</code></td><td>bearer</td><td>Delete a folder and everything in it. 400 unless <code>confirm</code> repeats the name.</td></tr>
               <tr><td><code>GET /api/docs?folder=</code></td><td>bearer</td><td>The indexed files, of one folder or all: <code>path</code>, <code>folder</code>, <code>title</code>, <code>tags</code>, <code>aliases</code>, <code>mtime_ms</code>, <code>size</code>, <code>chunks</code>.</td></tr>
-              <tr><td><code>GET /api/doc?path=</code></td><td>bearer</td><td>One indexed file's text, read from disk, with its tags and aliases.</td></tr>
-              <tr><td><code>POST /api/doc</code></td><td>bearer</td><td>Upload a file: JSON <code>{ path, text, overwrite? }</code>, up to 4 MiB. 201 created, 200 overwritten, 409 for an existing file without <code>overwrite: true</code>.</td></tr>
+              <tr><td><code>GET /api/doc?path=</code></td><td>bearer</td><td>One indexed file's text, read from disk, with its tags, aliases and <code>hash</code> (SHA-256 of its bytes).</td></tr>
+              <tr><td><code>POST /api/doc</code></td><td>bearer</td><td>Write a file: JSON <code>{ path, text, overwrite?, base_hash? }</code>, up to 4 MiB. 201 created, 200 overwritten, 409 for an existing file without <code>overwrite: true</code>. With <code>base_hash</code> it saves an edit: only over the version with that hash, else 409 with <code>code: "changed"</code>. Answers with the new <code>hash</code>.</td></tr>
               <tr><td><code>DELETE /api/doc?path=</code></td><td>bearer</td><td>Delete a Markdown file. 404 when it is not there.</td></tr>
               <tr><td><code>GET /api/search?folder=&amp;q=&amp;tag=&amp;top_k=</code></td><td>bearer</td><td>Hybrid search in one folder, human-only ones included. <code>top_k</code> defaults to 10, at most 50.</td></tr>
               <tr><td><code>GET /api/resolve?from=&amp;link=</code></td><td>bearer</td><td>A wikilink target, resolved from the note <code>from</code> within its folder: <code>{ path, anchor? }</code> or 404.</td></tr>
@@ -203,7 +203,7 @@ created_by: ragdown_remember
           </table>
         </div>
         <p>Every <code>path</code> in <code>/api</code> includes the folder: <code>work/notes/a.md</code>. Writes answer
-          after the index has synced; uploads, deletes, and creating, renaming or deleting a folder are a 403 under
+          after the index has synced; new notes, edits, uploads, deletes, and creating, renaming or deleting a folder are a 403 under
           <code>RAGDOWN_READ_ONLY</code>. They exist for the web UI; agents write with <code>ragdown_remember</code>.
           An upload must be <code>.md</code>, <code>.markdown</code> or <code>.mdx</code> inside an existing folder,
           somewhere the indexer reads — no <code>..</code>, dot-folders, <code>node_modules</code> or symlinked
@@ -219,6 +219,13 @@ created_by: ragdown_remember
             renders beside the list with its tags, size, line count and chunk count; <code>[[wikilinks]]</code> are
             followed, <code>![[embeds]]</code> and images shown, and a search hit opens at its heading. The folder and
             file are in the URL.</li>
+          <li><strong>New note</strong> — a title and an optional subfolder (created if missing); the note is saved
+            as <code>&lt;title&gt;.md</code> starting with that heading and opens in the editor. A taken name is
+            refused, with a way to open the existing note.</li>
+          <li><strong>Edit</strong> — the previewed file in a Markdown editor with a preview tab;
+            <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>S</kbd> saves. A save goes through only over the version that was
+            opened; if the file changed on disk meanwhile, you choose to discard yours or save it anyway. Unsaved
+            changes hold back leaving the page.</li>
           <li><strong>Upload</strong> — pick <code>.md</code>, <code>.markdown</code> or <code>.mdx</code> files and an
             optional subfolder of the open folder. A file that already exists stays in the list with an <em>Overwrite</em> button instead of
             being replaced unasked.</li>
