@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { availableParallelism } from "node:os";
+import { Agent } from "undici";
 import type { Config } from "./config.ts";
 
 export interface Embedder {
@@ -152,6 +153,13 @@ type FeatureExtractor = (
 ) => Promise<{ data: Float32Array }>;
 
 /**
+ * Connections to the embedding endpoint, kept for 30 s when idle rather than `fetch`'s 4. A hook
+ * embeds one query a turn and turns are further apart than 4 s, so each one opened a new TLS
+ * connection first: about 340 ms against api.openai.com where a kept connection took 85.
+ */
+const keepAlive = new Agent({ keepAliveTimeout: 30_000 });
+
+/**
  * Any OpenAI-compatible `/embeddings` endpoint: OpenAI itself, Ollama, llama.cpp, vLLM, LM Studio.
  * The dimension is learned from one probe call rather than configured, so it cannot be wrong.
  */
@@ -205,7 +213,9 @@ class OpenAiEmbedder implements Embedder {
       },
       body: JSON.stringify({ model, input }),
       signal: AbortSignal.timeout(60_000),
-    });
+      // Node's `fetch` takes a dispatcher its DOM-shaped `RequestInit` does not declare.
+      dispatcher: keepAlive,
+    } as RequestInit);
     if (!response.ok) {
       throw new Error(
         `embedding endpoint ${url} answered ${response.status}: ${await response.text()}`,

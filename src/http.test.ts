@@ -42,6 +42,13 @@ describe("HTTP server", () => {
     expect(() => assertAuthConfigured(t.config)).toThrow(/RAGDOWN_TOKEN/);
   });
 
+  it("tells clients it keeps an idle connection for 75 s, or for as long as it is told to", async () => {
+    const t = await serve({ SECURE_LOCAL_NET: "true" });
+    expect((await fetch(`${t.url}/api/status`)).headers.get("keep-alive")).toBe("timeout=75");
+    const longer = await serve({ SECURE_LOCAL_NET: "true", HTTP_KEEP_ALIVE_TIMEOUT_MS: "120000" });
+    expect((await fetch(`${longer.url}/api/status`)).headers.get("keep-alive")).toBe("timeout=120");
+  });
+
   it("serves status openly and guards /mcp with the token", async () => {
     const t = await serve({ RAGDOWN_TOKEN: "secret" });
     const status = (await (await fetch(`${t.url}/api/status`)).json()) as {
