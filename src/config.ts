@@ -36,6 +36,8 @@ export interface Config {
     token: string | null;
     /** `SECURE_LOCAL_NET=true`: no auth at all, for a trusted network. */
     secureLocalNet: boolean;
+    /** How long an idle client connection is kept open, in ms; 0 never closes one. */
+    keepAliveTimeoutMs: number;
   };
   /** Defaults for `ragdown_context`, which a hook calls before each turn. */
   hook: {
@@ -111,6 +113,9 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
       port: int(env, "PORT", 3000),
       token: env.RAGDOWN_TOKEN || null,
       secureLocalNet: bool(env, "SECURE_LOCAL_NET", false),
+      // Node's 5 s is shorter than the gap between two tool calls, and shorter than the 60 s
+      // nginx and ALB hold their side, which is how a proxy reuses a connection being closed.
+      keepAliveTimeoutMs: int(env, "HTTP_KEEP_ALIVE_TIMEOUT_MS", 75_000),
     },
     hook: {
       topK: int(env, "RAGDOWN_HOOK_TOP_K", 4),

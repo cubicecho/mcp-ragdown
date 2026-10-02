@@ -117,7 +117,7 @@ export function createHttpServer(
   config: Config,
   webDir: string = WEB_DIR,
 ): Server {
-  return createServer((req, res) => {
+  return createServer({ keepAliveTimeout: config.http.keepAliveTimeoutMs }, (req, res) => {
     handle(ready, config, webDir, req, res).catch((error: unknown) => {
       const status = (error as { status?: number }).status ?? 500;
       if (status >= 500) console.error(`[http] ${req.method} ${req.url}: ${errorMessage(error)}`);

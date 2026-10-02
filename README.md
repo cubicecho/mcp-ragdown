@@ -234,6 +234,7 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `RAGDOWN_HOOK_MIN_RATIO` | `0.95` | `ragdown_context`: lowest share of the best hit's similarity a hit may have and still be injected; `0` disables it. Being a ratio, it carries across embedders as `MIN_SCORE` does not. See [Design](#design). |
 | `RAGDOWN_HOOK_MAX_CHARS` | `6000` | `ragdown_context`: most characters per prompt. |
 | `PORT` | `3000` | `serve` only. The HTTP port. |
+| `HTTP_KEEP_ALIVE_TIMEOUT_MS` | `75000` | `serve` only. How long an idle client connection is kept open. Above the 60 s nginx and ALB hold theirs; raise it behind a proxy that holds longer. `0` never closes one. |
 | `RAGDOWN_TOKEN` | — | `serve` only. The bearer token `/mcp/<folder>` and the web UI's `/api` routes require. |
 | `SECURE_LOCAL_NET` | `false` | `serve` only. Skip the token on a trusted network. `serve` refuses to start with neither. |
 
