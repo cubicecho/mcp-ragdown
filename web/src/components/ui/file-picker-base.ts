@@ -1,15 +1,24 @@
-/**
- * The contract `file-picker.tsx` (native) and `file-picker.web.tsx` implement.
- *
- * Its own module for the usual reason — Metro resolves `./file-picker` to the
- * `.web.tsx` file on web, so that file cannot import the shared pieces from
- * `./file-picker` without importing itself.
- */
 import type { ReactNode } from "react";
 import type { ButtonProps } from "@/components/ui/button";
 
-/** One picked file: its decoded text and its name. */
-export type PickedFile = { text: string; name: string };
+/**
+ * One picked file. Plain data rather than the DOM's `File`, which native does
+ * not have: a string and a `Uint8Array` exist on both platforms.
+ */
+export type PickedFile = {
+  name: string;
+  /**
+   * Where the file sits inside a picked folder, the folder's own name first:
+   * `my-skill/assets/logo.png`. Outside a folder pick it is `name`.
+   */
+  path: string;
+  /** The MIME type, when the platform knows it; `""` when it does not. */
+  type: string;
+  /** The file decoded as text. `""` when `read` is `"bytes"`, which decodes nothing. */
+  text: string;
+  /** The file as it is on disk. Only there when `read` is `"bytes"`. */
+  bytes?: Uint8Array;
+};
 
 type FilePickerCommonProps = {
   /**
@@ -24,6 +33,22 @@ type FilePickerCommonProps = {
    * `accept` allows.
    */
   multiple?: boolean | undefined;
+  /**
+   * What to read from each file. `text` (the default) decodes it, which is right
+   * for JSON or Markdown and corrupts a `.zip` or an image. `bytes` hands back
+   * the file undecoded as `bytes`, and leaves `text` empty.
+   *
+   * `onPick` only ever carries text and a name, so take `bytes` with `onPickMany`.
+   */
+  read?: "text" | "bytes" | undefined;
+  /**
+   * Pick a folder and everything under it instead of files: the dialog chooses
+   * a folder, a dropped folder is walked, and each file reports where it sat as
+   * its `path`. A folder is several files, so every one `accept` allows is kept
+   * whether or not `multiple` is set — and since only `onPickMany` carries a
+   * `path`, that is the callback to give. Web only.
+   */
+  directory?: boolean | undefined;
   /** What is being picked. On the zone it is the visible heading; on the button, the accessible name. */
   label: string;
 };
@@ -38,8 +63,9 @@ type FilePickerCallbacks =
       /**
        * Handed the picked file's decoded text, never the `File` object itself.
        * `File` is DOM-only, so a contract carrying one could not be implemented on
-       * native — and the calling screen only ever wants the text anyway. With
-       * `multiple` and no `onPickMany`, called once per file, in pick order.
+       * native. A screen that wants the bytes, the type or the path takes
+       * `onPickMany`, whose `PickedFile` has them. With `multiple` and no
+       * `onPickMany`, called once per file, in pick order.
        */
       onPick: (text: string, fileName: string) => void;
       /**

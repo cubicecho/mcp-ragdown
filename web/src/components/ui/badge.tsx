@@ -61,23 +61,32 @@ export function Badge({
         : {})}
       {...props}
     >
-      {shape === "pill" ? children : null}
-      {shape === "pill" && onRemove && !asChild ? (
-        <button
-          type="button"
-          aria-label={removeLabel ?? badgeRemoveLabel(children, label)}
-          className="-my-1 -mr-1.5 -ml-1 inline-flex cursor-pointer items-center justify-center rounded-full p-1 text-inherit outline-none hover:opacity-75 focus-visible:ring-2 focus-visible:ring-current focus-visible:ring-inset"
-          onClick={(event) => {
-            event.stopPropagation();
-            onRemove();
-          }}
-          // The keys that press it, stopped too, so a badge's own `onKeyDown` does not act on them.
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") event.stopPropagation();
-          }}
-        >
-          <X className={badgeIconClass} aria-hidden />
-        </button>
+      {/* `asChild` renders `children` and nothing beside it. `Slot` counts every child
+          expression, a `null` included, so a second slot here — even one that is always
+          empty under `asChild` — made it throw "failed to slot onto its children" (#152). */}
+      {asChild ? (
+        children
+      ) : shape === "pill" ? (
+        <>
+          {children}
+          {onRemove ? (
+            <button
+              type="button"
+              aria-label={removeLabel ?? badgeRemoveLabel(children, label)}
+              className="-my-1 -mr-1.5 -ml-1 inline-flex cursor-pointer items-center justify-center rounded-full p-1 text-inherit outline-none hover:opacity-75 focus-visible:ring-2 focus-visible:ring-current focus-visible:ring-inset"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRemove();
+              }}
+              // The keys that press it, stopped too, so a badge's own `onKeyDown` does not act on them.
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+              }}
+            >
+              <X className={badgeIconClass} aria-hidden />
+            </button>
+          ) : null}
+        </>
       ) : null}
     </Comp>
   );

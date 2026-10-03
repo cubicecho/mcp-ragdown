@@ -41,7 +41,8 @@ export type TabsContentProps = {
   children: ReactNode;
 };
 
-export const TABS_LIST_CLASS = "h-10 items-center justify-center rounded-md bg-muted p-1";
+export const TABS_LIST_CLASS =
+  "h-10 items-center justify-center rounded-md border border-input bg-background p-1";
 /** A row, so an icon sits beside the label. `gap-1.5` is shadcn's own. */
 export const TABS_TRIGGER_CLASS =
   "flex-row items-center justify-center gap-1.5 rounded-sm px-3 py-1.5";

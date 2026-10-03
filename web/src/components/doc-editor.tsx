@@ -4,6 +4,7 @@ import { StickyHeaderContentFooter } from "@/components/header-content-footer";
 import { LeaveDialog } from "@/components/leave-dialog";
 import { MarkdownPreview } from "@/components/markdown-preview";
 import { PageHeader } from "@/components/page-header";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { TriangleAlert } from "@/components/ui/icons";
 import { SegmentedButton, SegmentedGroup } from "@/components/ui/segmented";
@@ -137,23 +138,21 @@ export function DocEditor({
             }
             content={
               conflict ? (
-                <div
-                  role="alert"
-                  className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm"
-                >
-                  <TriangleAlert className="size-4 shrink-0 text-destructive" aria-hidden />
-                  <p className="min-w-0 flex-1">
-                    {conflict}. Saving yours replaces it; discarding reopens the file as it is now.
-                  </p>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="xs" onClick={onClose}>
-                      Discard mine
-                    </Button>
-                    <Button variant="destructive" size="xs" disabled={busy} onClick={keepMine}>
-                      Save mine anyway
-                    </Button>
-                  </div>
-                </div>
+                <Alert
+                  variant="destructive"
+                  icon={<TriangleAlert />}
+                  description={`${conflict}. Saving yours replaces it; discarding reopens the file as it is now.`}
+                  action={
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="xs" onClick={onClose}>
+                        Discard mine
+                      </Button>
+                      <Button variant="destructive" size="xs" disabled={busy} onClick={keepMine}>
+                        Save mine anyway
+                      </Button>
+                    </div>
+                  }
+                />
               ) : undefined
             }
           />

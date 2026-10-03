@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { Children } from "react";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardFooter,
@@ -19,6 +18,12 @@ export type CardLayoutProps = {
    * rendered inside a `Text`, so pass text or inline text nodes.
    */
   title?: ReactNode | undefined;
+  /**
+   * Which heading the title is, `1 | 2 | 3` — 3 by default, a card under a page title. A card that
+   * *is* the page (a sign-in, a token gate, a lone settings panel) passes `1`, so the page has an
+   * `<h1>`. The title is the same size at every level: pick the rank by where it sits.
+   */
+  level?: 1 | 2 | 3 | undefined;
   /** One line on what the card holds, or what changing it costs. */
   description?: ReactNode | undefined;
   /**
@@ -66,6 +71,50 @@ const BAR = cn("h-4 rounded-md bg-accent", "animate-pulse");
  */
 const INK = "text-card-foreground";
 
+/**
+ * The header, as a row that wraps: the title and description in one column, the action after it.
+ *
+ * The action used to be `CardAction`, which is absolute and so reserves no width — right for the
+ * badge or lone button it was written for, and wrong for anything wider, because a long title ran
+ * on underneath it. `CardAction` cannot be given a place in the flow instead: `CardHeader` is a
+ * column whose children are the title and the description, as shadcn's is, and Yoga has no grid
+ * to put a third child beside them. So the shell that owns this header's children lays them out,
+ * and the primitive stays as it is for a card composed by hand.
+ *
+ * `items-start` keeps the action in the corner `CardAction` held: level with the top of the
+ * title, at the far end. `gap-y-1.5` is `CardHeader`'s own gap, for the action's line once it has
+ * wrapped.
+ */
+const HEADER = "flex-row flex-wrap items-start gap-x-4 gap-y-1.5";
+
+/**
+ * The header's text. `basis-40` is the floor the header wraps on: the title keeps 10rem beside
+ * the action or the action goes under it. Less than `Section`'s, because a card title truncates
+ * and so can give up more before it stops naming the card — and because the lower the floor, the
+ * narrower the card in which a single button still sits where it always did.
+ */
+const HEADER_TEXT = "min-w-0 flex-1 basis-40 gap-1.5";
+
+/**
+ * The header's action, never shrunk and never wider than the header: on a line of its own, a
+ * fragment of controls wraps on this row instead of running out of the card.
+ */
+const HEADER_ACTION = cn(
+  "max-w-full shrink-0 flex-row flex-wrap items-center gap-2",
+  // The caller's own wrapping row, in a browser: a flex item there is as wide as its content and
+  // a react-native-web view does not shrink, so without this it runs out of the card. Yoga
+  // measures a child against its parent's width, and NativeWind has no child selector anyway.
+  "[&>*]:max-w-full",
+);
+
+/**
+ * The `footerActions` row. It shrinks to the footer and wraps rather than holding its buttons on
+ * one line: a view does not shrink by default on either half, so three buttons in a phone-width
+ * card ran past its left edge instead of moving the last one down. `justify-end` keeps a wrapped
+ * line against the right edge, where the primary action is.
+ */
+const ACTIONS = "min-w-0 shrink flex-row flex-wrap items-center justify-end gap-2";
+
 /** A string on its own is a crash on device, so a string slot gets a `Text` around it. */
 function asText(node: ReactNode) {
   return typeof node === "string" || typeof node === "number" ? (
@@ -93,6 +142,7 @@ function asText(node: ReactNode) {
 export function CardLayout({
   content,
   title,
+  level = 3,
   description,
   icon,
   action,
@@ -110,34 +160,40 @@ export function CardLayout({
   const isEmpty = Children.count(content) === 0;
   const body = loading ? <CardLayoutSkeleton /> : isEmpty && empty ? asText(empty) : content;
 
-  const hasHeader = Boolean(title || description || action);
+  const hasText = Boolean(title || description);
+  const hasHeader = Boolean(hasText || action);
   const hasFooter = Boolean(footer || footerActions);
 
   return (
     <Card data-slot="card-layout" className={className}>
       {hasHeader ? (
-        <CardHeader className={headerClassName}>
-          {title ? (
-            // The icon sits beside the heading rather than inside it: a heading is a `Text`, and
-            // a view inside a `Text` is not something the device lays out.
-            <div className="cube-rn-view min-w-0 flex-row items-center gap-2">
-              {icon ? (
-                // Sized here rather than by the caller, so an icon passed as `<Plus />` and one
-                // passed as `<Plus className="size-4" />` land at the same size.
-                <div className={cn("cube-rn-view", "shrink-0 text-muted-foreground", ICON)}>
-                  {icon}
+        <CardHeader className={cn(HEADER, !hasText && "justify-end", headerClassName)}>
+          {hasText ? (
+            <div className={cn("cube-rn-view", HEADER_TEXT)}>
+              {title ? (
+                // The icon sits beside the heading rather than inside it: a heading is a `Text`,
+                // and a view inside a `Text` is not something the device lays out.
+                <div className="cube-rn-view min-w-0 flex-row items-center gap-2">
+                  {icon ? (
+                    // Sized here rather than by the caller, so an icon passed as `<Plus />` and
+                    // one passed as `<Plus className="size-4" />` land at the same size.
+                    <div className={cn("cube-rn-view", "shrink-0 text-muted-foreground", ICON)}>
+                      {icon}
+                    </div>
+                  ) : null}
+                  {/* The padding is what stops `truncate` clipping the title: `CardTitle` is
+                      `leading-none`, so the line box is exactly 1em and `overflow: hidden` cuts
+                      the ascenders and descenders off it. The negative margin gives the space
+                      back, so the header keeps the height shadcn drew it at. */}
+                  <CardTitle level={level} className="-my-1 min-w-0 shrink truncate py-1">
+                    {title}
+                  </CardTitle>
                 </div>
               ) : null}
-              {/* The padding is what stops `truncate` clipping the title: `CardTitle` is
-                  `leading-none`, so the line box is exactly 1em and `overflow: hidden` cuts the
-                  ascenders and descenders off it. The negative margin gives the space back, so
-                  the header keeps the height shadcn drew it at. */}
-              <CardTitle className="-my-1 min-w-0 shrink truncate py-1">{title}</CardTitle>
+              {description ? <CardDescription>{description}</CardDescription> : null}
             </div>
           ) : null}
-          {description ? <CardDescription>{description}</CardDescription> : null}
-          {/* CardAction places itself at the header's far end; it needs no wrapper. */}
-          {action ? <CardAction>{action}</CardAction> : null}
+          {action ? <div className={cn("cube-rn-view", HEADER_ACTION)}>{action}</div> : null}
         </CardHeader>
       ) : null}
 
@@ -156,7 +212,7 @@ export function CardLayout({
         >
           {asText(footer)}
           {footerActions ? (
-            <div className="cube-rn-view flex-row items-center gap-2">{footerActions}</div>
+            <div className={cn("cube-rn-view", ACTIONS)}>{footerActions}</div>
           ) : null}
         </CardFooter>
       ) : null}

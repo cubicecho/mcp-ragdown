@@ -46,6 +46,12 @@ const SR_ONLY = "sr-only";
  */
 const INK = "text-foreground";
 
+/**
+ * The `footerActions` row: shrinks to the footer and wraps, right-aligned, rather than running its
+ * buttons past the dialog's edge on a narrow screen — the same row `CardLayout` draws.
+ */
+const ACTIONS = "min-w-0 shrink flex-row flex-wrap items-center justify-end gap-2";
+
 /** A string on its own is a crash on device, so a string slot gets a `Text` around it. */
 function asText(node: ReactNode) {
   return typeof node === "string" || typeof node === "number" ? (
@@ -300,9 +306,7 @@ export function DialogLayout({
                   className={cn(footer && footerActions && "sm:justify-between", footerClassName)}
                 >
                   {asText(footer)}
-                  {actions ? (
-                    <div className="cube-rn-view flex-row items-center gap-2">{actions}</div>
-                  ) : null}
+                  {actions ? <div className={cn("cube-rn-view", ACTIONS)}>{actions}</div> : null}
                 </DialogFooter>
               ) : null
             }

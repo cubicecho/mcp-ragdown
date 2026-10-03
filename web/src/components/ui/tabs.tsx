@@ -60,7 +60,7 @@ function TabsTrigger({
       // its size is set here; device has no inheritance and uses a context.
       className={cn(
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        "inline-flex whitespace-nowrap ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm",
+        "inline-flex whitespace-nowrap ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-muted-foreground hover:bg-accent hover:text-accent-foreground data-[state=active]:bg-selection data-[state=active]:text-selection-foreground",
         TABS_TRIGGER_CLASS,
         TABS_TRIGGER_TEXT_CLASS,
         className,

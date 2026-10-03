@@ -44,9 +44,11 @@ const VALUES = {
  */
 const SLOT = "block";
 
+const isText = (node: ReactNode) => typeof node === "string" || typeof node === "number";
+
 /** A string on its own is a crash on device, so a string value gets a `Text` around it. */
 function asText(node: ReactNode, className: string) {
-  return typeof node === "string" || typeof node === "number" ? (
+  return isText(node) ? (
     <span className={cn("cube-rn-text", className)}>{node}</span>
   ) : (
     <div className={cn("cube-rn-view", "min-w-0", SLOT)}>{node}</div>
@@ -97,8 +99,8 @@ type PropertyRowProps = {
   /** What the fact is called: "Embedder", "Docs folder". A `<dt>` on the web. */
   label: ReactNode;
   /**
-   * The fact itself: a string, or a node — `<Code>`, a `Badge`, a relative time. Not a control:
-   * a value the user edits is a form field (`FormField`), and this row has no label for it.
+   * The fact itself: a string, or a node — a `Badge`, a relative time. Not a control: a value the
+   * user edits is a form field (`FormField`), and this row has no label for it.
    */
   value: ReactNode;
   /**
@@ -115,6 +117,16 @@ type PropertyRowProps = {
   action?: ReactNode | undefined;
   className?: string | undefined;
   labelClassName?: string | undefined;
+  /**
+   * A string or number value's own `Text`, so a path, a version or an id is `value={path}
+   * valueClassName="font-mono"` rather than a node written to carry the font. On the text and
+   * not on the wrapper around it, because on device a `Text` inherits nothing: from the wrapper a
+   * `font-mono` reached the string on the web, with the hint and the action, and none of them on
+   * a phone.
+   *
+   * A node value is the caller's own text and takes its own classes, so there this is still the
+   * value's half of the row — the `<dd>` — as `StatTile`'s is the wrapper round a node.
+   */
   valueClassName?: string | undefined;
 };
 
@@ -160,11 +172,13 @@ export function PropertyRow({
           "cube-rn-view",
           "min-w-0 flex-row items-center gap-2",
           VALUES[layout],
-          valueClassName,
+          // A string's class is on its `Text`, below. Left here as well, a `font-mono` would reach
+          // the hint and the action on the web, by inheritance, and neither of them on device.
+          isText(value) ? undefined : valueClassName,
         )}
       >
         <div className="cube-rn-view min-w-0 flex-1 gap-0.5">
-          {asText(value, "break-words text-foreground text-sm")}
+          {asText(value, cn("break-words text-foreground text-sm", valueClassName))}
           {hint ? (
             <span
               data-slot="property-row-hint"

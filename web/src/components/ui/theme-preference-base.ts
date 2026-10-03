@@ -25,6 +25,28 @@ export type ThemeStorage = {
   setItem: (key: string, value: string) => void | Promise<void>;
 };
 
+/**
+ * Which set of colours to paint in, beside the light / dark choice. `default` is cubeui's own and
+ * what nothing stored means; the rest are `palettes` in `tokens/palette.mjs`.
+ */
+export type PalettePreference = "default" | "monokai";
+
+/** In the order a picker shows them. */
+export const PALETTE_PREFERENCES: readonly PalettePreference[] = ["default", "monokai"];
+
+/** Where the palette is stored, beside `THEME_STORAGE_KEY` and for the same reason. */
+export const PALETTE_STORAGE_KEY = "cubeui-palette";
+
+/**
+ * Palettes with no light set. Choosing one is dark whatever the theme says — there is no light
+ * Monokai to paint — and a picker shows the theme choice as moot while one is chosen.
+ */
+export const DARK_ONLY_PALETTES: readonly PalettePreference[] = ["monokai"];
+
+export function isPalettePreference(value: unknown): value is PalettePreference {
+  return PALETTE_PREFERENCES.includes(value as PalettePreference);
+}
+
 export type ThemePreferenceOptions = {
   /**
    * Device only: where the choice persists between launches. Without one, a choice lasts until
@@ -41,6 +63,12 @@ export type ThemePreferenceState = readonly [
   setPreference: (next: ThemePreference) => void,
 ];
 
+/** What `usePalettePreference` returns, the same shape. */
+export type PalettePreferenceState = readonly [
+  palette: PalettePreference,
+  setPalette: (next: PalettePreference) => void,
+];
+
 /**
  * The web's first paint, before React mounts: the same rule `useThemePreference` applies, as a
  * self-contained script for an inline `<script>` in the page's `<head>`. Render it with
@@ -49,7 +77,8 @@ export type ThemePreferenceState = readonly [
  * to this string.
  *
  * `dark` goes on `<html>` for Dark, and for System while the device is dark; `light` goes on it for
- * Light only. `dist/tokens.native.css` (Expo web) reads both over its `prefers-color-scheme` block;
+ * Light only. A dark-only palette is `dark` whatever the theme, and never `light`. A palette other
+ * than the default is `data-palette` on `<html>`, which both stylesheets key its colours off. `dist/tokens.native.css` (Expo web) reads both over its `prefers-color-scheme` block;
  * `tokens.web.css` (the DOM registry) has no media query and reads `.dark` alone, which is why
  * System still sets `dark` on a dark device rather than leaving it to a query that stylesheet does
  * not have.
@@ -59,7 +88,11 @@ export type ThemePreferenceState = readonly [
  */
 export const THEME_PRE_PAINT_SCRIPT =
   "(function(){try{" +
-  `var p=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});` +
-  'var d=p==="dark"||(p!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);' +
-  'var c=document.documentElement.classList;c.toggle("dark",d);c.toggle("light",p==="light")' +
+  `var s=localStorage,p=s.getItem(${JSON.stringify(THEME_STORAGE_KEY)}),` +
+  `q=s.getItem(${JSON.stringify(PALETTE_STORAGE_KEY)}),` +
+  `k=${JSON.stringify(DARK_ONLY_PALETTES)}.indexOf(q)>=0,` +
+  'd=k||p==="dark"||(p!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches),' +
+  'e=document.documentElement,c=e.classList;c.toggle("dark",d);c.toggle("light",!k&&p==="light");' +
+  `if(${JSON.stringify(PALETTE_PREFERENCES.filter((p) => p !== "default"))}.indexOf(q)>=0)` +
+  'e.setAttribute("data-palette",q)' +
   "}catch(e){}})();";

@@ -1,22 +1,32 @@
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
-import { ArrowDownWideNarrow, FileText, Folder as FolderIcon, Tag } from "@/components/app-icons";
+import { ArrowDownWideNarrow } from "@/components/app-icons";
 import { Backlinks } from "@/components/backlinks";
 import { DeleteDoc, NewNote, RenameDoc, UploadDocs } from "@/components/doc-actions";
 import { DocEditor } from "@/components/doc-editor";
 import { McpOffHint } from "@/components/folder-actions";
 import { StickyHeaderContentFooter } from "@/components/header-content-footer";
 import { MarkdownPreview } from "@/components/markdown-preview";
+import { EmptyState } from "@/components/page";
 import { PageHeader } from "@/components/page-header";
 import { QueryError, QueryState } from "@/components/query-state";
 import { SidebarLayout } from "@/components/split-layout";
-import { Badge, badgeVariants } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, Download, Pencil, Plus, Search } from "@/components/ui/icons";
-import { Input } from "@/components/ui/input";
+import { CopyButton } from "@/components/ui/copy-button";
+import {
+  Download,
+  FileText,
+  Folder as FolderIcon,
+  Pencil,
+  Plus,
+  Search,
+  Tag,
+} from "@/components/ui/icons";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
+import { SearchInput } from "@/components/ui/search-input";
 import { SegmentedButton, SegmentedGroup } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
@@ -24,7 +34,7 @@ import { type DocSummary, type Folder, getFile, type SearchHit } from "@/lib/api
 import { inFolder, setLastFolder, withinFolder } from "@/lib/folders";
 import { formatAgo, formatBytes, formatCount } from "@/lib/format";
 import { listValue, slug, splitFrontmatter } from "@/lib/markdown";
-import { useDoc, useDocs, useFolders, useSearch, useStatus } from "@/lib/queries";
+import { useDoc, useDocs, useFolders, useSearch, useWritable } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 const route = getRouteApi("/f/$folder");
@@ -198,22 +208,14 @@ function DocList({
                   <TagMenu folder={folder} tags={tags} active={tag} />
                 </div>
               </div>
-              <div className="relative">
-                <Search
-                  className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-2.5 size-3.5 text-muted-foreground"
-                  aria-hidden
-                />
-                <Input
-                  type="search"
-                  aria-label={mode === "search" ? `Search ${title}` : "Filter documents"}
-                  placeholder={
-                    mode === "search" ? "Search what the notes say" : "Filter by title, path or tag"
-                  }
-                  className="pl-8"
-                  value={text}
-                  onChange={(event) => setText(event.target.value)}
-                />
-              </div>
+              <SearchInput
+                label={mode === "search" ? `Search ${title}` : "Filter documents"}
+                placeholder={
+                  mode === "search" ? "Search what the notes say" : "Filter by title, path or tag"
+                }
+                value={text}
+                onChangeText={setText}
+              />
               {tag ? (
                 <div>
                   <Badge
@@ -246,15 +248,23 @@ function DocList({
               what="the documents"
               count={rows.length}
               empty={
-                <p className="px-2 py-6 text-center text-muted-foreground text-sm">
-                  {text && mode === "filter"
-                    ? "No document matches that filter."
-                    : tag
-                      ? `No document here is tagged #${tag}.`
-                      : mode === "search"
-                        ? "Type to search this folder."
-                        : "Nothing is indexed here yet. Markdown files in this folder show up once they are."}
-                </p>
+                <EmptyState
+                  icon={FileText}
+                  title={
+                    text && mode === "filter"
+                      ? "No document matches that filter."
+                      : tag
+                        ? `No document here is tagged #${tag}.`
+                        : mode === "search"
+                          ? "Type to search this folder."
+                          : "Nothing is indexed here yet."
+                  }
+                  description={
+                    text || tag || mode === "search"
+                      ? undefined
+                      : "Markdown files in this folder show up once they are."
+                  }
+                />
               }
             />
             {/* `ItemGroup` no longer claims `role="list"` itself; these rows are list items, so it does here. */}
@@ -368,11 +378,7 @@ function SearchResults({
         query={search}
         what="the search"
         count={hits.length}
-        empty={
-          <p className="px-2 py-6 text-center text-muted-foreground text-sm">
-            Nothing in this folder matches that.
-          </p>
-        }
+        empty={<EmptyState icon={Search} title="Nothing in this folder matches that." />}
       />
       <ItemGroup role="list">
         {hits.map((hit) => (
@@ -462,42 +468,49 @@ function NothingSelected({
 }) {
   const writable = useWritable();
   return (
-    <div className="flex h-full min-h-60 flex-col items-center justify-center gap-2 p-8 text-center">
-      <FileText className="size-8 text-muted-foreground/60" aria-hidden />
-      <p className="font-medium">Pick a document to preview it</p>
-      <p className="max-w-sm text-muted-foreground text-sm">
-        {count
+    <EmptyState
+      className="h-full min-h-60"
+      icon={FileText}
+      title="Pick a document to preview it"
+      description={
+        count
           ? `${title} holds ${formatCount(count, "file")}. What you see here is read from disk, so it is current even while the index catches up.`
-          : `The list fills in as the index syncs with ${title}.`}
-      </p>
-      {writable ? (
-        <NewNote
-          folder={folder}
-          title={title}
-          trigger={
-            <Button variant="outline" size="sm" className="mt-2">
-              <Plus aria-hidden /> New note
-            </Button>
-          }
-        />
-      ) : null}
-    </div>
+          : `The list fills in as the index syncs with ${title}.`
+      }
+      action={
+        writable ? (
+          <NewNote
+            folder={folder}
+            title={title}
+            trigger={
+              <Button variant="outline" size="sm">
+                <Plus aria-hidden /> New note
+              </Button>
+            }
+          />
+        ) : undefined
+      }
+    />
   );
 }
 
 function NoSuchFolder({ name }: { name: string }) {
   return (
-    <div className="flex h-full min-h-60 flex-col items-center justify-center gap-2 p-8 text-center">
-      <FolderIcon className="size-8 text-muted-foreground/60" aria-hidden />
-      <p className="font-medium">There is no folder called {name}</p>
-      <p className="max-w-sm text-muted-foreground text-sm">
-        It may have been renamed or deleted.{" "}
-        <Link to="/" className="underline underline-offset-4">
-          Open another folder
-        </Link>
-        .
-      </p>
-    </div>
+    <EmptyState
+      className="h-full min-h-60"
+      icon={FolderIcon}
+      level={1}
+      title={`There is no folder called ${name}`}
+      description={
+        <>
+          It may have been renamed or deleted.{" "}
+          <Link to="/" className="underline underline-offset-4">
+            Open another folder
+          </Link>
+          .
+        </>
+      }
+    />
   );
 }
 
@@ -586,7 +599,7 @@ function DocPreview({
           }
           action={
             <>
-              <CopyPath path={path} />
+              <CopyButton value={path} label="Copy path" />
               <DownloadDoc path={path} />
               {writable && doc.data ? (
                 <ActionButton
@@ -633,17 +646,17 @@ function DocPreview({
                   </span>
                 ) : null}
                 {tags.map((tag) => (
-                  // Not `<Badge asChild>`: cubeui's Badge hands its Slot a second, null child.
-                  <Link
-                    key={tag}
-                    to="/f/$folder"
-                    params={{ folder }}
-                    search={(prev) => ({ ...prev, tag })}
-                    aria-label={`Show documents tagged #${tag}`}
-                    className={cn(badgeVariants({ variant: "secondary" }), "hover:underline")}
-                  >
-                    #{tag}
-                  </Link>
+                  <Badge key={tag} variant="secondary" asChild>
+                    <Link
+                      to="/f/$folder"
+                      params={{ folder }}
+                      search={(prev) => ({ ...prev, tag })}
+                      aria-label={`Show documents tagged #${tag}`}
+                      className="hover:underline"
+                    >
+                      #{tag}
+                    </Link>
+                  </Badge>
                 ))}
                 {otherFields.map(([key, value]) => (
                   <Badge key={key} variant="outline" className="font-normal">
@@ -677,12 +690,6 @@ function DocPreview({
   );
 }
 
-/** Upload, edit and delete are offered only once status says the server takes writes. */
-function useWritable(): boolean {
-  const status = useStatus();
-  return status.data?.ready === true && status.data.read_only === false;
-}
-
 /** The note's file as it is on disk, front matter and all, saved under its own name. */
 function DownloadDoc({ path }: { path: string }) {
   const [busy, setBusy] = useState(false);
@@ -710,28 +717,6 @@ function DownloadDoc({ path }: { path: string }) {
       }}
     >
       <Download aria-hidden />
-    </ActionButton>
-  );
-}
-
-function CopyPath({ path }: { path: string }) {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(timer);
-  }, [copied]);
-
-  return (
-    <ActionButton
-      variant="ghost"
-      size="icon-sm"
-      label={copied ? "Copied" : "Copy path"}
-      onClick={() => {
-        void navigator.clipboard?.writeText(path).then(() => setCopied(true));
-      }}
-    >
-      {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
     </ActionButton>
   );
 }

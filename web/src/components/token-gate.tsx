@@ -1,9 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useAppForm } from "@/components/app-form";
-import { KeyRound } from "@/components/app-icons";
-import { CardLayout } from "@/components/card-layout";
+import { CenteredLayout } from "@/components/centered-layout";
 import { PasswordField } from "@/components/password-field";
+import { Code } from "@/components/ui/code";
+import { KeyRound } from "@/components/ui/icons";
 import { setToken, useNeedsAuth } from "@/lib/auth";
 
 /**
@@ -25,50 +26,49 @@ export function TokenGate({ children }: { children: ReactNode }) {
   if (!needsAuth) return children;
 
   return (
-    <div className="flex h-full items-center justify-center p-4">
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void form.handleSubmit();
-        }}
-        className="w-full max-w-sm"
-      >
-        <CardLayout
-          icon={<KeyRound aria-hidden />}
-          title="Token required"
-          description={
-            <>
-              This server was started with <code>RAGDOWN_TOKEN</code>. Enter it to read the index.
-            </>
-          }
-          content={
-            <PasswordField
-              form={form}
-              name="token"
-              label="Token"
-              placeholder="Bearer token"
-              autoComplete="current-password"
-              autoFocus
-              showLabel="Show token"
-              hideLabel="Hide token"
-              validators={{
-                onChange: ({ value }) => (value.trim() ? undefined : "Enter the token."),
-              }}
-            />
-          }
-          footerActions={
-            <form.AppForm>
-              <form.Subscribe selector={(state) => !state.values.token.trim()}>
-                {(empty) => (
-                  <form.SubmitButton pendingLabel="Unlocking…" disabled={empty}>
-                    Unlock
-                  </form.SubmitButton>
-                )}
-              </form.Subscribe>
-            </form.AppForm>
-          }
-        />
-      </form>
-    </div>
+    <form
+      className="h-full"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void form.handleSubmit();
+      }}
+    >
+      <CenteredLayout
+        className="min-h-full"
+        icon={<KeyRound aria-hidden />}
+        title="Token required"
+        description={
+          <>
+            This server was started with <Code>RAGDOWN_TOKEN</Code>. Enter it to read the index.
+          </>
+        }
+        content={
+          <PasswordField
+            form={form}
+            name="token"
+            label="Token"
+            placeholder="Bearer token"
+            autoComplete="current-password"
+            autoFocus
+            showLabel="Show token"
+            hideLabel="Hide token"
+            validators={{
+              onChange: ({ value }) => (value.trim() ? undefined : "Enter the token."),
+            }}
+          />
+        }
+        footerActions={
+          <form.AppForm>
+            <form.Subscribe selector={(state) => !state.values.token.trim()}>
+              {(empty) => (
+                <form.SubmitButton pendingLabel="Unlocking…" disabled={empty}>
+                  Unlock
+                </form.SubmitButton>
+              )}
+            </form.Subscribe>
+          </form.AppForm>
+        }
+      />
+    </form>
   );
 }
