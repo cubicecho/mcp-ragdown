@@ -1,31 +1,39 @@
-import { Link, useBlocker, useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import { InputField, SwitchField, useAppForm } from "@/components/app-form";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { ActionButton } from "@/components/action-button";
+import { FolderPen } from "@/components/app-icons";
 import { CardLayout } from "@/components/card-layout";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DescriptionList, PropertyRow } from "@/components/description-list";
 import {
   CreateFolder,
   DeleteFolder,
+  EditFolder,
   McpConfig,
   McpOffHint,
   RenameFolder,
 } from "@/components/folder-actions";
-import { LeaveDialog } from "@/components/leave-dialog";
 import { PageLayout } from "@/components/page-layout";
 import { QueryError, QueryState } from "@/components/query-state";
 import { Section } from "@/components/section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Plus, TriangleAlert } from "@/components/ui/icons";
+import { ArrowLeft, Copy, Pencil, Plus, Trash2, TriangleAlert } from "@/components/ui/icons";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemePicker } from "@/components/ui/theme-picker";
-import { useToast } from "@/components/ui/toast";
 import type { Folder, Status } from "@/lib/api";
 import { clearToken, getToken, requireAuth } from "@/lib/auth";
-import { errorMessage } from "@/lib/form-errors";
 import { formatAgo, formatCount } from "@/lib/format";
-import { useFolders, useStatus, useUpdateFolder } from "@/lib/queries";
+import { useFolders, useStatus } from "@/lib/queries";
 
 export type SettingsTab = "folders" | "browser" | "server";
 
@@ -130,26 +138,22 @@ export function SettingsPage() {
   );
 }
 
+/** Which of a folder's dialogs is up. By name, so the dialog reads the folder as it now is. */
+type FolderDialog = { kind: "mcp" | "edit" | "rename" | "delete"; name: string };
+
 /**
  * The folders are the one thing set from here rather than the environment: each one's
- * `.ragdown.json` holds its title and whether MCP serves it, and the server reads it back.
+ * `.ragdown.json` holds its title, whether MCP serves it and its own search defaults, and the
+ * server reads it back. A row shows a folder; every change to one is a dialog opened from it.
  */
 function FoldersSection({ writable }: { writable: boolean }) {
   const folders = useFolders();
   const navigate = useNavigate();
   const loose = folders.data?.loose_files ?? [];
-  // The folders with unsaved edits. One blocker for the section rather than one per card, so
-  // leaving asks once however many cards are part-edited.
-  const unsaved = useRef(new Set<string>());
-  const onDirty = (name: string, dirty: boolean) => {
-    if (dirty) unsaved.current.add(name);
-    else unsaved.current.delete(name);
-  };
-  const blocker = useBlocker({
-    shouldBlockFn: () => unsaved.current.size > 0,
-    enableBeforeUnload: () => unsaved.current.size > 0,
-    withResolver: true,
-  });
+  const list = folders.data?.folders ?? [];
+  const [dialog, setDialog] = useState<FolderDialog | null>(null);
+  const open = dialog ? list.find((folder) => folder.name === dialog.name) : undefined;
+  const close = () => setDialog(null);
 
   return (
     <Section
@@ -198,7 +202,7 @@ function FoldersSection({ writable }: { writable: boolean }) {
           <QueryState
             query={folders}
             what="the folders"
-            count={folders.data?.folders.length ?? 0}
+            count={list.length}
             rows={2}
             empty={
               <p className="py-4 text-center text-muted-foreground text-sm">
@@ -206,87 +210,55 @@ function FoldersSection({ writable }: { writable: boolean }) {
               </p>
             }
           />
-          {folders.data?.folders.map((folder) => (
-            <FolderCard key={folder.name} folder={folder} writable={writable} onDirty={onDirty} />
-          ))}
-          <LeaveDialog
-            open={blocker.status === "blocked"}
-            description="A folder's settings have changes that are not saved, and leaving throws them away."
-            onStay={() => blocker.reset?.()}
-            onLeave={() => blocker.proceed?.()}
-          />
+          {list.length > 0 ? (
+            <Table>
+              <TableCaption className="sr-only">Folders</TableCaption>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Folder</TableHead>
+                  <TableHead className="hidden sm:table-cell">Notes</TableHead>
+                  <TableHead>Agents</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {list.map((folder) => (
+                  <FolderRow
+                    key={folder.name}
+                    folder={folder}
+                    writable={writable}
+                    onOpen={(kind) => setDialog({ kind, name: folder.name })}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          ) : null}
+          {open && dialog?.kind === "mcp" ? <McpConfig folder={open} onClose={close} /> : null}
+          {open && dialog?.kind === "edit" ? <EditFolder folder={open} onClose={close} /> : null}
+          {open && dialog?.kind === "rename" ? (
+            <RenameFolder folder={open} onClose={close} />
+          ) : null}
+          {open && dialog?.kind === "delete" ? (
+            <DeleteFolder folder={open} onClose={close} />
+          ) : null}
         </div>
       }
     />
   );
 }
 
-/**
- * A folder's settings as one form: change the title and the MCP switch, then Save sends both.
- * Nothing is saved on leaving a field, so a half-typed title never reaches agents.
- */
-/** What a save sends: only what differs. An empty title means the name, as an untitled folder shows. */
-function folderPatch(folder: Folder, values: { title: string; mcp: boolean }) {
-  const title = values.title.trim();
-  return {
-    ...((title || folder.name) !== folder.title ? { title } : {}),
-    ...(values.mcp !== folder.mcp ? { mcp: values.mcp } : {}),
-  };
-}
-
-/** Tells the section whether a card has unsaved changes, and takes it back when the card goes. */
-function ReportDirty({
-  name,
-  dirty,
-  onDirty,
-}: {
-  name: string;
-  dirty: boolean;
-  onDirty: (name: string, dirty: boolean) => void;
-}) {
-  useEffect(() => {
-    onDirty(name, dirty);
-    return () => onDirty(name, false);
-  }, [onDirty, name, dirty]);
-  return null;
-}
-
-function FolderCard({
+function FolderRow({
   folder,
   writable,
-  onDirty,
+  onOpen,
 }: {
   folder: Folder;
   writable: boolean;
-  onDirty: (name: string, dirty: boolean) => void;
+  onOpen: (kind: FolderDialog["kind"]) => void;
 }) {
-  const update = useUpdateFolder();
-  const toast = useToast();
-  const saved = { title: folder.title, mcp: folder.mcp };
-  const form = useAppForm({
-    defaultValues: saved,
-    onSubmit: async ({ value }) => {
-      const patch = folderPatch(folder, value);
-      try {
-        await update.mutateAsync({ name: folder.name, patch });
-        toast(`Saved ${value.title.trim() || folder.name}`, "success");
-      } catch (error) {
-        toast(`Could not update ${folder.name}: ${errorMessage(error)}`);
-      }
-    },
-  });
-  // A save, or a change from another tab, lands here as the new starting point.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the saved values are the trigger.
-  useEffect(() => {
-    form.reset({ title: folder.title, mcp: folder.mcp });
-  }, [folder.title, folder.mcp]);
-  const formId = `folder-${folder.name}`;
-  const disabled = !writable || update.isPending;
-  const reset = () => form.reset(saved);
-
   return (
-    <CardLayout
-      title={
+    <TableRow>
+      <TableHead className="h-auto py-2 font-medium">
         <Link
           to="/f/$folder"
           params={{ folder: folder.name }}
@@ -294,99 +266,55 @@ function FolderCard({
         >
           {folder.title}
         </Link>
-      }
-      description={
-        <>
-          <code className="text-xs">{folder.name}</code> · {formatCount(folder.files, "file")} ·{" "}
-          {formatCount(folder.chunks, "chunk")}
-        </>
-      }
-      action={
+        <code className="block font-normal text-muted-foreground text-xs">{folder.name}</code>
+      </TableHead>
+      <TableCell className="hidden text-muted-foreground sm:table-cell">
+        {formatCount(folder.files, "file")} · {formatCount(folder.chunks, "chunk")}
+      </TableCell>
+      <TableCell>
         <Badge variant={folder.mcp ? "secondary" : "outline"}>
           {folder.mcp ? "MCP" : "Human-only"}
         </Badge>
-      }
-      content={
-        <form
-          id={formId}
-          className="flex flex-col gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void form.handleSubmit();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") reset();
-          }}
+      </TableCell>
+      <TableCell className="text-right">
+        <ActionButton
+          variant="ghost"
+          size="icon-sm"
+          label={`Copy MCP config for ${folder.title}`}
+          onClick={() => onOpen("mcp")}
         >
-          <InputField
-            form={form}
-            name="title"
-            label="Title"
-            description="How the folder is shown here and to agents. The name, if left empty."
-            placeholder={folder.name}
-            disabled={disabled}
-          />
-          <form.Subscribe selector={(state) => state.values.mcp}>
-            {(mcp) => (
-              <SwitchField
-                form={form}
-                name="mcp"
-                label="Serve over MCP"
-                disabled={disabled}
-                description={
-                  mcp ? (
-                    <>
-                      Agents reach it at <code className="text-xs">{folder.mcp_path}</code>.
-                    </>
-                  ) : (
-                    "Off, it is searchable here but agents never see it."
-                  )
-                }
-              />
-            )}
-          </form.Subscribe>
-          <form.Subscribe
-            selector={(state) => Object.keys(folderPatch(folder, state.values)).length > 0}
-          >
-            {(dirty) => (
-              <>
-                <ReportDirty name={folder.name} dirty={dirty} onDirty={onDirty} />
-                {writable ? (
-                  <div className="flex items-center justify-end gap-2">
-                    {dirty ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        disabled={update.isPending}
-                        onClick={reset}
-                      >
-                        Reset
-                      </Button>
-                    ) : null}
-                    <form.AppForm>
-                      <form.SubmitButton disabled={!dirty}>Save</form.SubmitButton>
-                    </form.AppForm>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </form.Subscribe>
-        </form>
-      }
-      // The shell's action row does not wrap, and three buttons outrun a phone's card.
-      footerClassName="[&>div]:min-w-0 [&>div]:shrink [&>div]:flex-wrap [&>div]:justify-end"
-      footerActions={
-        <>
-          <McpConfig folder={folder} />
-          {writable ? (
-            <>
-              <RenameFolder folder={folder} />
-              <DeleteFolder folder={folder} />
-            </>
-          ) : null}
-        </>
-      }
-    />
+          <Copy aria-hidden />
+        </ActionButton>
+        {writable ? (
+          <>
+            <ActionButton
+              variant="ghost"
+              size="icon-sm"
+              label={`Edit ${folder.title}`}
+              onClick={() => onOpen("edit")}
+            >
+              <Pencil aria-hidden />
+            </ActionButton>
+            <ActionButton
+              variant="ghost"
+              size="icon-sm"
+              label={`Rename ${folder.name}`}
+              onClick={() => onOpen("rename")}
+            >
+              <FolderPen aria-hidden />
+            </ActionButton>
+            <ActionButton
+              variant="ghost"
+              size="icon-sm"
+              label={`Delete ${folder.title}`}
+              onClick={() => onOpen("delete")}
+            >
+              <Trash2 className="text-destructive" aria-hidden />
+            </ActionButton>
+          </>
+        ) : null}
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -551,7 +479,7 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
       description={
         <>
           What <code className="text-xs">ragdown_context</code> injects before each prompt when the
-          hook passes no arguments of its own.
+          hook passes no arguments of its own. A folder can set its own under Folders.
         </>
       }
       loading={loading}

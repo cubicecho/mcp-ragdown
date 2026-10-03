@@ -15,6 +15,7 @@ import {
 import { dirname, join, posix, relative, resolve, sep } from "node:path";
 import { isInside } from "./config.ts";
 import type { Ragdown } from "./engine.ts";
+import { readSettings } from "./folders.ts";
 import { formatHit } from "./format.ts";
 import { MARKDOWN } from "./indexer.ts";
 import {
@@ -30,7 +31,7 @@ import { type Hit, supersededBy } from "./store.ts";
 /** Sessions whose returned chunks are remembered; past this the oldest is forgotten. */
 const MAX_SESSIONS = 200;
 
-/** Per-call overrides of the `RAGDOWN_HOOK_*` defaults for `context`. */
+/** Per-call overrides of `context`'s defaults: the folder's own, else the `RAGDOWN_HOOK_*` ones. */
 export interface ContextOptions {
   topK?: number;
   minScore?: number;
@@ -116,10 +117,14 @@ export class Scope {
     sessionId?: string,
     options: ContextOptions = {},
   ): Promise<string | undefined> {
-    const topK = options.topK ?? this.config.hook.topK;
-    const minScore = options.minScore ?? this.config.hook.minScore;
-    const minRatio = options.minRatio ?? this.config.hook.minRatio;
-    const maxChars = options.maxChars ?? this.config.hook.maxChars;
+    // The call's own arguments, then the folder's `.ragdown.json`, then the environment's.
+    const own = this.folder
+      ? (await readSettings(resolve(this.config.docsDir, this.folder), this.folder)).hook
+      : {};
+    const topK = options.topK ?? own.top_k ?? this.config.hook.topK;
+    const minScore = options.minScore ?? own.min_score ?? this.config.hook.minScore;
+    const minRatio = options.minRatio ?? own.min_ratio ?? this.config.hook.minRatio;
+    const maxChars = options.maxChars ?? own.max_chars ?? this.config.hook.maxChars;
     const trimmed = prompt.trim();
     // A slash command or a one-word reply ("yes", "go on") has nothing to retrieve on.
     if (trimmed.length < 12 || trimmed.startsWith("/")) return undefined;

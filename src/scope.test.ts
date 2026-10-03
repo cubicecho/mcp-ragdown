@@ -156,6 +156,30 @@ describe("Scope", () => {
     expect(count(await alpha.context(prompt, undefined, { minRatio: 1 }))).toBeGreaterThan(0);
   });
 
+  it("takes hook defaults from the folder's settings, under the call's own arguments", async () => {
+    const t = await tempSetup({}, "folders");
+    closers.push(t.cleanup);
+    await t.write(
+      "work/backups.md",
+      "# Backups\n\n## Restore\n\nRun pg_restore twice on postgres.",
+    );
+    const rag = await Ragdown.start(t.config);
+    closers.push(() => rag.close());
+    await rag.sync(false);
+    const work = new Scope(rag, "work");
+    const prompt = "how do I restore postgres?";
+    expect(await work.context(prompt)).toBeDefined();
+
+    // No similarity reaches 2, so the folder's own floor silences the hook; read per call.
+    await t.write("work/.ragdown.json", JSON.stringify({ hook: { min_score: 2 } }));
+    expect(await work.context(prompt)).toBeUndefined();
+    expect(await work.context(prompt, undefined, { minScore: 0 })).toBeDefined();
+
+    // An invalid override is skipped, and the environment's default applies again.
+    await t.write("work/.ragdown.json", JSON.stringify({ hook: { min_score: "high" } }));
+    expect(await work.context(prompt)).toBeDefined();
+  });
+
   it("opens only folders the indexer would walk", async () => {
     const t = await setup();
     await mkdir(join(t.docsDir, ".hidden"));

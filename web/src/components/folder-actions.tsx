@@ -1,16 +1,20 @@
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
-import { InputField, SwitchField, useAppForm } from "@/components/app-form";
+import { InputField, NumberField, SwitchField, useAppForm } from "@/components/app-form";
 import { DialogLayout } from "@/components/dialog-layout";
+import { Section } from "@/components/section";
 import { Button } from "@/components/ui/button";
 import { Check, Copy, TriangleAlert } from "@/components/ui/icons";
 import { useToast } from "@/components/ui/toast";
 import type { Folder } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import {
+  folderForm,
   folderNameError,
+  folderPatch,
   getLastFolder,
+  hookValueError,
   mcpAddCommand,
   mcpJsonEntry,
   mcpOffEverywhere,
@@ -120,9 +124,161 @@ export function CreateFolder({
   );
 }
 
+/** A dialog about one folder, opened from its row. Mounted while it is open, so it starts fresh. */
+type FolderDialogProps = { folder: Folder; onClose: () => void };
+
+const closing = (onClose: () => void) => (open: boolean) => {
+  if (!open) onClose();
+};
+
+/**
+ * A folder's settings as one form: its title, the MCP switch, and its own search defaults. Nothing
+ * is saved until Save, so a half-typed title never reaches agents.
+ */
+export function EditFolder({ folder, onClose }: FolderDialogProps) {
+  const update = useUpdateFolder();
+  const status = useStatus();
+  const toast = useToast();
+  const defaults = status.data?.settings.hook;
+  const form = useAppForm({
+    defaultValues: folderForm(folder),
+    onSubmit: async ({ value }) => {
+      try {
+        await update.mutateAsync({ name: folder.name, patch: folderPatch(folder, value) });
+        toast(`Saved ${value.title.trim() || folder.name}`, "success");
+        onClose();
+      } catch (error) {
+        toast(`Could not update ${folder.name}: ${errorMessage(error)}`);
+      }
+    },
+  });
+  const changed = () => Object.keys(folderPatch(folder, form.state.values)).length > 0;
+  const placeholder = (value: number | undefined) =>
+    value === undefined ? undefined : String(value);
+
+  return (
+    <DialogLayout
+      open
+      onOpenChange={closing(onClose)}
+      title={`Edit ${folder.title}`}
+      description={
+        <>
+          Kept in <code>{folder.name}/.ragdown.json</code>.
+        </>
+      }
+      hasUnsavedChanges={changed}
+      content={
+        <form
+          id="edit-folder"
+          className="flex flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void form.handleSubmit();
+          }}
+        >
+          <InputField
+            form={form}
+            name="title"
+            label="Title"
+            description="How the folder is shown here and to agents. The name, if left empty."
+            placeholder={folder.name}
+            autoFocus
+          />
+          <form.Subscribe selector={(state) => state.values.mcp}>
+            {(mcp) => (
+              <SwitchField
+                form={form}
+                name="mcp"
+                label="Serve over MCP"
+                description={
+                  mcp ? (
+                    <>
+                      Agents reach it at <code className="text-xs">{folder.mcp_path}</code>.
+                    </>
+                  ) : (
+                    "Off, it is searchable here but agents never see it."
+                  )
+                }
+              />
+            )}
+          </form.Subscribe>
+          <Section
+            title="Search defaults"
+            level={3}
+            description={
+              <>
+                What <code className="text-xs">ragdown_context</code> injects from this folder
+                before each prompt. Left empty, a value is the server's.
+              </>
+            }
+            content={
+              <div className="grid gap-4 sm:grid-cols-2">
+                <NumberField
+                  form={form}
+                  name="top_k"
+                  label="Sections per prompt"
+                  min={0}
+                  step={1}
+                  placeholder={placeholder(defaults?.top_k)}
+                  validators={{ onChange: ({ value }) => hookValueError("top_k", value) }}
+                />
+                <NumberField
+                  form={form}
+                  name="max_chars"
+                  label="Characters per prompt"
+                  min={0}
+                  step={500}
+                  placeholder={placeholder(defaults?.max_chars)}
+                  validators={{ onChange: ({ value }) => hookValueError("max_chars", value) }}
+                />
+                <NumberField
+                  form={form}
+                  name="min_score"
+                  label="Minimum score"
+                  description="Cosine similarity, on the embedder's own scale."
+                  step={0.05}
+                  placeholder={placeholder(defaults?.min_score)}
+                />
+                <NumberField
+                  form={form}
+                  name="min_ratio"
+                  label="Share of the best hit"
+                  description="The least a hit may score against the best one; 0 turns it off."
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  placeholder={placeholder(defaults?.min_ratio)}
+                  validators={{ onChange: ({ value }) => hookValueError("min_ratio", value) }}
+                />
+              </div>
+            }
+          />
+        </form>
+      }
+      footerActions={(close) => (
+        <>
+          <Button variant="ghost" onClick={close}>
+            Cancel
+          </Button>
+          <form.AppForm>
+            <form.Subscribe
+              selector={(state) => Object.keys(folderPatch(folder, state.values)).length === 0}
+            >
+              {(unchanged) => (
+                <form.SubmitButton form="edit-folder" pendingLabel="Saving…" disabled={unchanged}>
+                  Save
+                </form.SubmitButton>
+              )}
+            </form.Subscribe>
+          </form.AppForm>
+        </>
+      )}
+    />
+  );
+}
+
 /** Rename a folder's directory. Every path in it changes, so it is re-indexed. */
-export function RenameFolder({ folder }: { folder: Folder }) {
-  const [open, setOpen] = useState(false);
+export function RenameFolder({ folder, onClose }: FolderDialogProps) {
   const update = useUpdateFolder();
   const toast = useToast();
   const form = useAppForm({
@@ -135,27 +291,17 @@ export function RenameFolder({ folder }: { folder: Folder }) {
         });
         if (getLastFolder() === folder.name) setLastFolder(renamed.name);
         toast(`Renamed ${folder.name} to ${renamed.name}`, "success");
-        reset(false);
+        onClose();
       } catch (error) {
         form.setFieldMeta("name", serverError(errorMessage(error)));
       }
     },
   });
 
-  const reset = (next: boolean) => {
-    setOpen(next);
-    form.reset({ name: folder.name });
-  };
-
   return (
     <DialogLayout
-      open={open}
-      onOpenChange={reset}
-      trigger={
-        <Button variant="outline" size="sm">
-          Rename
-        </Button>
-      }
+      open
+      onOpenChange={closing(onClose)}
       title={`Rename ${folder.name}`}
       description={
         <>
@@ -214,8 +360,7 @@ export function RenameFolder({ folder }: { folder: Folder }) {
  * Delete a folder and everything in it, from disk. Asked with the name typed out, because it takes
  * every note with it — a click-through confirm is too easy to wave past for that.
  */
-export function DeleteFolder({ folder }: { folder: Folder }) {
-  const [open, setOpen] = useState(false);
+export function DeleteFolder({ folder, onClose }: FolderDialogProps) {
   const remove = useDeleteFolder();
   const toast = useToast();
   const form = useAppForm({
@@ -225,27 +370,17 @@ export function DeleteFolder({ folder }: { folder: Folder }) {
         await remove.mutateAsync(folder.name);
         if (getLastFolder() === folder.name) setLastFolder(null);
         toast(`Deleted ${folder.name}`, "success");
-        reset(false);
+        onClose();
       } catch (error) {
         form.setFieldMeta("typed", serverError(errorMessage(error)));
       }
     },
   });
 
-  const reset = (next: boolean) => {
-    setOpen(next);
-    form.reset();
-  };
-
   return (
     <DialogLayout
-      open={open}
-      onOpenChange={reset}
-      trigger={
-        <Button variant="outline" size="sm" className="text-destructive">
-          Delete
-        </Button>
-      }
+      open
+      onOpenChange={closing(onClose)}
       title={`Delete ${folder.title}?`}
       description={`The ${folder.name} directory is deleted from disk with its ${formatCount(folder.files, "file")}, subfolders and attachments, and agents using its MCP address stop reaching it.`}
       content={
@@ -300,7 +435,7 @@ export function DeleteFolder({ folder }: { folder: Folder }) {
  * How to point an agent at a folder: the `claude mcp add` command and the `mcpServers` entry, with
  * the stored token in both when the server asks for one.
  */
-export function McpConfig({ folder }: { folder: Folder }) {
+export function McpConfig({ folder, onClose }: FolderDialogProps) {
   const status = useStatus();
   const origin = window.location.origin;
   const token = status.data?.auth_required ? getToken() : null;
@@ -309,11 +444,8 @@ export function McpConfig({ folder }: { folder: Folder }) {
 
   return (
     <DialogLayout
-      trigger={
-        <Button variant="outline" size="sm">
-          <Copy aria-hidden /> Copy MCP config
-        </Button>
-      }
+      open
+      onOpenChange={closing(onClose)}
       size="lg"
       title={`Connect an agent to ${folder.title}`}
       description={
