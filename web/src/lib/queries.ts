@@ -30,6 +30,12 @@ export const useStatus = () =>
       query.state.data?.syncing || query.state.data?.ready === false ? 2_000 : 15_000,
   });
 
+/** Whether the server takes writes: creating, uploading, editing and deleting are offered only then. */
+export function useWritable(): boolean {
+  const status = useStatus();
+  return status.data?.ready === true && status.data.read_only === false;
+}
+
 /** Polled like the docs, so a folder made on disk shows up in the sidebar by itself. */
 export const useFolders = () =>
   useQuery({ queryKey: ["folders"], queryFn: listFolders, refetchInterval: 15_000 });

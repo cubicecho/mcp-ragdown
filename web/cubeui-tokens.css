@@ -46,6 +46,8 @@
   --muted-foreground: oklch(0.556 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
+  --selection: oklch(0.5461 0.2152 262.881);
+  --selection-foreground: oklch(1 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(1 0 0);
   --border: oklch(0.922 0 0);
@@ -76,6 +78,8 @@
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.371 0 0);
   --accent-foreground: oklch(0.985 0 0);
+  --selection: oklch(0.7137 0.1434 254.624);
+  --selection-foreground: oklch(0.145 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.145 0 0);
   --border: oklch(1 0 0 / 10%);
@@ -89,6 +93,43 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+
+/*
+ * The palettes beside the default, chosen in the app: `data-palette` on `<html>`, which
+ * `usePalettePreference` and the pre-paint script set. (0,1,1) and later in the file, so a palette
+ * outranks `:root` and `.dark` both.
+ */
+html[data-palette="monokai"] {
+  --background: oklch(0.2737 0.0109 114.803);
+  --foreground: oklch(0.9775 0.0079 106.545);
+  --card: oklch(0.2977 0.0124 113.753);
+  --card-foreground: oklch(0.9775 0.0079 106.545);
+  --popover: oklch(0.3574 0.0184 103.002);
+  --popover-foreground: oklch(0.9775 0.0079 106.545);
+  --primary: oklch(0.8414 0.2044 127.286);
+  --primary-foreground: oklch(0.2737 0.0109 114.803);
+  --secondary: oklch(0.3574 0.0184 103.002);
+  --secondary-foreground: oklch(0.9775 0.0079 106.545);
+  --muted: oklch(0.3574 0.0184 103.002);
+  --muted-foreground: oklch(0.7456 0.0367 96.421);
+  --accent: oklch(0.3994 0.0163 102.424);
+  --accent-foreground: oklch(0.9775 0.0079 106.545);
+  --selection: oklch(0.7012 0.1812 298.062);
+  --selection-foreground: oklch(0.2737 0.0109 114.803);
+  --destructive: oklch(0.7058 0.1936 8.454);
+  --destructive-foreground: oklch(0.2737 0.0109 114.803);
+  --border: oklch(0.3994 0.0163 102.424);
+  --input: oklch(0.4503 0.019 103.225);
+  --ring: oklch(0.8269 0.108 211.963);
+  --sidebar: oklch(0.2371 0.0058 121.889);
+  --sidebar-foreground: oklch(0.9775 0.0079 106.545);
+  --sidebar-primary: oklch(0.7012 0.1812 298.062);
+  --sidebar-primary-foreground: oklch(0.2737 0.0109 114.803);
+  --sidebar-accent: oklch(0.3574 0.0184 103.002);
+  --sidebar-accent-foreground: oklch(0.9775 0.0079 106.545);
+  --sidebar-border: oklch(0.3994 0.0163 102.424);
+  --sidebar-ring: oklch(0.8269 0.108 211.963);
 }
 
 @theme inline {
@@ -110,6 +151,8 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-selection: var(--selection);
+  --color-selection-foreground: var(--selection-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);

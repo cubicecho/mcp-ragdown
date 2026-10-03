@@ -1,11 +1,13 @@
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useState } from "react";
-import { ActionButton } from "@/components/action-button";
+import { type ReactNode, useState } from "react";
 import { InputField, NumberField, SwitchField, useAppForm } from "@/components/app-form";
 import { DialogLayout } from "@/components/dialog-layout";
 import { Section } from "@/components/section";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, TriangleAlert } from "@/components/ui/icons";
+import { Code, CodeBlock } from "@/components/ui/code";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { CopyButton } from "@/components/ui/copy-button";
 import { useToast } from "@/components/ui/toast";
 import type { Folder } from "@/lib/api";
 import { getToken } from "@/lib/auth";
@@ -163,7 +165,7 @@ export function EditFolder({ folder, onClose }: FolderDialogProps) {
       title={`Edit ${folder.title}`}
       description={
         <>
-          Kept in <code>{folder.name}/.ragdown.json</code>.
+          Kept in <Code>{folder.name}/.ragdown.json</Code>.
         </>
       }
       hasUnsavedChanges={changed}
@@ -193,7 +195,7 @@ export function EditFolder({ folder, onClose }: FolderDialogProps) {
                 description={
                   mcp ? (
                     <>
-                      Agents reach it at <code className="text-xs">{folder.mcp_path}</code>.
+                      Agents reach it at <Code>{folder.mcp_path}</Code>.
                     </>
                   ) : (
                     "Off, it is searchable here but agents never see it."
@@ -207,8 +209,8 @@ export function EditFolder({ folder, onClose }: FolderDialogProps) {
             level={3}
             description={
               <>
-                What <code className="text-xs">ragdown_context</code> injects from this folder
-                before each prompt. Left empty, a value is the server's.
+                What <Code>ragdown_context</Code> injects from this folder before each prompt. Left
+                empty, a value is the server's.
               </>
             }
             content={
@@ -307,7 +309,7 @@ export function RenameFolder({ folder, onClose }: FolderDialogProps) {
         <>
           Renames the directory, re-indexes it, and moves its MCP address to{" "}
           <form.Subscribe selector={(state) => state.values.name.trim()}>
-            {(name) => <code>/mcp/{name || "…"}</code>}
+            {(name) => <Code>/mcp/{name || "…"}</Code>}
           </form.Subscribe>
           . Agents set up with the old address stop reaching it.
         </>
@@ -363,70 +365,26 @@ export function RenameFolder({ folder, onClose }: FolderDialogProps) {
 export function DeleteFolder({ folder, onClose }: FolderDialogProps) {
   const remove = useDeleteFolder();
   const toast = useToast();
-  const form = useAppForm({
-    defaultValues: { typed: "" },
-    onSubmit: async () => {
-      try {
-        await remove.mutateAsync(folder.name);
-        if (getLastFolder() === folder.name) setLastFolder(null);
-        toast(`Deleted ${folder.name}`, "success");
-        onClose();
-      } catch (error) {
-        form.setFieldMeta("typed", serverError(errorMessage(error)));
-      }
-    },
-  });
 
   return (
-    <DialogLayout
+    <ConfirmDialog
       open
       onOpenChange={closing(onClose)}
       title={`Delete ${folder.title}?`}
       description={`The ${folder.name} directory is deleted from disk with its ${formatCount(folder.files, "file")}, subfolders and attachments, and agents using its MCP address stop reaching it.`}
-      content={
-        <form
-          id="delete-folder"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void form.handleSubmit();
-          }}
-        >
-          <InputField
-            form={form}
-            name="typed"
-            label={
-              <>
-                Type <code className="font-mono">{folder.name}</code> to confirm
-              </>
-            }
-            autoFocus
-            autoComplete="off"
-            spellCheck={false}
-            listeners={{ onChange: () => form.setFieldMeta("typed", serverError(undefined)) }}
-          />
-        </form>
-      }
-      footerActions={(close) => (
-        <>
-          <Button variant="ghost" onClick={close}>
-            Cancel
-          </Button>
-          <form.AppForm>
-            <form.Subscribe selector={(state) => state.values.typed === folder.name}>
-              {(matches) => (
-                <form.SubmitButton
-                  form="delete-folder"
-                  variant="destructive"
-                  pendingLabel="Deleting…"
-                  disabled={!matches}
-                >
-                  Delete folder
-                </form.SubmitButton>
-              )}
-            </form.Subscribe>
-          </form.AppForm>
-        </>
-      )}
+      requireText={folder.name}
+      confirmLabel={remove.isPending ? "Deleting…" : "Delete folder"}
+      onConfirm={() => {
+        if (remove.isPending) return;
+        remove.mutate(folder.name, {
+          onSuccess: () => {
+            if (getLastFolder() === folder.name) setLastFolder(null);
+            toast(`Deleted ${folder.name}`, "success");
+            onClose();
+          },
+          onError: (error) => toast(`Could not delete ${folder.name}: ${errorMessage(error)}`),
+        });
+      }}
     />
   );
 }
@@ -471,31 +429,10 @@ export function McpConfig({ folder, onClose }: FolderDialogProps) {
 }
 
 function Snippet({ label, text }: { label: string; text: string }) {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(timer);
-  }, [copied]);
-
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <p className="font-medium text-sm">{label}</p>
-        <ActionButton
-          variant="ghost"
-          size="icon-sm"
-          label={copied ? "Copied" : `Copy the ${label}`}
-          onClick={() => {
-            void navigator.clipboard?.writeText(text).then(() => setCopied(true));
-          }}
-        >
-          {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-        </ActionButton>
-      </div>
-      <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 font-mono text-xs [overflow-wrap:normal]">
-        {text}
-      </pre>
+      <p className="font-medium text-sm">{label}</p>
+      <CodeBlock content={text} action={<CopyButton value={text} label={`Copy the ${label}`} />} />
     </div>
   );
 }
@@ -508,24 +445,23 @@ export function McpOffHint({ link = true }: { link?: boolean }) {
   const folders = useFolders();
   if (!mcpOffEverywhere(folders.data?.folders)) return null;
   return (
-    <p
-      role="note"
-      className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs"
-    >
-      <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-amber-600" aria-hidden />
-      <span>
-        MCP is off in every folder, so agents see nothing until one is turned on
-        {link ? (
-          <>
-            {" "}
-            in{" "}
-            <Link to="/settings" className="underline underline-offset-4">
-              Settings
-            </Link>
-          </>
-        ) : null}
-        .
-      </span>
-    </p>
+    <Alert
+      variant="warning"
+      description={
+        <>
+          MCP is off in every folder, so agents see nothing until one is turned on
+          {link ? (
+            <>
+              {" "}
+              in{" "}
+              <Link to="/settings" className="underline underline-offset-4">
+                Settings
+              </Link>
+            </>
+          ) : null}
+          .
+        </>
+      }
+    />
   );
 }

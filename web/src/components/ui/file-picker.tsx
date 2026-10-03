@@ -1,51 +1,94 @@
-/**
- * Copied from `registry/ui/file-picker.web.tsx` by `scripts/rn2web`.
- * Do not edit — edit the source and re-run `npm run compile`.
- *
- * This is level 4 of the plan: the item has a hand-written web half, so nothing was generated. The
- * same passes still ran over it, and for a file already written against the DOM they find nothing
- * to do beyond pointing its sibling imports at the web tree. That is deliberate — running one
- * pipeline over the whole output tree is what guarantees a hand-written half and a compiled one
- * speak the same prop vocabulary, instead of the two drifting where nobody is looking.
- */
-
-/**
- * The web file picker: a drop zone, or a button, over a hidden `<input type="file">`.
- *
- * Both are DOM-only, which is why this is a `.web.tsx`. The caller never sees a
- * `File` — it gets the decoded text — so the calling screen stays shared.
- */
 import { type DragEvent, type ReactNode, useRef, useState } from "react";
 import { buttonTextVariants, buttonVariants } from "@/components/ui/button";
 import {
   acceptsFile,
   type FilePickerButtonProps,
   type FilePickerProps,
+  type PickedFile,
 } from "@/components/ui/file-picker-base";
 import { Upload } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
-type PickOptions = Pick<FilePickerProps, "onPick" | "onPickMany" | "accept" | "multiple">;
+type PickOptions = Pick<
+  FilePickerProps,
+  "onPick" | "onPickMany" | "accept" | "multiple" | "read" | "directory"
+>;
+
+/** A file and where it sat in the folder it came from. */
+type Found = { file: File; path: string };
+
+/**
+ * What makes the dialog choose a folder. Spread onto the input rather than
+ * written as a prop because React's typings do not know the attribute, and as a
+ * string because React drops an unknown attribute whose value is `true`.
+ */
+const DIRECTORY_INPUT: Record<string, string> = { webkitdirectory: "" };
+
+/**
+ * A pick from the dialog. In a folder pick the browser fills
+ * `webkitRelativePath` — the folder's own name first — and leaves it empty
+ * otherwise, which is the `path` rule: the place in the folder, or the name.
+ */
+function fromList(list: FileList | null | undefined): Found[] {
+  return Array.from(list ?? [], (file) => ({ file, path: file.webkitRelativePath || file.name }));
+}
+
+/**
+ * Everything under the dropped entries, depth first, in the order the browser
+ * lists them. A dropped folder arrives in `dataTransfer.files` as one
+ * unreadable `File` with no children, so the tree has to be walked through its
+ * entries. An entry's `fullPath` starts with a slash and then matches what the
+ * dialog would report, so a drop and a pick give the same `path`.
+ */
+async function walk(entries: FileSystemEntry[]): Promise<Found[]> {
+  const found: Found[] = [];
+  for (const entry of entries) {
+    if (entry.isFile) {
+      const file = await new Promise<File>((resolve, reject) =>
+        (entry as FileSystemFileEntry).file(resolve, reject),
+      );
+      found.push({ file, path: entry.fullPath.replace(/^\//, "") });
+    } else if (entry.isDirectory) {
+      const reader = (entry as FileSystemDirectoryEntry).createReader();
+      // `readEntries` hands back a batch at a time — a hundred, in Chrome — and
+      // an empty one when it is done, so one call would cut a big folder short.
+      for (;;) {
+        const batch = await new Promise<FileSystemEntry[]>((resolve, reject) =>
+          reader.readEntries(resolve, reject),
+        );
+        if (batch.length === 0) break;
+        found.push(...(await walk(batch)));
+      }
+    }
+  }
+  return found;
+}
 
 /**
  * The picking, apart from the look: the hidden input, what a click and a drop
  * do, and whether something is being dragged over. The zone and the button are
  * two faces on this one hook, so they cannot disagree about what a pick is.
  */
-function useFilePick({ onPick, onPickMany, accept, multiple }: PickOptions) {
+function useFilePick({ onPick, onPickMany, accept, multiple, read, directory }: PickOptions) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
-  async function take(list: FileList | null | undefined) {
-    // Copied before the first `await`: the input's `FileList` is emptied when its
-    // value is reset, and a drop's is gone once the event returns. `accept` is
-    // only advisory on the dialog and not applied to a drop at all, so it is
-    // applied here, to both.
-    const allowed = Array.from(list ?? []).filter((file) => acceptsFile(accept, file));
-    const files = multiple ? allowed : allowed.slice(0, 1);
+  async function take(found: Found[]) {
+    // `accept` is only advisory on the dialog, ignored by a folder dialog and
+    // not applied to a drop at all, so it is applied here, to all three.
+    const allowed = found.filter(({ file }) => acceptsFile(accept, file));
+    // A folder is every file in it; `multiple` is about picking files.
+    const files = multiple || directory ? allowed : allowed.slice(0, 1);
     if (files.length === 0) return;
     const picked = await Promise.all(
-      files.map(async (file) => ({ text: await file.text(), name: file.name })),
+      files.map(async ({ file, path }): Promise<PickedFile> => {
+        const base = { name: file.name, path, type: file.type };
+        // One or the other: decoding a `.zip` to hand back a string nobody
+        // reads would cost its whole size again.
+        return read === "bytes"
+          ? { ...base, text: "", bytes: new Uint8Array(await file.arrayBuffer()) }
+          : { ...base, text: await file.text() };
+      }),
     );
     if (onPickMany) onPickMany(picked);
     else for (const file of picked) onPick?.(file.text, file.name);
@@ -62,7 +105,14 @@ function useFilePick({ onPick, onPickMany, accept, multiple }: PickOptions) {
     onDrop: (e: DragEvent) => {
       e.preventDefault();
       setDragging(false);
-      void take(e.dataTransfer.files);
+      // Read before the first `await` either way: a drop's files and items are
+      // gone once the event returns.
+      if (directory) {
+        const entries = Array.from(e.dataTransfer.items, (item) => item.webkitGetAsEntry());
+        void walk(entries.filter((entry) => entry !== null)).then(take);
+      } else {
+        void take(fromList(e.dataTransfer.files));
+      }
     },
   };
 
@@ -72,9 +122,11 @@ function useFilePick({ onPick, onPickMany, accept, multiple }: PickOptions) {
       type="file"
       {...(accept ? { accept } : {})}
       {...(multiple ? { multiple: true } : {})}
+      {...(directory ? DIRECTORY_INPUT : {})}
       className="hidden"
       onChange={(e) => {
-        void take(e.target.files);
+        // Copied before the value is reset, which empties the input's `FileList`.
+        void take(fromList(e.target.files));
         // Allow re-selecting the same file after a reset.
         e.target.value = "";
       }}

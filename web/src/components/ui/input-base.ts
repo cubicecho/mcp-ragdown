@@ -84,7 +84,7 @@ export type InputProps = {
    */
   onKeyPress?: InputKeyPressHandler | undefined;
   /**
-   * Escape — the key an inline edit answers with "put it back the way it was". Fires after any
+   * Escape — the key a field answers with "put it back the way it was". Fires after any
    * `onKeyPress`, on both halves. A soft keyboard has no Escape key, so a touch-only screen still
    * needs its own way out (a blur, a cancel button).
    */

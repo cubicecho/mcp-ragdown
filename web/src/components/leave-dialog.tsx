@@ -1,14 +1,5 @@
 import type { ReactNode } from "react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 /** Asked before leaving unsaved changes behind: stay (the default), or leave and lose them. */
 export function LeaveDialog({
@@ -23,19 +14,14 @@ export function LeaveDialog({
   onLeave: () => void;
 }) {
   return (
-    <AlertDialog open={open} onOpenChange={(next) => (next ? undefined : onStay())}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Keep editing</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={onLeave}>
-            Discard
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={(next) => (next ? undefined : onStay())}
+      title="Discard unsaved changes?"
+      description={description}
+      cancelLabel="Keep editing"
+      confirmLabel="Discard"
+      onConfirm={onLeave}
+    />
   );
 }

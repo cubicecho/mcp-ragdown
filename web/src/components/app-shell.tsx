@@ -1,20 +1,24 @@
 import { createLink, Link, Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { ActionButton } from "@/components/action-button";
-import { Folder, Library, Lock, Plug, UserRound } from "@/components/app-icons";
+import { Library, UserRound } from "@/components/app-icons";
 import { CreateFolder } from "@/components/folder-actions";
+import { EmptyState } from "@/components/page";
 import { QueryState } from "@/components/query-state";
-import { Sidebar, SidebarNavItem, SidebarSection } from "@/components/sidebar";
+import { BarNavItem, Sidebar, SidebarNavItem, SidebarSection } from "@/components/sidebar";
 import { SidebarLayout } from "@/components/split-layout";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, Plus, Settings } from "@/components/ui/icons";
+import { ChevronDown, Folder, Lock, Plug, Plus, Settings } from "@/components/ui/icons";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { clearToken, requireAuth } from "@/lib/auth";
 import { formatAgo, formatCount } from "@/lib/format";
-import { useFolders, useStatus } from "@/lib/queries";
+import { useFolders, useStatus, useWritable } from "@/lib/queries";
 
 /** The row, handed the router's `href` and click handler so it navigates without a reload. */
 const SidebarLink = createLink(SidebarNavItem);
+/** The same, for the bar that stands in for the sidebar on a narrow screen. */
+const BarLink = createLink(BarNavItem);
 
 /** What the index is doing, at the foot of the sidebar: the one thing every page wants to know. */
 function IndexStatus() {
@@ -37,13 +41,9 @@ function IndexStatus() {
   return (
     <div className="flex flex-col gap-0.5 text-xs">
       <p className="flex items-center gap-1.5 font-medium" role="status">
-        <span
-          aria-hidden
-          className={
-            data.ready && !data.syncing
-              ? "size-1.5 rounded-full bg-emerald-500"
-              : "size-1.5 animate-pulse rounded-full bg-amber-500"
-          }
+        <Badge
+          variant={data.ready && !data.syncing ? "success" : "warning"}
+          className={data.ready && !data.syncing ? undefined : "animate-pulse"}
         />
         {line}
       </p>
@@ -87,9 +87,6 @@ function SettingsLink() {
   return (
     <SidebarLink
       to="/settings"
-      // Redundant beside `to`, but the prop is required.
-      // See https://github.com/cubicecho/cubeui/issues/129
-      href="/settings"
       label="Settings"
       icon={<Settings />}
       active={Boolean(matchRoute({ to: "/settings", fuzzy: true }))}
@@ -106,15 +103,10 @@ function Brand() {
   );
 }
 
-/** Whether the server takes writes, which is when making a folder is offered. */
-function useWritable(): boolean {
-  const status = useStatus();
-  return status.data?.ready === true && status.data.read_only === false;
-}
-
 /** Plug for a folder on MCP, a person for a human-only one: the one fact the rail adds. */
 const markerOf = (mcp: boolean) => (mcp ? <Plug /> : <UserRound />);
 const markerText = (mcp: boolean) => (mcp ? "on MCP" : "human-only");
+const statusOf = (mcp: boolean) => ({ label: markerText(mcp), icon: markerOf(mcp) });
 
 function Nav() {
   const matchRoute = useMatchRoute();
@@ -123,55 +115,50 @@ function Nav() {
   const writable = useWritable();
   const list = folders.data?.folders ?? [];
   return (
-    // `Sidebar` is a complementary `<aside>` and draws no `<nav>`, so the navigation landmark the
-    // rows belong to is added around the section here. See https://github.com/cubicecho/cubeui/issues/128
-    <nav aria-label="Main" className="flex flex-col gap-4">
-      <SidebarSection
-        title="Folders"
-        action={
-          writable ? (
-            <CreateFolder
-              trigger={
-                <ActionButton variant="ghost" size="icon-sm" label="Create folder" side="right">
-                  <Plus aria-hidden />
-                </ActionButton>
-              }
-              onCreated={(folder) =>
-                void navigate({ to: "/f/$folder", params: { folder: folder.name } })
-              }
-            />
-          ) : undefined
-        }
-        status={
-          <QueryState
-            query={folders}
-            what="the folders"
-            count={list.length}
-            compact
-            rows={2}
-            empty={<p className="px-2 text-muted-foreground text-xs">No folders yet.</p>}
+    <SidebarSection
+      as="nav"
+      label="Main"
+      title="Folders"
+      action={
+        writable ? (
+          <CreateFolder
+            trigger={
+              <ActionButton variant="ghost" size="icon-sm" label="Create folder" side="right">
+                <Plus aria-hidden />
+              </ActionButton>
+            }
+            onCreated={(folder) =>
+              void navigate({ to: "/f/$folder", params: { folder: folder.name } })
+            }
           />
-        }
-        content={list.map((folder) => (
-          <SidebarLink
-            key={folder.name}
-            to="/f/$folder"
-            params={{ folder: folder.name }}
-            // Redundant beside `to`, but the prop is required.
-            // See https://github.com/cubicecho/cubeui/issues/129
-            href={`/f/${encodeURIComponent(folder.name)}`}
-            label={folder.title}
-            icon={markerOf(folder.mcp)}
-            count={folder.files}
-            title={`${folder.title}: ${formatCount(folder.files, "file")}, ${markerText(folder.mcp)}`}
-            aria-label={`${folder.title}, ${formatCount(folder.files, "file")}, ${markerText(folder.mcp)}`}
-            active={Boolean(
-              matchRoute({ to: "/f/$folder", params: { folder: folder.name }, fuzzy: true }),
-            )}
-          />
-        ))}
-      />
-    </nav>
+        ) : undefined
+      }
+      status={
+        <QueryState
+          query={folders}
+          what="the folders"
+          count={list.length}
+          compact
+          rows={2}
+          empty={<EmptyState compact title="No folders yet." className="px-2" />}
+        />
+      }
+      content={list.map((folder) => (
+        <SidebarLink
+          key={folder.name}
+          to="/f/$folder"
+          params={{ folder: folder.name }}
+          label={folder.title}
+          icon={<Folder />}
+          status={statusOf(folder.mcp)}
+          count={folder.files}
+          title={`${folder.title}: ${formatCount(folder.files, "file")}, ${markerText(folder.mcp)}`}
+          active={Boolean(
+            matchRoute({ to: "/f/$folder", params: { folder: folder.name }, fuzzy: true }),
+          )}
+        />
+      ))}
+    />
   );
 }
 
@@ -219,13 +206,26 @@ export function AppShell() {
       className="h-full w-full overflow-hidden bg-background text-foreground"
       sidebarPosition="start"
       sidebarWidth="auto"
-      stackBelow="never"
       divider="none"
+      // Under `md` the sidebar's furniture moves to a bar, the folder list into a menu.
+      sidebarHideBelow="md"
+      brand={<Brand />}
+      nav={<FolderSwitcher />}
+      navLabel="Main"
+      action={
+        <>
+          <BarLink
+            to="/settings"
+            label="Settings"
+            icon={<Settings />}
+            activeProps={{ active: true }}
+          />
+          <LockButton />
+        </>
+      }
       sidebar={
         <Sidebar
-          // Hidden under `md` by class, because the sidebar has no narrow-width behaviour of its
-          // own; the header bar in `content` stands in for it there. See https://github.com/cubicecho/cubeui/issues/127
-          className="hidden w-56 md:flex"
+          className="w-56"
           header={<Brand />}
           content={<Nav />}
           footerClassName="gap-3 px-4 py-3"
@@ -243,27 +243,9 @@ export function AppShell() {
         />
       }
       content={
-        <div className="flex h-full min-w-0 flex-col">
-          {/* Under `md` the sidebar's furniture moves to a bar, the folder list into a menu. */}
-          <header className="flex items-center gap-2 border-b px-4 py-2 md:hidden">
-            <Brand />
-            <FolderSwitcher />
-            <div className="ml-auto flex items-center gap-1">
-              <Link
-                to="/settings"
-                aria-label="Settings"
-                className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                activeProps={{ className: "bg-accent text-accent-foreground" }}
-              >
-                <Settings className="size-4" aria-hidden />
-              </Link>
-              <LockButton />
-            </div>
-          </header>
-          <main className="min-h-0 flex-1 overflow-y-auto md:overflow-hidden">
-            <Outlet />
-          </main>
-        </div>
+        <main className="h-full min-h-0 overflow-y-auto md:overflow-hidden">
+          <Outlet />
+        </main>
       }
     />
   );

@@ -1,8 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import type { MouseEvent, ReactNode } from "react";
-import Markdown, { defaultUrlTransform } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { type MouseEvent, type ReactNode, useMemo } from "react";
+import { type Components, defaultUrlTransform } from "react-markdown";
+import { Markdown } from "@/components/markdown";
 import { useToast } from "@/components/ui/toast";
 import { ApiError, type Resolved } from "@/lib/api";
 import { folderOf, withinFolder } from "@/lib/folders";
@@ -18,7 +18,6 @@ import {
 import { fileQuery, resolveQuery, useFileUrl, useResolve } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
-const LINK = "text-primary underline underline-offset-4";
 const BROKEN =
   "cursor-help text-muted-foreground underline decoration-destructive decoration-dashed underline-offset-4";
 
@@ -28,9 +27,12 @@ const urlTransform = (url: string) =>
 
 const decode = (url: string, scheme: string) => decodeURIComponent(url.slice(scheme.length));
 
+/** Run after remark-gfm, which cubeui's `Markdown` always runs first. */
+const PLUGINS = [remarkWikilinks];
+
 /**
- * Markdown as a styled preview, after mcp-skills-manager's: a class per element rather than the
- * typography plugin, so it reads in both themes. Raw HTML is not rendered.
+ * A note as a styled preview: cubeui's `Markdown` draws the elements, and the links and images are
+ * this app's. Raw HTML is not rendered.
  *
  * `[[wikilinks]]` are asked of the server, which resolves them the way Obsidian does, within the
  * note's folder; a link to nothing is drawn as broken. A relative link to an indexed file opens it
@@ -50,122 +52,52 @@ export function MarkdownPreview({
   known: ReadonlySet<string>;
   className?: string;
 }) {
-  if (!content.trim()) {
-    return <p className="text-muted-foreground text-sm italic">This file is empty.</p>;
-  }
-  return (
-    <div className={cn("min-w-0 text-sm leading-relaxed [overflow-wrap:anywhere]", className)}>
-      <Markdown
-        remarkPlugins={[remarkGfm, remarkWikilinks]}
-        urlTransform={urlTransform}
-        components={{
-          h1: ({ node, ...props }) => (
-            <h1
-              id={slug(textOf(node))}
-              className="mt-8 mb-3 scroll-mt-4 font-semibold text-2xl first:mt-0"
-              {...props}
-            />
-          ),
-          h2: ({ node, ...props }) => (
-            <h2
-              id={slug(textOf(node))}
-              className="mt-8 mb-2 scroll-mt-4 border-b pb-1 font-semibold text-xl first:mt-0"
-              {...props}
-            />
-          ),
-          h3: ({ node, ...props }) => (
-            <h3
-              id={slug(textOf(node))}
-              className="mt-6 mb-2 scroll-mt-4 font-semibold text-lg first:mt-0"
-              {...props}
-            />
-          ),
-          h4: ({ node, ...props }) => (
-            <h4
-              id={slug(textOf(node))}
-              className="mt-4 mb-2 scroll-mt-4 font-semibold first:mt-0"
-              {...props}
-            />
-          ),
-          p: ({ node, ...props }) => <p className="my-3 first:mt-0" {...props} />,
-          ul: ({ node, ...props }) => <ul className="my-3 list-disc pl-6" {...props} />,
-          ol: ({ node, ...props }) => <ol className="my-3 list-decimal pl-6" {...props} />,
-          li: ({ node, ...props }) => <li className="my-1" {...props} />,
-          a: ({ node, href = "", children, ...props }) => {
-            if (href.startsWith(WIKILINK)) {
-              return <WikiLink from={path} target={decode(href, WIKILINK)} label={children} />;
-            }
-            const target = resolveDocLink(path, href);
-            if (target !== undefined && known.has(target)) {
-              return <DocLink path={target} label={children} />;
-            }
-            if (target !== undefined && !isMarkdownPath(target)) {
-              return <AttachmentLink path={target} label={children} />;
-            }
-            const external = /^[a-z][a-z0-9+.-]*:/i.test(href);
-            return (
-              <a
-                href={href}
-                className={LINK}
-                {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
-                {...props}
-              >
-                {children}
-              </a>
-            );
-          },
-          img: ({ node, src, alt, ...props }) => {
-            if (typeof src !== "string") return <Missing label={alt} />;
-            if (src.startsWith(WIKIEMBED)) {
-              return <Embed from={path} target={decode(src, WIKIEMBED)} alt={alt} />;
-            }
-            if (/^(https?:|data:)/.test(src)) {
-              return <img src={src} alt={alt} className="my-3 max-w-full rounded-md" {...props} />;
-            }
-            const target = resolveDocLink(path, src);
-            return target ? <FileImage path={target} alt={alt} /> : <Missing label={alt || src} />;
-          },
-          blockquote: ({ node, ...props }) => (
-            <blockquote className="my-3 border-l-2 pl-4 text-muted-foreground" {...props} />
-          ),
-          code: ({ node, className: codeClass, ...props }) =>
-            /language-/.test(codeClass ?? "") ? (
-              <code className={cn("font-mono text-[0.85em]", codeClass)} {...props} />
-            ) : (
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em]" {...props} />
-            ),
-          pre: ({ node, ...props }) => (
-            <pre
-              className="my-3 overflow-x-auto rounded-md border bg-muted/50 p-3 text-xs [overflow-wrap:normal]"
-              {...props}
-            />
-          ),
-          table: ({ node, ...props }) => (
-            <div className="my-3 overflow-x-auto">
-              <table className="w-full border-collapse text-sm" {...props} />
-            </div>
-          ),
-          th: ({ node, ...props }) => (
-            <th className="border px-3 py-1.5 text-left font-medium" {...props} />
-          ),
-          td: ({ node, ...props }) => <td className="border px-3 py-1.5" {...props} />,
-          hr: ({ node, ...props }) => <hr className="my-6" {...props} />,
-          input: ({ node, ...props }) => <input className="mr-1.5 align-middle" {...props} />,
-        }}
-      >
-        {content}
-      </Markdown>
-    </div>
+  // Held steady while the note is the same one: react-markdown mounts what it is handed as
+  // component types, so a new map each render would remount every link and image.
+  const components = useMemo<Components>(
+    () => ({
+      a: ({ node, href = "", children, ...props }) => {
+        if (href.startsWith(WIKILINK)) {
+          return <WikiLink from={path} target={decode(href, WIKILINK)} label={children} />;
+        }
+        const target = resolveDocLink(path, href);
+        if (target !== undefined && known.has(target)) {
+          return <DocLink path={target} label={children} />;
+        }
+        if (target !== undefined && !isMarkdownPath(target)) {
+          return <AttachmentLink path={target} label={children} />;
+        }
+        const external = /^[a-z][a-z0-9+.-]*:/i.test(href);
+        return (
+          <a href={href} {...(external ? { target: "_blank", rel: "noreferrer" } : {})} {...props}>
+            {children}
+          </a>
+        );
+      },
+      img: ({ node, src, alt, ...props }) => {
+        if (typeof src !== "string" || !src) return <Missing label={alt} />;
+        if (src.startsWith(WIKIEMBED)) {
+          return <Embed from={path} target={decode(src, WIKIEMBED)} alt={alt} />;
+        }
+        if (/^(https?:|data:)/.test(src)) return <img src={src} alt={alt} {...props} />;
+        const target = resolveDocLink(path, src);
+        return target ? <FileImage path={target} alt={alt} /> : <Missing label={alt || src} />;
+      },
+    }),
+    [path, known],
   );
-}
 
-type HastNode = { type: string; value?: string; children?: HastNode[] };
-
-/** A heading's text, for its anchor. */
-function textOf(node: HastNode | undefined): string {
-  if (!node) return "";
-  if (node.type === "text") return node.value ?? "";
-  return (node.children ?? []).map(textOf).join("");
+  return (
+    <Markdown
+      content={content}
+      empty={<p className="m-0 text-muted-foreground italic">This file is empty.</p>}
+      headingId={slug}
+      components={components}
+      remarkPlugins={PLUGINS}
+      urlTransform={urlTransform}
+      className={className}
+    />
+  );
 }
 
 /** The route of a root-relative note, with the heading a `#Heading` link aims at. */
@@ -179,11 +111,7 @@ function docTarget(path: string, anchor?: string) {
 }
 
 function DocLink({ path, anchor, label }: { path: string; anchor?: string; label: ReactNode }) {
-  return (
-    <Link {...docTarget(path, anchor)} className={LINK}>
-      {label}
-    </Link>
-  );
+  return <Link {...docTarget(path, anchor)}>{label}</Link>;
 }
 
 const is404 = (error: unknown) => error instanceof ApiError && error.status === 404;
@@ -229,7 +157,7 @@ function WikiLink({ from, target, label }: { from: string; target: string; label
     else void open(found.path);
   };
   return (
-    <a href={`#${encodeURIComponent(target)}`} className={LINK} onClick={go}>
+    <a href={`#${encodeURIComponent(target)}`} onClick={go}>
       {label}
     </a>
   );
@@ -241,7 +169,6 @@ function AttachmentLink({ path, label }: { path: string; label: ReactNode }) {
   return (
     <a
       href={`#${encodeURIComponent(path)}`}
-      className={LINK}
       title={path}
       onClick={(event) => {
         event.preventDefault();
@@ -333,7 +260,7 @@ function FileImage({ path, alt }: { path: string; alt: string | undefined }) {
   const file = useFileUrl(path);
   if (file.isError) return <Missing label={alt || path} broken />;
   if (!file.url) return <Missing label={alt || path} busy />;
-  return <img src={file.url} alt={alt ?? ""} className="my-3 max-w-full rounded-md" />;
+  return <img src={file.url} alt={alt ?? ""} />;
 }
 
 /** What stands in for an image that is loading or cannot be shown. */

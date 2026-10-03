@@ -13,12 +13,15 @@ import {
   McpOffHint,
   RenameFolder,
 } from "@/components/folder-actions";
+import { EmptyState } from "@/components/page";
 import { PageLayout } from "@/components/page-layout";
 import { QueryError, QueryState } from "@/components/query-state";
 import { Section } from "@/components/section";
+import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Copy, Pencil, Plus, Trash2, TriangleAlert } from "@/components/ui/icons";
+import { Code } from "@/components/ui/code";
+import { ArrowLeft, Copy, Folder as FolderIcon, Pencil, Plus, Trash2 } from "@/components/ui/icons";
 import {
   Table,
   TableBody,
@@ -33,7 +36,7 @@ import { ThemePicker } from "@/components/ui/theme-picker";
 import type { Folder, Status } from "@/lib/api";
 import { clearToken, getToken, requireAuth } from "@/lib/auth";
 import { formatAgo, formatCount } from "@/lib/format";
-import { useFolders, useStatus } from "@/lib/queries";
+import { useFolders, useStatus, useWritable } from "@/lib/queries";
 
 export type SettingsTab = "folders" | "browser" | "server";
 
@@ -50,6 +53,7 @@ const TABS: { value: SettingsTab; label: string }[] = [
  */
 export function SettingsPage() {
   const status = useStatus();
+  const writable = useWritable();
   const { tab = "folders" } = useSearch({ from: "/settings" });
   const navigate = useNavigate({ from: "/settings" });
 
@@ -92,9 +96,7 @@ export function SettingsPage() {
         content={
           <div className="py-6">
             <TabsContent value="folders" className="mt-0">
-              <FoldersSection
-                writable={status.data?.ready === true && status.data.read_only === false}
-              />
+              <FoldersSection writable={writable} />
             </TabsContent>
             <TabsContent value="browser" className="mt-0">
               <Section
@@ -176,28 +178,23 @@ function FoldersSection({ writable }: { writable: boolean }) {
         <div className="flex flex-col gap-4">
           <McpOffHint link={false} />
           {loose.length > 0 ? (
-            <div
-              role="note"
-              className="flex flex-col gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs"
-            >
-              <p className="flex items-center gap-2 font-medium">
-                <TriangleAlert className="size-3.5 shrink-0 text-amber-600" aria-hidden />
-                {formatCount(loose.length, "file")} outside every folder{" "}
-                {loose.length === 1 ? "is" : "are"} not indexed
-              </p>
-              <p className="text-muted-foreground">
-                Markdown directly in the docs directory belongs to no folder. Move it into one to
-                index it.
-              </p>
-              <ul className="font-mono">
-                {loose.slice(0, 10).map((file) => (
-                  <li key={file} className="truncate">
-                    {file}
-                  </li>
-                ))}
-                {loose.length > 10 ? <li>and {loose.length - 10} more</li> : null}
-              </ul>
-            </div>
+            <Alert
+              variant="warning"
+              title={`${formatCount(loose.length, "file")} outside every folder ${loose.length === 1 ? "is" : "are"} not indexed`}
+              description={
+                <>
+                  Markdown directly in the docs directory belongs to no folder. Move it into one to
+                  index it:{" "}
+                  {loose.slice(0, 10).map((file, index) => (
+                    <span key={file}>
+                      {index > 0 ? ", " : null}
+                      <Code>{file}</Code>
+                    </span>
+                  ))}
+                  {loose.length > 10 ? ` and ${loose.length - 10} more` : null}.
+                </>
+              }
+            />
           ) : null}
           <QueryState
             query={folders}
@@ -205,9 +202,11 @@ function FoldersSection({ writable }: { writable: boolean }) {
             count={list.length}
             rows={2}
             empty={
-              <p className="py-4 text-center text-muted-foreground text-sm">
-                No folders yet. Make one, or add a directory to the docs directory.
-              </p>
+              <EmptyState
+                icon={FolderIcon}
+                title="No folders yet"
+                description="Make one, or add a directory to the docs directory."
+              />
             }
           />
           {list.length > 0 ? (
@@ -432,7 +431,7 @@ function ServerCard({ status, loading }: { status: Status | undefined; loading: 
                 hint={
                   <>
                     <Env name="RAGDOWN_WATCH" />. Off, the index syncs at start and on{" "}
-                    <code className="text-xs">ragdown_reindex</code> only.
+                    <Code>ragdown_reindex</Code> only.
                   </>
                 }
               />,
@@ -478,8 +477,8 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
       title="Search defaults"
       description={
         <>
-          What <code className="text-xs">ragdown_context</code> injects before each prompt when the
-          hook passes no arguments of its own. A folder can set its own under Folders.
+          What <Code>ragdown_context</Code> injects before each prompt when the hook passes no
+          arguments of its own. A folder can set its own under Folders.
         </>
       }
       loading={loading}
@@ -541,4 +540,4 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
 
 const YesNo = ({ value }: { value: boolean }) => <span>{value ? "Yes" : "No"}</span>;
 
-const Env = ({ name }: { name: string }) => <code className="text-xs">{name}</code>;
+const Env = ({ name }: { name: string }) => <Code>{name}</Code>;

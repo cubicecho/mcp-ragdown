@@ -42,9 +42,9 @@ export type MenuItemProps = {
   /** Runs when the row is chosen. The menu closes itself afterwards; do not close it here. */
   onSelect?: (() => void) | undefined;
   /**
-   * The row hands focus to something else — an inline rename box with `autoFocus`, a field it
-   * reveals — so this close must not put focus back on the trigger, which would blur that target
-   * (and commit a rename on `onBlur` before anything is typed). Only for the close this row
+   * The row hands focus to something else — a field it reveals with `autoFocus` — so this close
+   * must not put focus back on the trigger, which would blur that target (and close it on `onBlur`
+   * before anything is typed). Only for the close this row
    * causes: Escape, a click outside and every other row still return focus to the trigger.
    */
   focusesElsewhere?: boolean | undefined;

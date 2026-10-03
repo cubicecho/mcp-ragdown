@@ -78,17 +78,48 @@ const CardHeader = React.forwardRef<HTMLDivElement, ViewProps>(({ className, ...
 ));
 CardHeader.displayName = "CardHeader";
 
-const CardTitle = React.forwardRef<HTMLSpanElement, TextProps>(({ className, ...props }, ref) => (
-  <h3
-    ref={ref as React.Ref<HTMLHeadingElement>}
-    className={cn(
-      "cube-rn-text",
-      "text-2xl font-semibold leading-none tracking-tight text-card-foreground",
-      className,
-    )}
-    {...(props as React.ComponentPropsWithoutRef<"h3">)}
-  />
-));
+type CardTitleProps = TextProps & {
+  /**
+   * Which heading the title is, `1 | 2 | 3`. The default, 3, is shadcn's and every card's that sits
+   * under a page title; a card that *is* the page — a sign-in, a token gate — is the page's `1`.
+   * The size does not follow it: the rank says where the card sits, not how big its title looks.
+   */
+  level?: 1 | 2 | 3 | undefined;
+};
+
+const CARD_TITLE = "text-2xl font-semibold leading-none tracking-tight text-card-foreground";
+
+// One arm per level because the compiler emits `<h1>`–`<h3>` from a *literal* `aria-level`; a level
+// held in a variable would be a tag chosen at runtime, which it refuses (see `page-header.tsx`).
+const CardTitle = React.forwardRef<HTMLSpanElement, CardTitleProps>(
+  ({ className, level = 3, ...props }, ref) => {
+    if (level === 1) {
+      return (
+        <h1
+          ref={ref as React.Ref<HTMLHeadingElement>}
+          className={cn("cube-rn-text", CARD_TITLE, className)}
+          {...(props as React.ComponentPropsWithoutRef<"h1">)}
+        />
+      );
+    }
+    if (level === 2) {
+      return (
+        <h2
+          ref={ref as React.Ref<HTMLHeadingElement>}
+          className={cn("cube-rn-text", CARD_TITLE, className)}
+          {...(props as React.ComponentPropsWithoutRef<"h2">)}
+        />
+      );
+    }
+    return (
+      <h3
+        ref={ref as React.Ref<HTMLHeadingElement>}
+        className={cn("cube-rn-text", CARD_TITLE, className)}
+        {...(props as React.ComponentPropsWithoutRef<"h3">)}
+      />
+    );
+  },
+);
 CardTitle.displayName = "CardTitle";
 
 const CardDescription = React.forwardRef<HTMLSpanElement, TextProps>(

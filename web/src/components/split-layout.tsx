@@ -308,6 +308,102 @@ export function SplitLayout({
   );
 }
 
+/**
+ * The sidebar pane under {@link SidebarLayout}'s `sidebarHideBelow`: not drawn under the
+ * breakpoint, drawn from it up. The same breakpoints, and the same media query in the stylesheet,
+ * as `Sidebar`'s `hideBelow`, so the first paint is already right on both halves.
+ *
+ * A pane is a block box on the web (see {@link PANE}), so the web half comes back as `block`
+ * rather than `flex`; on device every view is a flex column already. Literal classes per rule 3.
+ */
+const SIDEBAR_HIDE_BELOW = {
+  sm: "hidden sm:block",
+  md: "hidden md:block",
+  lg: "hidden lg:block",
+  xl: "hidden xl:block",
+} as const;
+
+/**
+ * The bar's half of the same switch: drawn under the breakpoint, gone from it up. Keyed by the
+ * same names as {@link SIDEBAR_HIDE_BELOW} so the two can never disagree about where the sidebar
+ * hands over to the bar.
+ */
+const HEADER_HIDE_FROM = {
+  sm: "sm:hidden",
+  md: "md:hidden",
+  lg: "lg:hidden",
+  xl: "xl:hidden",
+} as const;
+
+/** The column the content pane becomes once a bar sits over it. On the web the pane is a block. */
+const COLUMN = cn("min-h-0 min-w-0", "h-full");
+
+/** Under the bar: the caller's node, in the block box a pane would have given it (see PANE). */
+const BELOW_HEADER = cn("min-h-0 min-w-0 flex-1", "block");
+
+/** The bar's navigation is a landmark, and a landmark with no name is one of several `nav`s. */
+type SidebarLayoutNav =
+  | {
+      /**
+       * The bar's navigation: the app's places, usually as icon links. Drawn inside a `<nav>` —
+       * `role="navigation"` on device — named by `navLabel`, which is the landmark every
+       * hand-written bar either forgot or spelled differently.
+       */
+      nav: ReactNode;
+      /** What the bar's navigation landmark is called — "Main". Required with `nav`. */
+      navLabel: string;
+    }
+  | { nav?: undefined; navLabel?: never };
+
+/**
+ * Either the sidebar is drawn at every width, and the layout places two panes the way it always
+ * has, or it is hidden under `sidebarHideBelow` and a bar stands in for it there.
+ */
+type SidebarLayoutNarrow =
+  | {
+      sidebarHideBelow?: undefined;
+      /** Below this width the two stack rather than sit side by side. See {@link SplitLayout}. */
+      stackBelow?: keyof typeof STACK_BELOW | undefined;
+      divider?: keyof typeof DIVIDERS | undefined;
+      brand?: never;
+      nav?: never;
+      navLabel?: never;
+      status?: never;
+      action?: never;
+    }
+  | ({
+      /**
+       * Under this width the sidebar pane is not drawn and the bar — `brand`, `nav`, `status`,
+       * `action` — is drawn over `content` in its place; from it up, the other way round. For an
+       * app's navigation rail, which has no room on a phone and does not stack.
+       *
+       * Hidden is `display: none`, so the rail leaves the accessibility tree rather than staying a
+       * landmark with nothing visible in it, and the bar is a banner only where it is on screen.
+       * Given this, leave `Sidebar`'s own `hideBelow` off: the layout owns the breakpoint, so the
+       * rail and the bar cannot be told two different ones.
+       */
+      sidebarHideBelow: keyof typeof SIDEBAR_HIDE_BELOW;
+      /** A rail that hides does not stack — under the breakpoint there is nothing to stack. */
+      stackBelow?: never;
+      /**
+       * `line` is out: the rule is drawn between the panes, and with the sidebar gone it would be
+       * a line down the edge of the screen. A `Sidebar` draws its own border; pass `none`.
+       */
+      divider?: "space" | "none" | undefined;
+      /** The bar's start: the app's mark and name, as the rail's header shows them. */
+      brand?: ReactNode | undefined;
+      /**
+       * One line saying what state the app is in — "3/5 servers running" — between the `nav` and
+       * the `action`. It gets the width the rest of the bar leaves and no more, so on a narrow
+       * bar it is the first thing to give way: a string is cut short with an ellipsis, down to
+       * nothing, before the brand, a place or an action loses a pixel. A node is clipped to the
+       * same box and truncates itself.
+       */
+      status?: ReactNode | undefined;
+      /** The bar's far end: the theme switch, sign out — the rail's footer, in one row. */
+      action?: ReactNode | undefined;
+    } & SidebarLayoutNav);
+
 type SidebarLayoutProps = {
   /**
    * The main surface — the one the screen is about. Alone, it is the whole width, so a caller
@@ -324,12 +420,12 @@ type SidebarLayoutProps = {
   sidebarPosition?: "start" | "end" | undefined;
   /** {@link SplitWidth}. Naming the width is what stops eight call sites each inventing one. */
   sidebarWidth?: SplitWidth | undefined;
-  stackBelow?: keyof typeof STACK_BELOW | undefined;
-  divider?: keyof typeof DIVIDERS | undefined;
   className?: string | undefined;
   contentClassName?: string | undefined;
   sidebarClassName?: string | undefined;
-};
+  /** On the bar, when `sidebarHideBelow` draws one. */
+  headerClassName?: string | undefined;
+} & SidebarLayoutNarrow;
 
 /**
  * {@link SplitLayout} with the roles put back: a main surface, and a sidebar beside it.
@@ -343,34 +439,129 @@ type SidebarLayoutProps = {
  * `HeaderContentFooter`. When the two panes are genuinely comparable — a diff, two lists side by
  * side, a form beside its preview — reach for `SplitLayout` directly and its numbered slots,
  * rather than calling one of two equals the "sidebar".
+ *
+ * **`sidebarHideBelow` is the app shell's narrow width.** Six apps drew the same thing by hand: a
+ * rail hidden under `md`, and over the page an `md:hidden` bar with the brand, the places as icon
+ * links and the rail's footer buttons in a row. The two halves were two class strings that had to
+ * name the same breakpoint, and the bar's `<nav>` had a name in some copies and not in others.
+ * Here the breakpoint is said once and both halves read it, and the bar is a `header` — the
+ * banner — with the navigation landmark inside it, named. The places in it are `BarNavItem`s
+ * (`sidebar.tsx`), the rail's rows with only the icon drawn.
+ *
+ * **`status` is the bar's one line of words**, and the part that yields. The brand, the places and
+ * the actions keep their width; the status takes what is left between the `nav` and the `action`,
+ * so on a 390px phone it shortens, and on a narrower bar still it is gone, rather than pushing an
+ * action off the edge. Without the slot an app put the line in `action`, which never shrinks.
+ *
+ * It holds no state: nothing opens, nothing is remembered, and which of the two is drawn is a
+ * media query in the stylesheet rather than a width read in JavaScript. On device NativeWind reads
+ * the same breakpoint off the window, so a phone draws the bar and a tablet the rail — the answer
+ * `Sidebar`'s `hideBelow` already gives there. A drawer that slides the rail in over the page is a
+ * different component, with an open state, and not this one.
  */
 export function SidebarLayout({
   content,
   sidebar,
   sidebarPosition = "end",
   sidebarWidth = "sm",
+  sidebarHideBelow,
   stackBelow = "lg",
   divider = "space",
+  brand,
+  nav,
+  navLabel,
+  status,
+  action,
   className,
   contentClassName,
   sidebarClassName,
+  headerClassName,
 }: SidebarLayoutProps) {
+  // Rule 5 — the bar, and the column it sits in, are drawn only when there is something in the
+  // bar. Without one the content pane holds the caller's node exactly as it always has.
+  const main =
+    sidebarHideBelow && (brand || nav || status || action) ? (
+      <div data-slot="sidebar-layout-main" className={cn("cube-rn-view", COLUMN)}>
+        <header
+          data-slot="sidebar-layout-header"
+          className={cn(
+            "cube-rn-view",
+            "min-h-14 shrink-0 flex-row items-center gap-2 border-border border-b bg-background px-4 py-2",
+            HEADER_HIDE_FROM[sidebarHideBelow],
+            headerClassName,
+          )}
+        >
+          {brand ? (
+            <div
+              data-slot="sidebar-layout-brand"
+              className="cube-rn-view min-w-0 shrink-0 flex-row items-center gap-2"
+            >
+              {brand}
+            </div>
+          ) : null}
+          {nav ? (
+            <nav
+              aria-label={navLabel}
+              data-slot="sidebar-layout-nav"
+              className="cube-rn-view min-w-0 flex-row items-center gap-1"
+            >
+              {nav}
+            </nav>
+          ) : null}
+          {status ? (
+            // `flex-1` is a zero basis: the status asks for no width of its own and is handed
+            // what the others leave, which is what makes it the one that gives way. Everything
+            // else in the bar is `shrink-0` or a view, which does not shrink either.
+            <div
+              data-slot="sidebar-layout-status"
+              className="cube-rn-view min-w-0 flex-1 overflow-hidden"
+            >
+              {typeof status === "string" || typeof status === "number" ? (
+                <span className="cube-rn-text truncate text-right text-muted-foreground text-sm">
+                  {status}
+                </span>
+              ) : (
+                status
+              )}
+            </div>
+          ) : null}
+          {action ? (
+            // `ml-auto` rather than a spacer, so the action keeps the far end with no `nav` before it.
+            <div
+              data-slot="sidebar-layout-action"
+              className="cube-rn-view ml-auto shrink-0 flex-row items-center gap-1"
+            >
+              {action}
+            </div>
+          ) : null}
+        </header>
+        <div data-slot="sidebar-layout-content" className={cn("cube-rn-view", BELOW_HEADER)}>
+          {content}
+        </div>
+      </div>
+    ) : (
+      content
+    );
+
   // No sidebar is one pane, and `first` is the one that is there — passing an absent `first` with
   // a present `second` would be a hole in the middle of the row.
   if (!sidebar) {
-    return <SplitLayout first={content} firstClassName={contentClassName} className={className} />;
+    return <SplitLayout first={main} firstClassName={contentClassName} className={className} />;
   }
 
   const atStart = sidebarPosition === "start";
+  const railClassName = sidebarHideBelow
+    ? cn(SIDEBAR_HIDE_BELOW[sidebarHideBelow], sidebarClassName)
+    : sidebarClassName;
 
   return (
     <SplitLayout
-      first={atStart ? sidebar : content}
-      second={atStart ? content : sidebar}
-      firstClassName={atStart ? sidebarClassName : contentClassName}
-      secondClassName={atStart ? contentClassName : sidebarClassName}
+      first={atStart ? sidebar : main}
+      second={atStart ? main : sidebar}
+      firstClassName={atStart ? railClassName : contentClassName}
+      secondClassName={atStart ? contentClassName : railClassName}
       {...(atStart ? { firstWidth: sidebarWidth } : { secondWidth: sidebarWidth })}
-      stackBelow={stackBelow}
+      stackBelow={sidebarHideBelow ? "never" : stackBelow}
       divider={divider}
       className={className}
     />
