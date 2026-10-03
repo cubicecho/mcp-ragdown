@@ -350,8 +350,24 @@ describe("HTTP server", () => {
 
     expect((await call("GET", "/api/folders")).body).toEqual({
       folders: [
-        { name: "human", title: "human", mcp: false, mcp_path: "/mcp/human", files: 1, chunks: 1 },
-        { name: "ops", title: "Operations", mcp: true, mcp_path: "/mcp/ops", files: 1, chunks: 1 },
+        {
+          name: "human",
+          title: "human",
+          mcp: false,
+          hook: {},
+          mcp_path: "/mcp/human",
+          files: 1,
+          chunks: 1,
+        },
+        {
+          name: "ops",
+          title: "Operations",
+          mcp: true,
+          hook: {},
+          mcp_path: "/mcp/ops",
+          files: 1,
+          chunks: 1,
+        },
       ],
       loose_files: ["loose.md"],
     });
@@ -369,6 +385,7 @@ describe("HTTP server", () => {
           name: "Work notes",
           title: "Work",
           mcp: false,
+          hook: {},
           mcp_path: "/mcp/Work%20notes",
           files: 0,
           chunks: 0,
@@ -404,6 +421,27 @@ describe("HTTP server", () => {
     expect((await call("PATCH", "/api/folders/people", { name: "ops" })).status).toBe(409);
     expect((await call("PATCH", "/api/folders/nope", { mcp: true })).status).toBe(404);
     expect((await call("PATCH", "/api/folders/people", { mcp: "yes" })).status).toBe(400);
+
+    // A folder's own hook defaults: set, kept beside the rest, and taken away with null.
+    const tuned = await call("PATCH", "/api/folders/people", {
+      hook: { top_k: 6, min_score: 0.5 },
+    });
+    expect(tuned.body).toMatchObject({ folder: { hook: { top_k: 6, min_score: 0.5 } } });
+    const cleared = await call("PATCH", "/api/folders/people", { hook: { top_k: null } });
+    expect(cleared.body).toMatchObject({ folder: { hook: { min_score: 0.5 } } });
+    expect(JSON.parse(await readFile(join(t.docsDir, "people/.ragdown.json"), "utf8"))).toEqual({
+      mcp: true,
+      extra: 1,
+      title: "People",
+      hook: { min_score: 0.5 },
+    });
+    await call("PATCH", "/api/folders/people", { hook: { min_score: null } });
+    expect(
+      JSON.parse(await readFile(join(t.docsDir, "people/.ragdown.json"), "utf8")),
+    ).not.toHaveProperty("hook");
+    for (const hook of [{ top_k: 1.5 }, { min_ratio: 2 }, { max_chars: "many" }, 4]) {
+      expect((await call("PATCH", "/api/folders/people", { hook })).status).toBe(400);
+    }
 
     expect((await call("DELETE", "/api/folders/people")).status).toBe(400);
     expect((await call("DELETE", "/api/folders/people?confirm=People")).status).toBe(400);

@@ -3,6 +3,7 @@ import {
   Ellipsis as EllipsisSource,
   FilePen as FilePenSource,
   FileText as FileTextSource,
+  FolderPen as FolderPenSource,
   Folder as FolderSource,
   KeyRound as KeyRoundSource,
   Library as LibrarySource,
@@ -24,6 +25,8 @@ export const Ellipsis = icon(EllipsisSource);
 export const FilePen = icon(FilePenSource);
 export const FileText = icon(FileTextSource);
 export const Folder = icon(FolderSource);
+/** Rename a folder's directory. */
+export const FolderPen = icon(FolderPenSource);
 export const KeyRound = icon(KeyRoundSource);
 export const Library = icon(LibrarySource);
 export const Lock = icon(LockSource);

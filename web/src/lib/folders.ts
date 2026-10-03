@@ -1,4 +1,4 @@
-import type { Folder } from "@/lib/api";
+import type { Folder, FolderPatch, HookOverrides } from "@/lib/api";
 
 /**
  * Folders: the top-level directories of the docs directory. Every path the API speaks is
@@ -26,6 +26,43 @@ export function folderNameError(name: string): string | undefined {
   if (!/^[A-Za-z0-9 _.-]+$/.test(name)) return "Letters, digits, spaces, _ . and - only.";
   if (name === "node_modules") return "That name is reserved.";
   return undefined;
+}
+
+export const HOOK_KEYS = ["top_k", "min_score", "min_ratio", "max_chars"] as const;
+
+/** A folder's settings as its form holds them. An empty hook field is `null`: the server's default. */
+export type FolderForm = { title: string; mcp: boolean } & {
+  [K in keyof HookOverrides]-?: number | null;
+};
+
+export const folderForm = (folder: Folder): FolderForm => ({
+  title: folder.title,
+  mcp: folder.mcp,
+  top_k: folder.hook.top_k ?? null,
+  min_score: folder.hook.min_score ?? null,
+  min_ratio: folder.hook.min_ratio ?? null,
+  max_chars: folder.hook.max_chars ?? null,
+});
+
+/** What a save sends: only what differs. An empty title means the name, as an untitled folder shows. */
+export function folderPatch(folder: Folder, values: FolderForm): FolderPatch {
+  const title = values.title.trim();
+  const hook: NonNullable<FolderPatch["hook"]> = {};
+  for (const key of HOOK_KEYS) {
+    if (values[key] !== (folder.hook[key] ?? null)) hook[key] = values[key];
+  }
+  return {
+    ...((title || folder.name) !== folder.title ? { title } : {}),
+    ...(values.mcp !== folder.mcp ? { mcp: values.mcp } : {}),
+    ...(Object.keys(hook).length > 0 ? { hook } : {}),
+  };
+}
+
+/** What the server accepts for a hook default, as it accepts the `RAGDOWN_HOOK_*` variables. */
+export function hookValueError(key: keyof HookOverrides, value: number | null): string | undefined {
+  if (value === null || key === "min_score") return undefined;
+  if (key === "min_ratio") return value < 0 || value > 1 ? "Between 0 and 1." : undefined;
+  return Number.isInteger(value) && value >= 0 ? undefined : "A whole number, 0 or more.";
 }
 
 /** True when there are folders and none of them has MCP on. */

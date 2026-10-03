@@ -13,8 +13,10 @@ import {
   createFolder,
   deleteFolder,
   type Folder,
-  type FolderSettings,
+  type FolderChanges,
   getFolder,
+  HOOK_KEYS,
+  hookValueError,
   listFolders,
   looseFiles,
   updateFolder,
@@ -85,7 +87,7 @@ const FILE_TYPES: Record<string, string> = {
  *   folder that does not exist and one that is human-only (MCP off) are the same 404, and bare
  *   `/mcp` is a 404 that says to pick a folder: there is no endpoint over every folder.
  * - `/api/folders` — list (`GET`) and create (`POST { name, title?, mcp? }`) folders;
- *   `/api/folders/<name>` — change a folder's settings or rename it (`PATCH { title?, mcp?, name? }`)
+ *   `/api/folders/<name>` — change a folder's settings or rename it (`PATCH { title?, mcp?, hook?, name? }`)
  *   and delete it with everything in it (`DELETE ?confirm=<name>`).
  * - `GET /api/docs[?folder=]` and `GET /api/doc?path=` — the indexed files and one file's text.
  * - `POST /api/doc` with `{ path, text, overwrite?, base_hash? }` and `DELETE /api/doc?path=` —
@@ -516,8 +518,8 @@ async function assertInFolder(config: Config, path: string): Promise<string> {
   return name;
 }
 
-function settingsFrom(body: Record<string, unknown> | undefined): Partial<FolderSettings> {
-  const out: Partial<FolderSettings> = {};
+function settingsFrom(body: Record<string, unknown> | undefined): FolderChanges {
+  const out: FolderChanges = {};
   if (body?.title !== undefined) {
     if (typeof body.title !== "string") {
       throw Object.assign(new Error("title must be a string"), { status: 400 });
@@ -529,6 +531,20 @@ function settingsFrom(body: Record<string, unknown> | undefined): Partial<Folder
       throw Object.assign(new Error("mcp must be true or false"), { status: 400 });
     }
     out.mcp = body.mcp;
+  }
+  if (body?.hook !== undefined) {
+    const hook = body.hook as Record<string, unknown> | null;
+    if (!hook || typeof hook !== "object" || Array.isArray(hook)) {
+      throw Object.assign(new Error("hook must be an object"), { status: 400 });
+    }
+    out.hook = {};
+    for (const key of HOOK_KEYS) {
+      const value = hook[key];
+      if (value === undefined) continue;
+      const error = value === null ? undefined : hookValueError(key, value);
+      if (error) throw Object.assign(new Error(error), { status: 400 });
+      out.hook[key] = value as number | null;
+    }
   }
   return out;
 }
@@ -554,6 +570,7 @@ function summarize(folder: Folder, files: Map<string, FileState>) {
     name: folder.name,
     title: folder.title,
     mcp: folder.mcp,
+    hook: folder.hook,
     mcp_path: `/mcp/${encodeURIComponent(folder.name)}`,
     files: count,
     chunks,

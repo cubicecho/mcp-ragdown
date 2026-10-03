@@ -95,21 +95,24 @@ only its own notes: paths in and out are relative to it (`backups.md`, not `work
 A folder's settings live in `.ragdown.json` at its root, and the web UI edits them:
 
 ```json
-{ "title": "Work notes", "mcp": true }
+{ "title": "Work notes", "mcp": true, "hook": { "top_k": 6, "min_score": 0.75 } }
 ```
 
 - `title` is shown in the web UI and the server's instructions; it defaults to the directory name.
 - `mcp` defaults to **false**. A folder is **human-only** until someone turns it on: indexed and
   searchable in the web UI, but no endpoint, no recall hits and no hook context. `/mcp/<folder>`
   answers a human-only folder with the same 404 as a missing one.
+- `hook` holds the folder's own `ragdown_context` defaults: any of `top_k`, `min_score`, `min_ratio`
+  and `max_chars`. One it leaves out is the server's `RAGDOWN_HOOK_*` value, and an argument on the
+  call still wins over both. It is read on each call, so an edit applies without a restart.
 
 There is no endpoint over every folder: bare `/mcp` is a 404 that says to pick one. Markdown loose
 in `RAGDOWN_DOCS_DIR`, outside every folder, is not indexed; the log and the web UI list it.
 
-The web UI creates, renames and deletes folders, and **Copy MCP config** on each one gives the
+The web UI creates, edits, renames and deletes folders, and **Copy MCP config** on each one gives the
 `claude mcp add` line and the JSON `mcpServers` entry for it. Under `RAGDOWN_READ_ONLY` a folder's
-title and MCP switch can still change — they are settings, not notes — but creating, renaming and
-deleting cannot.
+title, MCP switch and search defaults can still change — they are settings, not notes — but
+creating, renaming and deleting cannot.
 
 **New note** (the **+** beside Upload in a folder's list, or the button in an empty folder) asks
 for a title and an optional subfolder, created if missing. It starts beside the open note, writes
@@ -200,7 +203,7 @@ middle. A hook that fails or takes longer than min-agent's 3 seconds only loses 
 
 | Tool | What it does |
 | --- | --- |
-| `ragdown_context` | For hooks: the sections related to a `prompt` as a `<ragdown-context>` block, or empty text. Filters by similarity, skips short prompts and slash commands, and never repeats a section for the same `session_id`. Takes `top_k`, `min_score`, `min_ratio` and `max_chars` to override the `RAGDOWN_HOOK_*` defaults. |
+| `ragdown_context` | For hooks: the sections related to a `prompt` as a `<ragdown-context>` block, or empty text. Filters by similarity, skips short prompts and slash commands, and never repeats a section for the same `session_id`. Takes `top_k`, `min_score`, `min_ratio` and `max_chars` to override the folder's `hook` settings and the `RAGDOWN_HOOK_*` defaults. |
 | `ragdown_recall` | Hybrid search. Returns path, line range, heading breadcrumb, tags and similarity for each hit. Takes `top_k`, `path_prefix`, `tag`, `format: text\|json` and `max_chars`. |
 | `ragdown_read_doc` | Reads a file, or a line range of one, straight from disk. Never clipped. Also takes a wikilink target (`Note#Heading`); see [Obsidian](#obsidian). Returns the whole file's `hash`, for `ragdown_edit`, and `superseded_by` when another note replaces it. |
 | `ragdown_backlinks` | The notes that link to a `path` — by wikilink, alias or relative Markdown link — with the lines the links are on. Links in code are not links. |
@@ -251,7 +254,7 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 | `/mcp/<folder>[/<subfolder...>]` | bearer | Streamable HTTP MCP, stateless, for a folder with MCP on. 404 otherwise, and for bare `/mcp`. See [Folders](#folders). |
 | `GET /api/folders` | bearer | Each folder's `name`, `title`, `mcp`, `mcp_path`, `files` and `chunks`, and `loose_files`: the Markdown outside every folder. |
 | `POST /api/folders` | bearer | Create a folder: JSON `{ name, title?, mcp? }`. 201; 409 when it exists, 400 for a bad name. |
-| `PATCH /api/folders/<name>` | bearer | JSON `{ title?, mcp?, name? }`: change its settings, or rename it with `name` (which re-indexes it). Unknown keys in `.ragdown.json` are kept. |
+| `PATCH /api/folders/<name>` | bearer | JSON `{ title?, mcp?, hook?, name? }`: change its settings, or rename it with `name` (which re-indexes it). `hook` takes any of `top_k`, `min_score`, `min_ratio` and `max_chars`; `null` takes the folder's own value away. Unknown keys in `.ragdown.json` are kept. |
 | `DELETE /api/folders/<name>?confirm=<name>` | bearer | Delete a folder and everything in it. 400 unless `confirm` repeats the name. |
 | `GET /api/docs?folder=` | bearer | The indexed files, of one folder or all: `path`, `folder`, `title`, `tags`, `aliases`, `superseded_by`, `mtime_ms`, `size`, `chunks`. |
 | `GET /api/doc?path=` | bearer | One indexed file's text, read from disk, with its tags, aliases and `hash` (SHA-256 of the bytes on disk). 404 for a file the index does not hold. |

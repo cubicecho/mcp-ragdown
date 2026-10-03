@@ -13,6 +13,35 @@ export interface FolderSettings {
   title: string;
   /** Whether `/mcp/<folder>` serves it. Off until someone turns it on: a new folder is human-only. */
   mcp: boolean;
+  /** The folder's own `ragdown_context` defaults: only the ones it sets, over `RAGDOWN_HOOK_*`. */
+  hook: HookOverrides;
+}
+
+/** `ragdown_context`'s defaults as a folder may set them, named as the tool's arguments are. */
+export interface HookOverrides {
+  top_k?: number;
+  min_score?: number;
+  min_ratio?: number;
+  max_chars?: number;
+}
+
+/** What a change may say about the settings: a `null` hook value takes the override away. */
+export type FolderChanges = Partial<Omit<FolderSettings, "hook">> & {
+  hook?: { [K in keyof HookOverrides]?: number | null };
+};
+
+export const HOOK_KEYS = ["top_k", "min_score", "min_ratio", "max_chars"] as const;
+
+/** Why `value` cannot be the hook default `key`, held to what `RAGDOWN_HOOK_*` accepts; undefined when it can. */
+export function hookValueError(key: keyof HookOverrides, value: unknown): string | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return `${key} must be a number`;
+  if (key === "min_score") return undefined;
+  if (key === "min_ratio") {
+    return value < 0 || value > 1 ? `${key} must be between 0 and 1` : undefined;
+  }
+  return Number.isInteger(value) && value >= 0
+    ? undefined
+    : `${key} must be a non-negative integer`;
 }
 
 export interface Folder extends FolderSettings {
@@ -52,7 +81,19 @@ export async function readSettings(dir: string, name: string): Promise<FolderSet
   return {
     title: typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : name,
     mcp: raw.mcp === true,
+    hook: readHook(raw.hook),
   };
+}
+
+/** The overrides in a settings file that are valid; a bad one is skipped, so the default applies. */
+function readHook(raw: unknown): HookOverrides {
+  const hook: HookOverrides = {};
+  if (!raw || typeof raw !== "object") return hook;
+  for (const key of HOOK_KEYS) {
+    const value = (raw as Record<string, unknown>)[key];
+    if (typeof value === "number" && !hookValueError(key, value)) hook[key] = value;
+  }
+  return hook;
 }
 
 async function readRaw(dir: string): Promise<Record<string, unknown>> {
@@ -121,7 +162,7 @@ export async function looseFiles(docsDir: string): Promise<string[]> {
 export async function createFolder(
   docsDir: string,
   name: string,
-  settings: Partial<FolderSettings> = {},
+  settings: FolderChanges = {},
 ): Promise<Folder> {
   assertCreatableName(name);
   const dir = join(docsDir, name);
@@ -145,7 +186,7 @@ export async function createFolder(
 export async function updateFolder(
   docsDir: string,
   name: string,
-  changes: Partial<FolderSettings> & { rename?: string },
+  changes: FolderChanges & { rename?: string },
 ): Promise<{ folder: Folder; renamed: boolean }> {
   if (!(await getFolder(docsDir, name))) {
     throw Object.assign(new Error(`no such folder: ${name}`), { status: 404 });
@@ -190,7 +231,7 @@ export async function deleteFolder(docsDir: string, name: string): Promise<void>
 async function writeSettings(
   dir: string,
   raw: Record<string, unknown>,
-  changes: Partial<FolderSettings>,
+  changes: FolderChanges,
 ): Promise<void> {
   const next = { ...raw };
   if (changes.title !== undefined) {
@@ -198,5 +239,17 @@ async function writeSettings(
     else delete next.title;
   }
   if (changes.mcp !== undefined) next.mcp = changes.mcp;
+  if (changes.hook !== undefined) {
+    const current = next.hook;
+    const hook: Record<string, unknown> =
+      current && typeof current === "object" && !Array.isArray(current) ? { ...current } : {};
+    for (const key of HOOK_KEYS) {
+      const value = changes.hook[key];
+      if (value === null) delete hook[key];
+      else if (value !== undefined) hook[key] = value;
+    }
+    if (Object.keys(hook).length > 0) next.hook = hook;
+    else delete next.hook;
+  }
   await writeFile(join(dir, SETTINGS_FILE), `${JSON.stringify(next, null, 2)}\n`);
 }

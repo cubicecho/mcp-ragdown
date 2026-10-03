@@ -32,10 +32,28 @@ export interface Folder {
   title: string;
   /** Off, the folder is human-only: indexed and searchable here, but nothing of it reaches MCP. */
   mcp: boolean;
+  /** Its own `ragdown_context` defaults: only the ones it sets, over the server's. */
+  hook: HookOverrides;
   /** `/mcp/<encoded name>`, the folder's MCP endpoint while `mcp` is on. */
   mcp_path: string;
   files: number;
   chunks: number;
+}
+
+/** `ragdown_context`'s defaults as a folder's `.ragdown.json` may set them. */
+export interface HookOverrides {
+  top_k?: number;
+  min_score?: number;
+  min_ratio?: number;
+  max_chars?: number;
+}
+
+/** A change to a folder's settings. A `null` hook value takes the folder's own one away. */
+export interface FolderPatch {
+  title?: string;
+  mcp?: boolean;
+  hook?: { [K in keyof HookOverrides]?: number | null };
+  name?: string;
 }
 
 export interface Folders {
@@ -168,13 +186,7 @@ export const createFolder = async (folder: { name: string; title?: string; mcp?:
   (await request<{ folder: Folder }>("/api/folders", { method: "POST", body: folder })).folder;
 
 /** Change a folder's settings. `patch.name` renames the directory, which re-indexes it. */
-export const updateFolder = async ({
-  name,
-  patch,
-}: {
-  name: string;
-  patch: { title?: string; mcp?: boolean; name?: string };
-}) =>
+export const updateFolder = async ({ name, patch }: { name: string; patch: FolderPatch }) =>
   (
     await request<{ folder: Folder }>(`/api/folders/${encodeURIComponent(name)}`, {
       method: "PATCH",
