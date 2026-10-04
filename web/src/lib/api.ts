@@ -11,7 +11,14 @@ export interface Status {
     watch: boolean;
     text_limit: number;
     /** `ragdown_context`'s defaults, which a hook's own arguments override. */
-    hook: { top_k: number; min_score: number; min_ratio: number; max_chars: number };
+    hook: {
+      top_k: number;
+      min_score: number;
+      min_ratio: number;
+      max_chars: number;
+      /** The most an unrelated prompt scores on this embedder; null for one nobody measured. */
+      unrelated_score: number | null;
+    };
   };
   docs_dir?: string;
   role?: "primary" | "reader";

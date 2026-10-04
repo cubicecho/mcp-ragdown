@@ -155,6 +155,8 @@ function FoldersSection({ writable }: { writable: boolean }) {
   const navigate = useNavigate();
   const loose = folders.data?.loose_files ?? [];
   const list = folders.data?.folders ?? [];
+  const unrelated = useStatus().data?.settings.hook.unrelated_score;
+  const lowScore = list.filter((folder) => scoreTooLow(folder.hook.min_score, unrelated));
   const [dialog, setDialog] = useState<FolderDialog | null>(null);
   const open = dialog ? list.find((folder) => folder.name === dialog.name) : undefined;
   const close = () => setDialog(null);
@@ -180,6 +182,13 @@ function FoldersSection({ writable }: { writable: boolean }) {
         <div className="flex flex-col gap-4">
           <McpOffHint link={false} />
           {loose.length > 0 ? <LooseFiles files={loose} writable={writable} /> : null}
+          {lowScore.length > 0 ? (
+            <Alert
+              variant="warning"
+              title={`${lowScore.map((folder) => folder.title).join(", ")}: the minimum score is too low`}
+              description={`An unrelated prompt scores up to ${unrelated} on this embedder, so a minimum score at or under that injects notes into prompts they have nothing to do with. Edit the folder and clear its minimum score, or raise it.`}
+            />
+          ) : null}
           <QueryState
             query={folders}
             what="the folders"
@@ -229,6 +238,10 @@ function FoldersSection({ writable }: { writable: boolean }) {
     />
   );
 }
+
+/** True when a `ragdown_context` floor is at or under what an unrelated prompt scores. */
+const scoreTooLow = (minScore: number | undefined, unrelated: number | null | undefined) =>
+  typeof minScore === "number" && typeof unrelated === "number" && minScore <= unrelated;
 
 /**
  * The warning about Markdown outside every folder, and under it the files themselves, each with
@@ -552,6 +565,14 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
                   <>
                     <Env name="RAGDOWN_HOOK_MIN_SCORE" />. Cosine similarity, on the embedder's own
                     scale.
+                    {scoreTooLow(settings.hook.min_score, settings.hook.unrelated_score) ? (
+                      <span className="text-destructive">
+                        {" "}
+                        Too low: an unrelated prompt scores up to {settings.hook.unrelated_score} on
+                        this embedder, so notes are injected into prompts they have nothing to do
+                        with. Unset the variable to use the embedder's own.
+                      </span>
+                    ) : null}
                   </>
                 }
               />,

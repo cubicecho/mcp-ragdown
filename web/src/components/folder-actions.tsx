@@ -237,7 +237,11 @@ export function EditFolder({ folder, onClose }: FolderDialogProps) {
                   form={form}
                   name="min_score"
                   label="Minimum score"
-                  description="Cosine similarity, on the embedder's own scale."
+                  description={
+                    typeof defaults?.unrelated_score === "number"
+                      ? `Cosine similarity, on the embedder's own scale. Keep it above ${defaults.unrelated_score}, which an unrelated prompt can score.`
+                      : "Cosine similarity, on the embedder's own scale."
+                  }
                   step={0.05}
                   placeholder={placeholder(defaults?.min_score)}
                 />

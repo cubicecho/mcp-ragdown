@@ -7,6 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { type Config, isInside } from "./config.ts";
+import { scoreScale } from "./embedder.ts";
 import type { Ragdown } from "./engine.ts";
 import { errorMessage } from "./errors.ts";
 import {
@@ -160,6 +161,8 @@ function publicSettings(config: Config) {
     hook: {
       top_k: config.hook.topK,
       min_score: config.hook.minScore,
+      // What an unrelated prompt scores on this embedder, so the UI can say a floor is too low.
+      unrelated_score: scoreScale(config.embedder)?.unrelated ?? null,
       min_ratio: config.hook.minRatio,
       max_chars: config.hook.maxChars,
     },

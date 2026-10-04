@@ -1,6 +1,6 @@
 import type { Server } from "node:net";
 import type { Config } from "./config.ts";
-import { createEmbedder, type Embedder } from "./embedder.ts";
+import { createEmbedder, type Embedder, scoreScale } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
 import { Indexer, type SyncReport } from "./indexer.ts";
 import { claimSocket, request } from "./primary.ts";
@@ -40,6 +40,12 @@ export class Ragdown {
    */
   static async start(config: Config): Promise<Ragdown> {
     const embedder = await createEmbedder(config);
+    const unrelated = scoreScale(config.embedder)?.unrelated;
+    if (unrelated !== undefined && config.hook.minScore <= unrelated) {
+      console.error(
+        `[ragdown] RAGDOWN_HOOK_MIN_SCORE=${config.hook.minScore} is too low for ${config.embedder}, which scores an unrelated prompt up to ${unrelated}: ragdown_context will inject notes into prompts they have nothing to do with. Unset it to use ${scoreScale(config.embedder)?.minScore}.`,
+      );
+    }
     let pending: Ragdown | undefined;
     const handler = (req: Record<string, unknown>) => {
       if (!pending) throw new Error("the primary is still starting");

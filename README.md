@@ -233,7 +233,7 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `RAGDOWN_NOTES_DIR` | `notes` | Where `ragdown_remember` writes, relative to each folder (a subfolder endpoint writes into the subfolder). A relative path inside the folder, not a dot-folder. |
 | `RAGDOWN_TEXT_LIMIT` | `2000` | Characters per hit in text output. Every cut names the `ragdown_read_doc` call that returns the rest. |
 | `RAGDOWN_HOOK_TOP_K` | `4` | `ragdown_context`: most sections per prompt. |
-| `RAGDOWN_HOOK_MIN_SCORE` | `0.8` | `ragdown_context`: lowest cosine similarity returned. Calibrated for the default embedder; another one needs another number. |
+| `RAGDOWN_HOOK_MIN_SCORE` | the embedder's own | `ragdown_context`: lowest cosine similarity returned. Defaults to the `MIN_SCORE` of the embedder in use (`0.8` for the default one), so leave it unset unless you measured a better number. |
 | `RAGDOWN_HOOK_MIN_RATIO` | `0.95` | `ragdown_context`: lowest share of the best hit's similarity a hit may have and still be injected; `0` disables it. Being a ratio, it carries across embedders as `MIN_SCORE` does not. See [Design](#design). |
 | `RAGDOWN_HOOK_MAX_CHARS` | `6000` | `ragdown_context`: most characters per prompt. |
 | `PORT` | `3000` | `serve` only. The HTTP port. |
@@ -328,7 +328,7 @@ is also why `granite-small` is the model baked into the Docker image; the other 
 first start. gte-small, snowflake-arctic-embed-s, mxbai-embed-xsmall, bge-base, granite's 149M
 model and arctic-embed-m were measured too and beat the default on nothing — bigger was not better.
 
-**Changing the model rebuilds the index, and `RAGDOWN_HOOK_MIN_SCORE` has to move with it.** Cosine
+**Changing the model rebuilds the index, and `RAGDOWN_HOOK_MIN_SCORE` moves with it.** Cosine
 is on each model's own scale, not a shared one. On the same corpus, the weakest on-topic question
 and the strongest unrelated prompt ("weather in Paris", "a recipe for carbonara") scored:
 
@@ -338,9 +338,14 @@ and the strongest unrelated prompt ("weather in Paris", "a recipe for carbonara"
 | `bge-small` | 0.70 | 0.60 |
 | `embeddinggemma` | 0.68 | 0.53 |
 
-The last column of the table above is the value that separates the two for each model. Borrow
-another model's number and the hook either injects a pasta recipe into every prompt or drops the
-notes that answer the question.
+The last column of the table above is the value that separates the two for each model, and it is
+what `RAGDOWN_HOOK_MIN_SCORE` defaults to for that model. Borrow another model's number and the
+hook either injects a pasta recipe into every prompt or drops the notes that answer the question:
+a value left at `0.7` from `bge-small` lets `granite-small` answer "tell me a joke" with four
+unrelated notes at 0.72. A floor at or under the model's unrelated score is flagged in the web UI's
+settings, whether the variable or a folder's own settings set it, and the variable is also logged
+at start. An `openai:`
+model has no measured scale, so it gets the default model's number as a guess: set the variable.
 
 **A second, relative gate under that one.** `RAGDOWN_HOOK_MIN_RATIO` drops a hit scoring less than
 0.95 of the best hit for the same prompt, whatever `MIN_SCORE` let through. An absolute floor

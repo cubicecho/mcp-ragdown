@@ -44,6 +44,24 @@ interface LocalModel {
   queryPrefix: string;
   /** Some models want passages marked too; most do not. */
   docPrefix: string;
+  /** Where this model's cosine separates an on-topic question from an unrelated prompt. */
+  score: ScoreScale;
+}
+
+/**
+ * One model's cosine scale, as the README's benchmark measured it. Cosine is on each model's own
+ * scale, so neither number carries to another model.
+ */
+export interface ScoreScale {
+  /** The `ragdown_context` floor that separates the two: the default `RAGDOWN_HOOK_MIN_SCORE`. */
+  minScore: number;
+  /** The most an unrelated prompt scored. A floor at or under it injects notes into every prompt. */
+  unrelated: number;
+}
+
+/** The scale of the embedder `spec` names, or undefined for one nobody measured (`openai:`, `hash`). */
+export function scoreScale(spec: string): ScoreScale | undefined {
+  return LOCAL_MODELS[spec]?.score;
 }
 
 /**
@@ -60,6 +78,7 @@ const LOCAL_MODELS: Record<string, LocalModel> = {
     pooling: "cls",
     queryPrefix: "",
     docPrefix: "",
+    score: { minScore: 0.8, unrelated: 0.75 },
   },
   "bge-small": {
     name: "bge-small-en-v1.5-q8",
@@ -68,6 +87,7 @@ const LOCAL_MODELS: Record<string, LocalModel> = {
     pooling: "cls",
     queryPrefix: "Represent this sentence for searching relevant passages: ",
     docPrefix: "",
+    score: { minScore: 0.7, unrelated: 0.6 },
   },
   // 300M parameters and 768 dimensions: the most accurate of these and about 25× the query
   // latency, which a hook pays on every turn. Its prefixes are part of the model, not decoration.
@@ -78,6 +98,7 @@ const LOCAL_MODELS: Record<string, LocalModel> = {
     pooling: "mean",
     queryPrefix: "task: search result | query: ",
     docPrefix: "title: none | text: ",
+    score: { minScore: 0.6, unrelated: 0.53 },
   },
 };
 

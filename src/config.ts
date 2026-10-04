@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, posix, resolve } from "node:path";
+import { scoreScale } from "./embedder.ts";
 
 /**
  * How the docs dir is laid out. `folders` (`serve`): each top-level directory is a folder with its
@@ -63,6 +64,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
       "RAGDOWN_DOCS_DIR is not set: point it (or --docs) at a folder of Markdown files",
     );
   }
+  const embedder = env.RAGDOWN_EMBEDDER ?? "granite-small";
   const docsDir = resolve(expandHome(rawDocs));
   if (!statSync(docsDir, { throwIfNoEntry: false })?.isDirectory()) {
     throw new Error(`RAGDOWN_DOCS_DIR is not a directory: ${docsDir}`);
@@ -101,7 +103,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
     dataDir,
     modelsDir: resolve(expandHome(env.RAGDOWN_MODELS ?? join(cacheRoot, "models"))),
     socketPath,
-    embedder: env.RAGDOWN_EMBEDDER ?? "granite-small",
+    embedder,
     threads: int(env, "RAGDOWN_THREADS", 0),
     embeddingUrl: env.RAGDOWN_EMBEDDING_URL ?? "https://api.openai.com/v1",
     embeddingApiKey: env.RAGDOWN_EMBEDDING_API_KEY,
@@ -119,9 +121,9 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
     },
     hook: {
       topK: int(env, "RAGDOWN_HOOK_TOP_K", 4),
-      // Calibrated for the default embedder; cosine is on each model's own scale, so a different
-      // `RAGDOWN_EMBEDDER` needs a different number. The README's embedder table pairs them.
-      minScore: num(env, "RAGDOWN_HOOK_MIN_SCORE", 0.8),
+      // Cosine is on each model's own scale, so the default is the embedder's own measured floor.
+      // An embedder nobody measured gets the default model's, which is a guess: set the variable.
+      minScore: num(env, "RAGDOWN_HOOK_MIN_SCORE", scoreScale(embedder)?.minScore ?? 0.8),
       // A relative floor under the absolute one: a hit far below the best is a distractor even
       // when it clears `minScore`. Unlike `minScore` this is a ratio, so it carries across models.
       // Measured on the benchmark corpus: 0.96 matched an ungated hook's recall exactly while

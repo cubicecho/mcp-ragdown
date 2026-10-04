@@ -61,7 +61,8 @@ describe("HTTP server", () => {
       settings: {
         watch: false,
         text_limit: 2000,
-        hook: { top_k: 4, min_score: 0.2, min_ratio: 0, max_chars: 6000 },
+        // The hash embedder has no measured scale, so there is no unrelated score to warn against.
+        hook: { top_k: 4, min_score: 0.2, min_ratio: 0, max_chars: 6000, unrelated_score: null },
       },
     });
     // Open to anyone who can reach the port, so nothing secret may ride along.
