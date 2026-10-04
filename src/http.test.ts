@@ -242,6 +242,10 @@ describe("HTTP server", () => {
     expect(rename.status).toBe(403);
     const remove = await fetch(`${t.url}/api/doc?path=ops%2Fbackups.md`, { method: "DELETE" });
     expect(remove.status).toBe(403);
+    await t.write("loose.md", "# Loose");
+    const removeLoose = await fetch(`${t.url}/api/loose?name=loose.md`, { method: "DELETE" });
+    expect(removeLoose.status).toBe(403);
+    expect(await readFile(join(t.docsDir, "loose.md"), "utf8")).toBe("# Loose");
     expect(await readFile(join(t.docsDir, "ops/backups.md"), "utf8")).toContain("pg_restore");
   });
 
@@ -452,6 +456,53 @@ describe("HTTP server", () => {
       (folder) => folder.name,
     );
     expect(names).toEqual(["ops", "Work notes"]);
+  });
+
+  it("deletes a loose file, and nothing else, through /api/loose", async () => {
+    const t = await serve({ RAGDOWN_TOKEN: "secret" });
+    await t.write("loose.md", "# Loose\n\nAt the top, in no folder.");
+    await t.write("keep.txt", "not markdown");
+    const remove = (name: string, token = "secret") =>
+      fetch(`${t.url}/api/loose?name=${encodeURIComponent(name)}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${token}` },
+      });
+    const loose = async () =>
+      (
+        (await (
+          await fetch(`${t.url}/api/folders`, { headers: { authorization: "Bearer secret" } })
+        ).json()) as { loose_files: string[] }
+      ).loose_files;
+
+    expect(await loose()).toEqual(["loose.md"]);
+    expect((await remove("loose.md", "wrong")).status).toBe(401);
+    // Only a name the listing gives: not a note in a folder, a folder, a path out or another file.
+    for (const name of ["ops/backups.md", "ops", "../loose.md", "keep.txt", "missing.md"]) {
+      expect((await remove(name)).status).toBe(404);
+    }
+    expect(
+      (
+        await fetch(`${t.url}/api/loose`, {
+          method: "DELETE",
+          headers: { authorization: "Bearer secret" },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await fetch(`${t.url}/api/loose?name=loose.md`, {
+          headers: { authorization: "Bearer secret" },
+        })
+      ).status,
+    ).toBe(405);
+
+    const removed = await remove("loose.md");
+    expect(removed.status).toBe(200);
+    expect(await removed.json()).toEqual({ name: "loose.md" });
+    expect(await loose()).toEqual([]);
+    expect((await remove("loose.md")).status).toBe(404);
+    expect(await readFile(join(t.docsDir, "ops/backups.md"), "utf8")).toContain("pg_restore");
+    expect(await readFile(join(t.docsDir, "keep.txt"), "utf8")).toBe("not markdown");
   });
 
   it("searches a folder, resolves wikilinks and serves attachments", async () => {

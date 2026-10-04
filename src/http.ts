@@ -12,6 +12,7 @@ import { errorMessage } from "./errors.ts";
 import {
   createFolder,
   deleteFolder,
+  deleteLooseFile,
   type Folder,
   type FolderChanges,
   getFolder,
@@ -89,6 +90,8 @@ const FILE_TYPES: Record<string, string> = {
  * - `/api/folders` — list (`GET`) and create (`POST { name, title?, mcp? }`) folders;
  *   `/api/folders/<name>` — change a folder's settings or rename it (`PATCH { title?, mcp?, hook?, name? }`)
  *   and delete it with everything in it (`DELETE ?confirm=<name>`).
+ * - `DELETE /api/loose?name=` — remove one Markdown file directly in the docs dir, outside every
+ *   folder. Only a name `GET /api/folders` lists as loose; nothing is indexed there, so no sync.
  * - `GET /api/docs[?folder=]` and `GET /api/doc?path=` — the indexed files and one file's text.
  * - `POST /api/doc` with `{ path, text, overwrite?, base_hash? }` and `DELETE /api/doc?path=` —
  *   upload, edit and remove a Markdown file inside a folder. Paths are held to what the indexer
@@ -210,6 +213,7 @@ async function handle(
 
 const API_ROUTES = new Set([
   "/api/folders",
+  "/api/loose",
   "/api/docs",
   "/api/doc",
   "/api/search",
@@ -335,6 +339,15 @@ async function handleApi(
     // Every path in the folder changed: the index answers for the new ones before this returns.
     if (renamed) await rag.sync(false);
     json(res, 200, { folder: await folderSummary(rag, folder) });
+    return;
+  }
+
+  if (path === "/api/loose") {
+    allow("DELETE");
+    if (config.readOnly) readOnly();
+    const name = required("name");
+    await deleteLooseFile(config.docsDir, name);
+    json(res, 200, { name });
     return;
   }
 
