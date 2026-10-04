@@ -46,10 +46,12 @@ Run typecheck (server and web), lint and test before every commit.
 - `src/primary.ts`: the unix-socket lock and request protocol (newline-delimited JSON).
 - `src/engine.ts`: `Ragdown`. Primary/reader roles, the store, syncs, the session memory.
 - `src/links.ts`: Obsidian wikilink parsing and resolution within one folder.
+- `src/settings.ts`: the server settings the web UI saves in `.ragdown-server.json`, laid over the
+  environment's. `serve` only.
 - `src/scope.ts`: `Scope`, the notes as one endpoint sees them (a folder, or a subfolder of one):
   recall, hook context, reading and writing notes, stats. Paths in and out are scope-relative.
 - `src/server.ts`: MCP tools, including `ragdown_context` for hooks.
-- `src/http.ts`: `serve` — `/mcp/<folder>[/<sub...>]`, and `/api/status`, `/api/folders`, `/api/loose`, `/api/docs`,
+- `src/http.ts`: `serve` — `/mcp/<folder>[/<sub...>]`, and `/api/status`, `/api/settings`, `/api/folders`, `/api/loose`, `/api/docs`,
   `/api/doc`, `/api/search`, `/api/resolve`, `/api/file` for the UI, with
   bearer auth, and the built web UI for every other `GET`.
 - `web/`: the web UI (React, TanStack Query/Router, Tailwind, cubeui/shadcn). Its own tsconfig;

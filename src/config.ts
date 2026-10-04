@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, posix, resolve } from "node:path";
+import { scoreScale } from "./embedder.ts";
+import type { ServerSettings } from "./settings.ts";
 
 /**
  * How the docs dir is laid out. `folders` (`serve`): each top-level directory is a folder with its
@@ -47,6 +49,19 @@ export interface Config {
     minRatio: number;
     maxChars: number;
   };
+  /**
+   * What the environment said for the settings the web UI can change. `embedder`, `watch`,
+   * `textLimit` and `hook` above are these with `saved` laid over them (`settings.ts`).
+   */
+  env: {
+    embedder: string;
+    watch: boolean;
+    textLimit: number;
+    /** `minScore` is null when `RAGDOWN_HOOK_MIN_SCORE` is unset and the embedder's own applies. */
+    hook: { topK: number; minScore: number | null; minRatio: number; maxChars: number };
+  };
+  /** The settings saved from the web UI, each winning over its variable; empty until one is. */
+  saved: ServerSettings;
 }
 
 type Env = Record<string, string | undefined>;
@@ -63,6 +78,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
       "RAGDOWN_DOCS_DIR is not set: point it (or --docs) at a folder of Markdown files",
     );
   }
+  const embedder = env.RAGDOWN_EMBEDDER ?? "granite-small";
   const docsDir = resolve(expandHome(rawDocs));
   if (!statSync(docsDir, { throwIfNoEntry: false })?.isDirectory()) {
     throw new Error(`RAGDOWN_DOCS_DIR is not a directory: ${docsDir}`);
@@ -95,20 +111,36 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
     throw new Error(`RAGDOWN_NOTES_DIR names a folder the index skips: ${notesDir}`);
   }
 
+  const watch = bool(env, "RAGDOWN_WATCH", true);
+  const textLimit = int(env, "RAGDOWN_TEXT_LIMIT", 2000);
+  const explicitMinScore =
+    env.RAGDOWN_HOOK_MIN_SCORE === undefined || env.RAGDOWN_HOOK_MIN_SCORE === ""
+      ? null
+      : num(env, "RAGDOWN_HOOK_MIN_SCORE", 0);
+  const hook = {
+    topK: int(env, "RAGDOWN_HOOK_TOP_K", 4),
+    // A relative floor under the absolute one: a hit far below the best is a distractor even
+    // when it clears `minScore`. Unlike `minScore` this is a ratio, so it carries across models.
+    // Measured on the benchmark corpus: 0.96 matched an ungated hook's recall exactly while
+    // injecting a third fewer chunks, and 0.95 sits on the flat part of that curve.
+    minRatio: ratio(env, "RAGDOWN_HOOK_MIN_RATIO", 0.95),
+    maxChars: int(env, "RAGDOWN_HOOK_MAX_CHARS", 6000),
+  };
+
   return {
     docsDir,
     mode,
     dataDir,
     modelsDir: resolve(expandHome(env.RAGDOWN_MODELS ?? join(cacheRoot, "models"))),
     socketPath,
-    embedder: env.RAGDOWN_EMBEDDER ?? "granite-small",
+    embedder,
     threads: int(env, "RAGDOWN_THREADS", 0),
     embeddingUrl: env.RAGDOWN_EMBEDDING_URL ?? "https://api.openai.com/v1",
     embeddingApiKey: env.RAGDOWN_EMBEDDING_API_KEY,
     readOnly: bool(env, "RAGDOWN_READ_ONLY", false),
-    watch: bool(env, "RAGDOWN_WATCH", true),
+    watch,
     notesDir: notesDir === "." ? "" : notesDir.replace(/\/+$/, ""),
-    textLimit: int(env, "RAGDOWN_TEXT_LIMIT", 2000),
+    textLimit,
     http: {
       port: int(env, "PORT", 3000),
       token: env.RAGDOWN_TOKEN || null,
@@ -118,17 +150,13 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
       keepAliveTimeoutMs: int(env, "HTTP_KEEP_ALIVE_TIMEOUT_MS", 75_000),
     },
     hook: {
-      topK: int(env, "RAGDOWN_HOOK_TOP_K", 4),
-      // Calibrated for the default embedder; cosine is on each model's own scale, so a different
-      // `RAGDOWN_EMBEDDER` needs a different number. The README's embedder table pairs them.
-      minScore: num(env, "RAGDOWN_HOOK_MIN_SCORE", 0.8),
-      // A relative floor under the absolute one: a hit far below the best is a distractor even
-      // when it clears `minScore`. Unlike `minScore` this is a ratio, so it carries across models.
-      // Measured on the benchmark corpus: 0.96 matched an ungated hook's recall exactly while
-      // injecting a third fewer chunks, and 0.95 sits on the flat part of that curve.
-      minRatio: ratio(env, "RAGDOWN_HOOK_MIN_RATIO", 0.95),
-      maxChars: int(env, "RAGDOWN_HOOK_MAX_CHARS", 6000),
+      ...hook,
+      // Cosine is on each model's own scale, so the default is the embedder's own measured floor.
+      // An embedder nobody measured gets the default model's, which is a guess: set the variable.
+      minScore: explicitMinScore ?? scoreScale(embedder)?.minScore ?? 0.8,
     },
+    env: { embedder, watch, textLimit, hook: { ...hook, minScore: explicitMinScore } },
+    saved: {},
   };
 }
 

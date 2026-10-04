@@ -1,4 +1,5 @@
 import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -6,9 +7,11 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it } from "vitest";
 import pkg from "../package.json" with { type: "json" };
+import { loadConfig } from "./config.ts";
 import { Ragdown } from "./engine.ts";
 import { assertAuthConfigured, createHttpServer } from "./http.ts";
-import { tempSetup } from "./testing.ts";
+import { applySettings, readServerSettings, SERVER_SETTINGS_FILE } from "./settings.ts";
+import { eventually, tempSetup } from "./testing.ts";
 
 const closers: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -34,6 +37,8 @@ async function serve(env: Record<string, string>) {
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return { ...t, rag, url };
 }
+
+const auth = (token: string) => ({ authorization: `Bearer ${token}` });
 
 describe("HTTP server", () => {
   it("refuses to start with no token and no SECURE_LOCAL_NET", async () => {
@@ -61,7 +66,8 @@ describe("HTTP server", () => {
       settings: {
         watch: false,
         text_limit: 2000,
-        hook: { top_k: 4, min_score: 0.2, min_ratio: 0, max_chars: 6000 },
+        // The hash embedder has no measured scale, so there is no unrelated score to warn against.
+        hook: { top_k: 4, min_score: 0.2, min_ratio: 0, max_chars: 6000, unrelated_score: null },
       },
     });
     // Open to anyone who can reach the port, so nothing secret may ride along.
@@ -245,6 +251,12 @@ describe("HTTP server", () => {
     await t.write("loose.md", "# Loose");
     const removeLoose = await fetch(`${t.url}/api/loose?name=loose.md`, { method: "DELETE" });
     expect(removeLoose.status).toBe(403);
+    const settings = await fetch(`${t.url}/api/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ watch: false }),
+    });
+    expect(settings.status).toBe(403);
     expect(await readFile(join(t.docsDir, "loose.md"), "utf8")).toBe("# Loose");
     expect(await readFile(join(t.docsDir, "ops/backups.md"), "utf8")).toContain("pg_restore");
   });
@@ -456,6 +468,146 @@ describe("HTTP server", () => {
       (folder) => folder.name,
     );
     expect(names).toEqual(["ops", "Work notes"]);
+  });
+
+  it("saves server settings, applies them at once, and gives one back to its variable", async () => {
+    const t = await serve({ RAGDOWN_TOKEN: "s3cret", RAGDOWN_WATCH: "true" });
+    const file = join(t.docsDir, SERVER_SETTINGS_FILE);
+    const patch = (body: unknown, token = "s3cret") =>
+      fetch(`${t.url}/api/settings`, {
+        method: "PATCH",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const settings = async () =>
+      ((await (await fetch(`${t.url}/api/status`)).json()) as { settings: Record<string, unknown> })
+        .settings;
+
+    expect((await patch({ watch: false }, "wrong")).status).toBe(401);
+    for (const bad of [
+      { watch: "no" },
+      { text_limit: -1 },
+      { hook: { top_k: 1.5 } },
+      { hook: { min_ratio: 2 } },
+      { hook: [] },
+      { embedder: "" },
+    ]) {
+      expect((await patch(bad)).status).toBe(400);
+    }
+    expect((await fetch(`${t.url}/api/settings`, { headers: auth("s3cret") })).status).toBe(405);
+    await expect(readFile(file, "utf8")).rejects.toThrow();
+
+    const saved = await patch({
+      watch: false,
+      text_limit: 500,
+      hook: { top_k: 2, min_score: 0.5 },
+    });
+    expect(saved.status).toBe(200);
+    expect(((await saved.json()) as { settings: unknown }).settings).toMatchObject({
+      watch: false,
+      text_limit: 500,
+      hook: { top_k: 2, min_score: 0.5, min_ratio: 0, max_chars: 6000 },
+      saved: { watch: false, text_limit: 500, hook: { top_k: 2, min_score: 0.5 } },
+      // What the variables said is still there to go back to.
+      env: { watch: true, text_limit: 2000, hook: { top_k: 4, min_score: 0.2 } },
+    });
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
+      watch: false,
+      text_limit: 500,
+      hook: { top_k: 2, min_score: 0.5 },
+    });
+    // In effect without a restart: the running config is what the tools read.
+    expect(t.config.hook.topK).toBe(2);
+    expect(t.config.textLimit).toBe(500);
+
+    // A later change keeps what it does not name, and a null gives the value back.
+    await patch({ hook: { top_k: null, max_chars: 100 }, watch: null });
+    expect(await settings()).toMatchObject({
+      watch: true,
+      hook: { top_k: 4, min_score: 0.5, max_chars: 100 },
+      saved: { text_limit: 500, hook: { min_score: 0.5, max_chars: 100 } },
+    });
+    // A start reads the file back over the same environment.
+    const restarted = loadConfig(
+      { RAGDOWN_DOCS_DIR: t.docsDir, RAGDOWN_EMBEDDER: "hash", RAGDOWN_HOOK_MIN_SCORE: "0.2" },
+      "folders",
+    );
+    applySettings(restarted, await readServerSettings(t.docsDir));
+    expect(restarted).toMatchObject({ textLimit: 500, hook: { minScore: 0.5, maxChars: 100 } });
+
+    // Nothing left to save: the file goes rather than staying behind as `{}`.
+    await patch({ text_limit: null, hook: { min_score: null, max_chars: null } });
+    await expect(readFile(file, "utf8")).rejects.toThrow();
+    expect(await settings()).toMatchObject({ text_limit: 2000, saved: {} });
+    // The settings file is not a note and not a loose file.
+    const folders = (await (
+      await fetch(`${t.url}/api/folders`, { headers: auth("s3cret") })
+    ).json()) as { loose_files: string[] };
+    expect(folders.loose_files).toEqual([]);
+  });
+
+  it("changes the embedder in place and rebuilds the index with it", async () => {
+    // An embedding endpoint with vectors of its own size, so the old index cannot be reused.
+    const endpoint = createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        const { input } = JSON.parse(body) as { input: string[] };
+        res.setHeader("content-type", "application/json");
+        res.end(
+          JSON.stringify({
+            data: input.map((text, index) => ({
+              index,
+              embedding: [
+                text.includes("pg_restore") || text.includes("restore") ? 1 : 0.2,
+                0.5,
+                1,
+              ],
+            })),
+          }),
+        );
+      });
+    });
+    await new Promise<void>((done) => endpoint.listen(0, "127.0.0.1", done));
+    closers.push(() => new Promise((done) => endpoint.close(() => done())));
+    const embeddingUrl = `http://127.0.0.1:${(endpoint.address() as AddressInfo).port}/v1`;
+    const t = await serve({ RAGDOWN_TOKEN: "s3cret", RAGDOWN_EMBEDDING_URL: embeddingUrl });
+    const patch = (body: unknown) =>
+      fetch(`${t.url}/api/settings`, {
+        method: "PATCH",
+        headers: { ...auth("s3cret"), "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const status = async () =>
+      (await (await fetch(`${t.url}/api/status`)).json()) as {
+        embedder: string;
+        chunks: number;
+        settings: { embedder: string; saved: unknown };
+      };
+
+    // A name nothing can load changes nothing, on disk or in the running server.
+    const unknown = await patch({ embedder: "no-such-model" });
+    expect(unknown.status).toBe(400);
+    expect(await status()).toMatchObject({ embedder: "hash-384", settings: { saved: {} } });
+
+    expect((await patch({ embedder: "openai:fake" })).status).toBe(200);
+    expect(await status()).toMatchObject({
+      embedder: "openai:fake@3",
+      settings: { embedder: "openai:fake", saved: { embedder: "openai:fake" } },
+    });
+    // The rebuild runs behind the answer; the note is found again once it is done.
+    await eventually(async () => (await status()).chunks === 1);
+    const search = await fetch(`${t.url}/api/search?folder=ops&q=restore`, {
+      headers: auth("s3cret"),
+    });
+    expect(JSON.stringify(await search.json())).toContain("ops/backups.md");
+
+    // Back to what the environment says, with the index rebuilt once more.
+    expect((await patch({ embedder: null })).status).toBe(200);
+    expect(await status()).toMatchObject({ embedder: "hash-384", settings: { saved: {} } });
+    await eventually(async () => (await status()).chunks === 1);
   });
 
   it("deletes a loose file, and nothing else, through /api/loose", async () => {

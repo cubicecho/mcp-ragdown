@@ -16,6 +16,7 @@ import {
   saveDoc,
   searchDocs,
   updateFolder,
+  updateSettings,
   uploadDoc,
 } from "@/lib/api";
 
@@ -163,6 +164,12 @@ export const useUpdateFolder = () => {
 export const useDeleteFolder = () => {
   const invalidate = useInvalidateDocs();
   return useMutation({ mutationFn: deleteFolder, onSettled: () => invalidate() });
+};
+
+/** Save server settings. The status holds them, and a new embedder changes every folder's counts. */
+export const useUpdateSettings = () => {
+  const invalidate = useInvalidateDocs();
+  return useMutation({ mutationFn: updateSettings, onSettled: () => invalidate() });
 };
 
 export const useDeleteLooseFile = () => {

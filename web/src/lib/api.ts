@@ -1,17 +1,53 @@
 import { getToken, requireAuth } from "@/lib/auth";
 
+/** The server-wide settings a save can hold. */
+export interface ServerSettings {
+  embedder?: string;
+  watch?: boolean;
+  text_limit?: number;
+  hook?: HookOverrides;
+}
+
+/** A change to them: a `null` gives the value back to its environment variable. */
+export interface ServerSettingsPatch {
+  embedder?: string | null;
+  watch?: boolean | null;
+  text_limit?: number | null;
+  hook?: { [K in keyof HookOverrides]?: number | null };
+}
+
 /** `GET /api/status`: open, and answering before the model has loaded. */
 export interface Status {
   name: string;
   version: string;
   ready: boolean;
   auth_required: boolean;
-  /** Read from the environment at start and never changed at runtime; nothing secret. */
+  /** The server-wide settings in effect; nothing secret. */
   settings: {
+    /** The embedder's name as a setting takes it (`granite-small`), not the model's. */
+    embedder: string;
     watch: boolean;
     text_limit: number;
     /** `ragdown_context`'s defaults, which a hook's own arguments override. */
-    hook: { top_k: number; min_score: number; min_ratio: number; max_chars: number };
+    hook: {
+      top_k: number;
+      min_score: number;
+      min_ratio: number;
+      max_chars: number;
+      /** The most an unrelated prompt scores on this embedder; null for one nobody measured. */
+      unrelated_score: number | null;
+    };
+    /** What was saved from this page (`PATCH /api/settings`): each wins over its variable. */
+    saved: ServerSettings;
+    /** What applies to a value nothing is saved for. A null minimum score is the embedder's own. */
+    env: {
+      embedder: string;
+      watch: boolean;
+      text_limit: number;
+      hook: { top_k: number; min_score: number | null; min_ratio: number; max_chars: number };
+    };
+    /** The embedders a form can offer, with each one's own floor and unrelated score. */
+    embedders: Record<string, { min_score: number | null; unrelated_score: number | null }>;
   };
   docs_dir?: string;
   role?: "primary" | "reader";
@@ -200,6 +236,15 @@ export const deleteFolder = (name: string) =>
     `/api/folders/${encodeURIComponent(name)}${query({ confirm: name })}`,
     { method: "DELETE" },
   );
+
+/** Save server-wide settings. They apply at once; a new embedder rebuilds the index. */
+export const updateSettings = async (patch: ServerSettingsPatch) =>
+  (
+    await request<{ settings: Status["settings"] }>("/api/settings", {
+      method: "PATCH",
+      body: patch,
+    })
+  ).settings;
 
 /** Delete one of `loose_files`: a Markdown file directly in the docs directory, in no folder. */
 export const deleteLooseFile = (name: string) =>
