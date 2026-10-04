@@ -45,6 +45,7 @@ export class Indexer {
   private timer: NodeJS.Timeout | undefined;
   /** The loose files last warned about, so an unchanged list is not logged on every sync. */
   private warnedLoose = "";
+  private stopped = false;
 
   constructor(docsDir: string, store: Store, embedder: Embedder, skipRootFiles = false) {
     this.docsDir = docsDir;
@@ -64,6 +65,7 @@ export class Indexer {
    * Any number of callers during one sync share that one follow-up.
    */
   sync(): Promise<SyncReport> {
+    if (this.stopped) return Promise.reject(new Error("the indexer was replaced; sync again"));
     if (this.queued) return this.queued;
     if (this.running) {
       this.queued = this.running
@@ -115,8 +117,20 @@ export class Indexer {
 
   close(): void {
     this.watcher?.close();
+    this.watcher = undefined;
     clearTimeout(this.timer);
     clearInterval(this.timer);
+  }
+
+  /**
+   * Stop for good and wait out a sync in flight, so nothing this indexer embedded is written
+   * after the store is handed to another one.
+   */
+  async stop(): Promise<void> {
+    this.close();
+    this.stopped = true;
+    await this.running?.catch(() => undefined);
+    await this.queued?.catch(() => undefined);
   }
 
   private poll(): void {

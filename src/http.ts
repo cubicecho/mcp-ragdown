@@ -7,7 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { type Config, isInside } from "./config.ts";
-import { scoreScale } from "./embedder.ts";
+import { createEmbedder, LOCAL_EMBEDDERS, scoreScale } from "./embedder.ts";
 import type { Ragdown } from "./engine.ts";
 import { errorMessage } from "./errors.ts";
 import {
@@ -25,6 +25,13 @@ import {
 } from "./folders.ts";
 import { openScope, Scope } from "./scope.ts";
 import { createMcpServer, SERVER_NAME, VERSION } from "./server.ts";
+import {
+  applyChanges,
+  applySettings,
+  parseChanges,
+  type SettingsChanges,
+  writeServerSettings,
+} from "./settings.ts";
 import { type FileState, supersededBy } from "./store.ts";
 
 /** An MCP message is a few kilobytes; anything near this is not one. */
@@ -91,6 +98,9 @@ const FILE_TYPES: Record<string, string> = {
  * - `/api/folders` — list (`GET`) and create (`POST { name, title?, mcp? }`) folders;
  *   `/api/folders/<name>` — change a folder's settings or rename it (`PATCH { title?, mcp?, hook?, name? }`)
  *   and delete it with everything in it (`DELETE ?confirm=<name>`).
+ * - `PATCH /api/settings` — save server-wide settings (`{ embedder?, watch?, text_limit?, hook? }`,
+ *   a `null` giving a value back to its variable) to `.ragdown-server.json` in the docs dir and
+ *   apply them at once. A new embedder rebuilds the index. `GET /api/status` shows the result.
  * - `DELETE /api/loose?name=` — remove one Markdown file directly in the docs dir, outside every
  *   folder. Only a name `GET /api/folders` lists as loose; nothing is indexed there, so no sync.
  * - `GET /api/docs[?folder=]` and `GET /api/doc?path=` — the indexed files and one file's text.
@@ -156,17 +166,71 @@ export function assertAuthConfigured(config: Config): void {
  */
 function publicSettings(config: Config) {
   return {
+    embedder: config.embedder,
     watch: config.watch,
     text_limit: config.textLimit,
     hook: {
       top_k: config.hook.topK,
       min_score: config.hook.minScore,
-      // What an unrelated prompt scores on this embedder, so the UI can say a floor is too low.
-      unrelated_score: scoreScale(config.embedder)?.unrelated ?? null,
       min_ratio: config.hook.minRatio,
       max_chars: config.hook.maxChars,
+      // What an unrelated prompt scores on this embedder, so the UI can say a floor is too low.
+      unrelated_score: scoreScale(config.embedder)?.unrelated ?? null,
     },
+    // The two layers under the values above: what the UI saved, and what applies without it.
+    saved: config.saved,
+    env: {
+      embedder: config.env.embedder,
+      watch: config.env.watch,
+      text_limit: config.env.textLimit,
+      hook: {
+        top_k: config.env.hook.topK,
+        min_score: config.env.hook.minScore,
+        min_ratio: config.env.hook.minRatio,
+        max_chars: config.env.hook.maxChars,
+      },
+    },
+    // The embedders a form can offer, each with the floor that goes with it.
+    embedders: Object.fromEntries(
+      [...new Set([...LOCAL_EMBEDDERS, config.embedder, config.env.embedder])].map((name) => [
+        name,
+        {
+          min_score: scoreScale(name)?.minScore ?? null,
+          unrelated_score: scoreScale(name)?.unrelated ?? null,
+        },
+      ]),
+    ),
   };
+}
+
+/** One settings change at a time: two embedder changes at once would each rebuild the index. */
+let settingsChange: Promise<unknown> = Promise.resolve();
+
+/**
+ * Save a change to the server settings and put it into effect. The new embedder is loaded before
+ * anything is saved, so a name that cannot be loaded changes nothing.
+ */
+async function changeSettings(rag: Ragdown, config: Config, changes: SettingsChanges) {
+  const saved = applyChanges(config.saved, changes);
+  const embedder = saved.embedder ?? config.env.embedder;
+  if (embedder !== config.embedder) {
+    if (rag.role !== "primary") {
+      throw Object.assign(
+        new Error("this process only reads the index: change the embedder where it is built"),
+        { status: 409 },
+      );
+    }
+    const loaded = await createEmbedder({ ...config, embedder }).catch((error: unknown) => {
+      throw Object.assign(new Error(errorMessage(error)), { status: 400 });
+    });
+    await writeServerSettings(config.docsDir, saved);
+    applySettings(config, saved);
+    await rag.switchEmbedder(loaded);
+  } else {
+    await writeServerSettings(config.docsDir, saved);
+    applySettings(config, saved);
+  }
+  rag.setWatch();
 }
 
 async function handle(
@@ -215,6 +279,7 @@ async function handle(
 }
 
 const API_ROUTES = new Set([
+  "/api/settings",
   "/api/folders",
   "/api/loose",
   "/api/docs",
@@ -342,6 +407,17 @@ async function handleApi(
     // Every path in the folder changed: the index answers for the new ones before this returns.
     if (renamed) await rag.sync(false);
     json(res, 200, { folder: await folderSummary(rag, folder) });
+    return;
+  }
+
+  if (path === "/api/settings") {
+    allow("PATCH");
+    if (config.readOnly) readOnly();
+    const changes = parseChanges((await readJson(req)) as Record<string, unknown>);
+    const change = settingsChange.then(() => changeSettings(rag, config, changes));
+    settingsChange = change.catch(() => undefined);
+    await change;
+    json(res, 200, { settings: publicSettings(config) });
     return;
   }
 

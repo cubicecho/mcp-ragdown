@@ -241,6 +241,15 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `RAGDOWN_TOKEN` | — | `serve` only. The bearer token `/mcp/<folder>` and the web UI's `/api` routes require. |
 | `SECURE_LOCAL_NET` | `false` | `serve` only. Skip the token on a trusted network. `serve` refuses to start with neither. |
 
+Under `serve`, the embedder, watching, the characters per hit and the four `ragdown_context`
+defaults can also be changed while the server runs, under **Settings → Server** in the web UI. What
+is saved there is kept in `.ragdown-server.json` in the docs directory and wins over the variable of
+the same setting, at once and after every restart, until it is cleared there; the variable is the
+value it goes back to. A new embedder is loaded first (so one that cannot load changes nothing),
+then the index is rebuilt with it in place. With no minimum score saved or set, the floor follows
+whichever embedder is in use. The docs directory, read-only and the token stay variables only, and
+`stdio` reads the variables alone.
+
 ## Commands and HTTP
 
 `node src/cli.ts <command>`: `stdio` (the MCP server a client launches) or `serve` (HTTP, what the
@@ -250,12 +259,13 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 
 | Route | Auth | |
 | --- | --- | --- |
-| `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. `settings` holds the non-secret tuning values (`RAGDOWN_WATCH`, `RAGDOWN_TEXT_LIMIT`, `RAGDOWN_HOOK_*`) for the web UI's Settings page. |
+| `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. `settings` holds the non-secret tuning values (`RAGDOWN_EMBEDDER`, `RAGDOWN_WATCH`, `RAGDOWN_TEXT_LIMIT`, `RAGDOWN_HOOK_*`) for the web UI's Settings page: the ones in effect, the ones `saved` there, and what the `env` says. |
 | `/mcp/<folder>[/<subfolder...>]` | bearer | Streamable HTTP MCP, stateless, for a folder with MCP on. 404 otherwise, and for bare `/mcp`. See [Folders](#folders). |
 | `GET /api/folders` | bearer | Each folder's `name`, `title`, `mcp`, `mcp_path`, `files` and `chunks`, and `loose_files`: the Markdown outside every folder. |
 | `POST /api/folders` | bearer | Create a folder: JSON `{ name, title?, mcp? }`. 201; 409 when it exists, 400 for a bad name. |
 | `PATCH /api/folders/<name>` | bearer | JSON `{ title?, mcp?, hook?, name? }`: change its settings, or rename it with `name` (which re-indexes it). `hook` takes any of `top_k`, `min_score`, `min_ratio` and `max_chars`; `null` takes the folder's own value away. Unknown keys in `.ragdown.json` are kept. |
 | `DELETE /api/folders/<name>?confirm=<name>` | bearer | Delete a folder and everything in it. 400 unless `confirm` repeats the name. |
+| `PATCH /api/settings` | bearer | JSON `{ embedder?, watch?, text_limit?, hook? }`: save server settings over their variables and apply them at once. `null` gives a value back to its variable. 400 for a value that is not valid or an embedder that cannot load, 409 when this process is not the one that owns the index. Answers with the new `settings`. |
 | `DELETE /api/loose?name=` | bearer | Delete one of the `loose_files`: a Markdown file directly in the docs directory. 404 for any other name. |
 | `GET /api/docs?folder=` | bearer | The indexed files, of one folder or all: `path`, `folder`, `title`, `tags`, `aliases`, `superseded_by`, `mtime_ms`, `size`, `chunks`. |
 | `GET /api/doc?path=` | bearer | One indexed file's text, read from disk, with its tags, aliases and `hash` (SHA-256 of the bytes on disk). 404 for a file the index does not hold. |
@@ -270,7 +280,7 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 
 Every `path` in `/api` includes the folder: `work/notes/a.md`. Writes answer after the index has
 synced, so the next `GET /api/docs` already shows them, and uploads, deletes, and creating,
-renaming or deleting a folder are a 403 under `RAGDOWN_READ_ONLY`. They are for the web UI; agents
+renaming or deleting a folder, and changing the server settings, are a 403 under `RAGDOWN_READ_ONLY`. They are for the web UI; agents
 write with `ragdown_remember` and `ragdown_edit`.
 
 The web UI asks for the token once and keeps it in the browser's local storage. Its static files

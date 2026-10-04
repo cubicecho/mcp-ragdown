@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/page";
 import { PageLayout } from "@/components/page-layout";
 import { QueryError, QueryState } from "@/components/query-state";
 import { Section } from "@/components/section";
+import { EditServerSettings } from "@/components/server-settings";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,14 +49,16 @@ const TABS: { value: SettingsTab; label: string }[] = [
 ];
 
 /**
- * The folders, what this device remembers, and how the server was started, one tab each. The
- * server's tab is read-only: it comes from environment variables at start, so each row names the
- * variable that changes it. The open tab is in the URL, so a link can land on one.
+ * The folders, what this device remembers, and how the server is set up, one tab each. The
+ * server's settings start as environment variables, so each row names its variable; the ones that
+ * can change while it runs are edited here, and a value saved here wins over its variable. The open
+ * tab is in the URL, so a link can land on one.
  */
 export function SettingsPage() {
   const status = useStatus();
   const writable = useWritable();
   const { tab = "folders" } = useSearch({ from: "/settings" });
+  const [editing, setEditing] = useState(false);
   const navigate = useNavigate({ from: "/settings" });
 
   useEffect(() => {
@@ -117,7 +120,15 @@ export function SettingsPage() {
             </TabsContent>
             <TabsContent value="server" className="mt-0">
               <Section
-                description="What the index is doing, then how the server was started. The settings are read from environment variables at start: change one and restart the server to apply it."
+                description="What the index is doing, then how the server is set up. Each setting starts as an environment variable; the embedder, watching and the search defaults can be changed here, and a value saved here wins over its variable."
+                action={
+                  writable && status.data ? (
+                    <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                      <Pencil />
+                      Edit settings
+                    </Button>
+                  ) : null
+                }
                 content={
                   status.isError ? (
                     <QueryError
@@ -134,6 +145,12 @@ export function SettingsPage() {
                   )
                 }
               />
+              {editing && status.data ? (
+                <EditServerSettings
+                  settings={status.data.settings}
+                  onClose={() => setEditing(false)}
+                />
+              ) : null}
             </TabsContent>
           </div>
         }
@@ -476,7 +493,7 @@ function IndexStatusCard({ status, loading }: { status: Status | undefined; load
   );
 }
 
-/** How the index was set up at start: each row names the variable that changes it. */
+/** How the index is set up: each row names its variable, and says when a saved value overrides it. */
 function IndexSettingsCard({ status, loading }: { status: Status | undefined; loading: boolean }) {
   return (
     <CardLayout
@@ -501,8 +518,11 @@ function IndexSettingsCard({ status, loading }: { status: Status | undefined; lo
                 value={status.embedder ?? "—"}
                 hint={
                   <>
-                    <Env name="RAGDOWN_EMBEDDER" />. A new one rebuilds the index, and wants its own
-                    hook minimum score.
+                    <Env
+                      name="RAGDOWN_EMBEDDER"
+                      saved={status.settings.saved.embedder !== undefined}
+                    />
+                    . A new one rebuilds the index, and wants its own hook minimum score.
                   </>
                 }
               />,
@@ -522,8 +542,8 @@ function IndexSettingsCard({ status, loading }: { status: Status | undefined; lo
                 value={<YesNo value={status.settings.watch} />}
                 hint={
                   <>
-                    <Env name="RAGDOWN_WATCH" />. Off, the index syncs at start and on{" "}
-                    <Code>ragdown_reindex</Code> only.
+                    <Env name="RAGDOWN_WATCH" saved={status.settings.saved.watch !== undefined} />.
+                    Off, the index syncs at start and on <Code>ragdown_reindex</Code> only.
                   </>
                 }
               />,
@@ -537,6 +557,7 @@ function IndexSettingsCard({ status, loading }: { status: Status | undefined; lo
 
 function HookCard({ status, loading }: { status: Status | undefined; loading: boolean }) {
   const settings = status?.settings;
+  const saved = settings?.saved.hook;
   return (
     <CardLayout
       title="Search defaults"
@@ -555,7 +576,7 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
                 key="top-k"
                 label="Sections per prompt"
                 value={settings.hook.top_k}
-                hint={<Env name="RAGDOWN_HOOK_TOP_K" />}
+                hint={<Env name="RAGDOWN_HOOK_TOP_K" saved={saved?.top_k !== undefined} />}
               />,
               <PropertyRow
                 key="min-score"
@@ -563,14 +584,14 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
                 value={settings.hook.min_score}
                 hint={
                   <>
-                    <Env name="RAGDOWN_HOOK_MIN_SCORE" />. Cosine similarity, on the embedder's own
-                    scale.
+                    <Env name="RAGDOWN_HOOK_MIN_SCORE" saved={saved?.min_score !== undefined} />.
+                    Cosine similarity, on the embedder's own scale.
                     {scoreTooLow(settings.hook.min_score, settings.hook.unrelated_score) ? (
                       <span className="text-destructive">
                         {" "}
                         Too low: an unrelated prompt scores up to {settings.hook.unrelated_score} on
                         this embedder, so notes are injected into prompts they have nothing to do
-                        with. Unset the variable to use the embedder's own.
+                        with. Leave it unset to use the embedder's own.
                       </span>
                     ) : null}
                   </>
@@ -582,8 +603,8 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
                 value={settings.hook.min_ratio}
                 hint={
                   <>
-                    <Env name="RAGDOWN_HOOK_MIN_RATIO" />. The least a hit may score against the
-                    best one; 0 turns it off.
+                    <Env name="RAGDOWN_HOOK_MIN_RATIO" saved={saved?.min_ratio !== undefined} />.
+                    The least a hit may score against the best one; 0 turns it off.
                   </>
                 }
               />,
@@ -591,7 +612,7 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
                 key="max-chars"
                 label="Characters per prompt"
                 value={settings.hook.max_chars.toLocaleString()}
-                hint={<Env name="RAGDOWN_HOOK_MAX_CHARS" />}
+                hint={<Env name="RAGDOWN_HOOK_MAX_CHARS" saved={saved?.max_chars !== undefined} />}
               />,
               <PropertyRow
                 key="text-limit"
@@ -599,7 +620,11 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
                 value={settings.text_limit.toLocaleString()}
                 hint={
                   <>
-                    <Env name="RAGDOWN_TEXT_LIMIT" />. For the search tools' text output.
+                    <Env
+                      name="RAGDOWN_TEXT_LIMIT"
+                      saved={settings.saved.text_limit !== undefined}
+                    />
+                    . For the search tools' text output.
                   </>
                 }
               />,
@@ -613,4 +638,12 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
 
 const YesNo = ({ value }: { value: boolean }) => <span>{value ? "Yes" : "No"}</span>;
 
-const Env = ({ name }: { name: string }) => <Code>{name}</Code>;
+/** The variable a setting starts from, and whether a value saved here has taken its place. */
+const Env = ({ name, saved = false }: { name: string; saved?: boolean }) =>
+  saved ? (
+    <>
+      Saved here, over <Code>{name}</Code>
+    </>
+  ) : (
+    <Code>{name}</Code>
+  );

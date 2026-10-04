@@ -16,7 +16,7 @@ const TAKEOVER_INTERVAL_MS = 30_000;
  */
 export class Ragdown {
   readonly config: Config;
-  readonly embedder: Embedder;
+  embedder: Embedder;
   private store: Store;
   private indexer: Indexer | undefined;
   private socket: Server | undefined;
@@ -43,7 +43,7 @@ export class Ragdown {
     const unrelated = scoreScale(config.embedder)?.unrelated;
     if (unrelated !== undefined && config.hook.minScore <= unrelated) {
       console.error(
-        `[ragdown] RAGDOWN_HOOK_MIN_SCORE=${config.hook.minScore} is too low for ${config.embedder}, which scores an unrelated prompt up to ${unrelated}: ragdown_context will inject notes into prompts they have nothing to do with. Unset it to use ${scoreScale(config.embedder)?.minScore}.`,
+        `[ragdown] the hook's minimum score, ${config.hook.minScore}, is too low for ${config.embedder}, which scores an unrelated prompt up to ${unrelated}: ragdown_context will inject notes into prompts they have nothing to do with. Unset it (RAGDOWN_HOOK_MIN_SCORE, or the server settings in the web UI) to use ${scoreScale(config.embedder)?.minScore}.`,
       );
     }
     let pending: Ragdown | undefined;
@@ -115,6 +115,34 @@ export class Ragdown {
     };
   }
 
+  /**
+   * Index with another embedder from now on. The index is dropped and rebuilt from the files, as
+   * it is when a start finds a different embedder; searches meanwhile see what is indexed so far.
+   *
+   * @throws with `status: 409` in a reader: the index is the primary's to rebuild.
+   */
+  async switchEmbedder(embedder: Embedder): Promise<void> {
+    if (!this.indexer) {
+      throw Object.assign(
+        new Error("this process only reads the index: change the embedder where it is built"),
+        { status: 409 },
+      );
+    }
+    await this.indexer.stop();
+    this.embedder = embedder;
+    this.store = await Store.open(this.config.dataDir, embedder, true);
+    if (this.store.rebuiltBecause)
+      console.error(`[ragdown] rebuilding the index: ${this.store.rebuiltBecause}`);
+    this.startIndexer();
+  }
+
+  /** Start or stop watching the docs dir, to match `config.watch`. A reader has nothing to watch. */
+  setWatch(): void {
+    if (!this.indexer) return;
+    this.indexer.close();
+    if (this.config.watch) this.indexer.watch();
+  }
+
   async close(): Promise<void> {
     clearInterval(this.takeover);
     this.indexer?.close();
@@ -132,6 +160,11 @@ export class Ragdown {
 
   private becomePrimary(socket: Server): void {
     this.socket = socket;
+    this.startIndexer();
+    console.error(`[ragdown] primary for ${this.config.docsDir} (index: ${this.config.dataDir})`);
+  }
+
+  private startIndexer(): void {
     this.indexer = new Indexer(
       this.config.docsDir,
       this.store,
@@ -142,7 +175,6 @@ export class Ragdown {
       console.error(`[ragdown] first sync failed: ${errorMessage(error)}`);
     });
     if (this.config.watch) this.indexer.watch();
-    console.error(`[ragdown] primary for ${this.config.docsDir} (index: ${this.config.dataDir})`);
   }
 
   private watchForTakeover(handler: (req: Record<string, unknown>) => Promise<unknown>): void {

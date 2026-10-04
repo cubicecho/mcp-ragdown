@@ -31,6 +31,9 @@ export async function createEmbedder(config: Config): Promise<Embedder> {
   );
 }
 
+/** The names `RAGDOWN_EMBEDDER` takes for a local model, the default first. */
+export const LOCAL_EMBEDDERS: readonly string[] = ["granite-small", "bge-small", "embeddinggemma"];
+
 /** One local ONNX model: everything that differs between them, and nothing that does not. */
 interface LocalModel {
   /** Recorded in the index, so changing a model's weights or pooling means changing this. */

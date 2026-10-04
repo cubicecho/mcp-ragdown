@@ -85,11 +85,14 @@ async function stdio(config: Config): Promise<void> {
 }
 
 async function serve(config: Config): Promise<void> {
-  const [{ Ragdown }, { assertAuthConfigured, createHttpServer }] = await Promise.all([
-    import("./engine.ts"),
-    import("./http.ts"),
-  ]);
+  const [
+    { Ragdown },
+    { assertAuthConfigured, createHttpServer },
+    { applySettings, readServerSettings },
+  ] = await Promise.all([import("./engine.ts"), import("./http.ts"), import("./settings.ts")]);
   assertAuthConfigured(config);
+  // What the web UI saved wins over the environment it was started with.
+  applySettings(config, await readServerSettings(config.docsDir));
   const ready = Ragdown.start(config);
   ready.catch((error: unknown) => {
     console.error(`[ragdown] startup failed: ${errorMessage(error)}`);
