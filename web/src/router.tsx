@@ -33,7 +33,7 @@ const docsRoute = createRoute({
   component: DocsPage,
 });
 
-const SETTINGS_TABS: readonly string[] = ["folders", "browser", "server"];
+const SETTINGS_TABS: readonly string[] = ["folders", "device", "server"];
 
 /** Settings, with the open tab in the URL. No `tab` is the folders. */
 const settingsRoute = createRoute({

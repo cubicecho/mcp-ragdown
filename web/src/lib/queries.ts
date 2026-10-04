@@ -4,6 +4,7 @@ import {
   createFolder,
   deleteDoc,
   deleteFolder,
+  deleteLooseFile,
   getBacklinks,
   getDoc,
   getFile,
@@ -162,4 +163,9 @@ export const useUpdateFolder = () => {
 export const useDeleteFolder = () => {
   const invalidate = useInvalidateDocs();
   return useMutation({ mutationFn: deleteFolder, onSettled: () => invalidate() });
+};
+
+export const useDeleteLooseFile = () => {
+  const invalidate = useInvalidateDocs();
+  return useMutation({ mutationFn: deleteLooseFile, onSettled: () => invalidate() });
 };

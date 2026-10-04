@@ -112,7 +112,7 @@ export function CreateFolder({
       }
       footerActions={(close) => (
         <>
-          <Button variant="ghost" onClick={close}>
+          <Button variant="outline" onClick={close}>
             Cancel
           </Button>
           <form.AppForm>
@@ -259,7 +259,7 @@ export function EditFolder({ folder, onClose }: FolderDialogProps) {
       }
       footerActions={(close) => (
         <>
-          <Button variant="ghost" onClick={close}>
+          <Button variant="outline" onClick={close}>
             Cancel
           </Button>
           <form.AppForm>
@@ -336,7 +336,7 @@ export function RenameFolder({ folder, onClose }: FolderDialogProps) {
       }
       footerActions={(close) => (
         <>
-          <Button variant="ghost" onClick={close}>
+          <Button variant="outline" onClick={close}>
             Cancel
           </Button>
           <form.AppForm>
@@ -418,8 +418,8 @@ export function McpConfig({ folder, onClose }: FolderDialogProps) {
           {status.data?.auth_required ? (
             <p className="text-muted-foreground text-xs">
               {token
-                ? "Both include the token stored in this browser. Treat them like a password."
-                : "The server asks for a token, and this browser has none stored: add the Authorization header yourself."}
+                ? "Both include the token stored on this device. Treat them like a password."
+                : "The server asks for a token, and this device has none stored: add the Authorization header yourself."}
             </p>
           ) : null}
         </div>
@@ -432,7 +432,10 @@ function Snippet({ label, text }: { label: string; text: string }) {
   return (
     <div className="flex flex-col gap-1.5">
       <p className="font-medium text-sm">{label}</p>
-      <CodeBlock content={text} action={<CopyButton value={text} label={`Copy the ${label}`} />} />
+      <CodeBlock
+        content={text}
+        action={<CopyButton variant="outline" value={text} label={`Copy the ${label}`} />}
+      />
     </div>
   );
 }
