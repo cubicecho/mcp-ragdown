@@ -201,6 +201,10 @@ export const deleteFolder = (name: string) =>
     { method: "DELETE" },
   );
 
+/** Delete one of `loose_files`: a Markdown file directly in the docs directory, in no folder. */
+export const deleteLooseFile = (name: string) =>
+  request<{ name: string }>(`/api/loose${query({ name })}`, { method: "DELETE" });
+
 /** Every indexed file in `folder`, or in every folder when it is left out. */
 export const listDocs = async (folder?: string) =>
   (await request<{ docs: DocSummary[] }>(`/api/docs${query({ folder })}`)).docs;

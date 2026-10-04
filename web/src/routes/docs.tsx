@@ -599,11 +599,11 @@ function DocPreview({
           }
           action={
             <>
-              <CopyButton value={path} label="Copy path" />
+              <CopyButton variant="outline" value={path} label="Copy path" />
               <DownloadDoc path={path} />
               {writable && doc.data ? (
                 <ActionButton
-                  variant="ghost"
+                  variant="outline"
                   size="icon-sm"
                   label="Edit"
                   onClick={() => setEditing(true)}
@@ -696,7 +696,7 @@ function DownloadDoc({ path }: { path: string }) {
   const toast = useToast();
   return (
     <ActionButton
-      variant="ghost"
+      variant="outline"
       size="icon-sm"
       label="Download .md"
       disabled={busy}

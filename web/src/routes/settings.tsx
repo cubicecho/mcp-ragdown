@@ -33,21 +33,22 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemePicker } from "@/components/ui/theme-picker";
+import { useToast } from "@/components/ui/toast";
 import type { Folder, Status } from "@/lib/api";
 import { clearToken, getToken, requireAuth } from "@/lib/auth";
 import { formatAgo, formatCount } from "@/lib/format";
-import { useFolders, useStatus, useWritable } from "@/lib/queries";
+import { useDeleteLooseFile, useFolders, useStatus, useWritable } from "@/lib/queries";
 
-export type SettingsTab = "folders" | "browser" | "server";
+export type SettingsTab = "folders" | "device" | "server";
 
 const TABS: { value: SettingsTab; label: string }[] = [
   { value: "folders", label: "Folders" },
-  { value: "browser", label: "This browser" },
+  { value: "device", label: "This device" },
   { value: "server", label: "Server" },
 ];
 
 /**
- * The folders, what this browser remembers, and how the server was started, one tab each. The
+ * The folders, what this device remembers, and how the server was started, one tab each. The
  * server's tab is read-only: it comes from environment variables at start, so each row names the
  * variable that changes it. The open tab is in the URL, so a link can land on one.
  */
@@ -75,7 +76,7 @@ export function SettingsPage() {
     >
       <PageLayout
         title="Settings"
-        description="Folders, how this browser shows ragdown, and how the server is set up."
+        description="Folders, how this device shows ragdown, and how the server is set up."
         width="prose"
         breadcrumbs={
           // Under `md` the sidebar is gone, and its folder links with it.
@@ -98,9 +99,9 @@ export function SettingsPage() {
             <TabsContent value="folders" className="mt-0">
               <FoldersSection writable={writable} />
             </TabsContent>
-            <TabsContent value="browser" className="mt-0">
+            <TabsContent value="device" className="mt-0">
               <Section
-                description="Kept in this browser's storage. Other browsers keep their own."
+                description="Kept on this device, in this browser's storage. Other devices and browsers keep their own."
                 content={
                   <div className="flex flex-col gap-4">
                     <CardLayout
@@ -116,7 +117,7 @@ export function SettingsPage() {
             </TabsContent>
             <TabsContent value="server" className="mt-0">
               <Section
-                description="Read from environment variables when the server starts. Change one and restart the server to apply it."
+                description="What the index is doing, then how the server was started. The settings are read from environment variables at start: change one and restart the server to apply it."
                 content={
                   status.isError ? (
                     <QueryError
@@ -126,7 +127,8 @@ export function SettingsPage() {
                     />
                   ) : (
                     <div className="flex flex-col gap-4">
-                      <ServerCard status={status.data} loading={status.isPending} />
+                      <IndexStatusCard status={status.data} loading={status.isPending} />
+                      <IndexSettingsCard status={status.data} loading={status.isPending} />
                       <HookCard status={status.data} loading={status.isPending} />
                     </div>
                   )
@@ -177,25 +179,7 @@ function FoldersSection({ writable }: { writable: boolean }) {
       content={
         <div className="flex flex-col gap-4">
           <McpOffHint link={false} />
-          {loose.length > 0 ? (
-            <Alert
-              variant="warning"
-              title={`${formatCount(loose.length, "file")} outside every folder ${loose.length === 1 ? "is" : "are"} not indexed`}
-              description={
-                <>
-                  Markdown directly in the docs directory belongs to no folder. Move it into one to
-                  index it:{" "}
-                  {loose.slice(0, 10).map((file, index) => (
-                    <span key={file}>
-                      {index > 0 ? ", " : null}
-                      <Code>{file}</Code>
-                    </span>
-                  ))}
-                  {loose.length > 10 ? ` and ${loose.length - 10} more` : null}.
-                </>
-              }
-            />
-          ) : null}
+          {loose.length > 0 ? <LooseFiles files={loose} writable={writable} /> : null}
           <QueryState
             query={folders}
             what="the folders"
@@ -246,6 +230,52 @@ function FoldersSection({ writable }: { writable: boolean }) {
   );
 }
 
+/**
+ * The warning about Markdown outside every folder, and under it the files themselves, each with
+ * its own delete while the server takes writes: a stray file is otherwise only fixable on disk.
+ */
+function LooseFiles({ files, writable }: { files: string[]; writable: boolean }) {
+  const remove = useDeleteLooseFile();
+  const toast = useToast();
+  return (
+    <div className="flex flex-col gap-2">
+      <Alert
+        variant="warning"
+        title={`${formatCount(files.length, "file")} outside every folder ${files.length === 1 ? "is" : "are"} not indexed`}
+        description={`Markdown directly in the docs directory belongs to no folder. Move it into one to index it${writable ? ", or delete it here" : ""}.`}
+      />
+      <ul
+        aria-label="Files outside every folder"
+        className="flex flex-col divide-y rounded-lg border"
+      >
+        {files.map((file) => (
+          <li key={file} className="flex min-h-11 items-center justify-between gap-2 px-3 py-1.5">
+            <Code className="min-w-0 truncate">{file}</Code>
+            {writable ? (
+              <ConfirmButton
+                label={`Delete ${file}`}
+                variant="outline"
+                size="icon-xs"
+                disabled={remove.isPending}
+                title={`Delete ${file}?`}
+                description={`${file} is deleted from the docs directory on disk. It was never indexed, so no folder or agent loses anything.`}
+                onConfirm={() =>
+                  remove.mutate(file, {
+                    onSuccess: () => toast(`Deleted ${file}`, "success"),
+                    onError: (error) => toast(`Could not delete ${file}: ${error.message}`),
+                  })
+                }
+              >
+                <Trash2 className="text-destructive" aria-hidden />
+              </ConfirmButton>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function FolderRow({
   folder,
   writable,
@@ -275,43 +305,45 @@ function FolderRow({
           {folder.mcp ? "MCP" : "Human-only"}
         </Badge>
       </TableCell>
-      <TableCell className="text-right">
-        <ActionButton
-          variant="ghost"
-          size="icon-sm"
-          label={`Copy MCP config for ${folder.title}`}
-          onClick={() => onOpen("mcp")}
-        >
-          <Copy aria-hidden />
-        </ActionButton>
-        {writable ? (
-          <>
-            <ActionButton
-              variant="ghost"
-              size="icon-sm"
-              label={`Edit ${folder.title}`}
-              onClick={() => onOpen("edit")}
-            >
-              <Pencil aria-hidden />
-            </ActionButton>
-            <ActionButton
-              variant="ghost"
-              size="icon-sm"
-              label={`Rename ${folder.name}`}
-              onClick={() => onOpen("rename")}
-            >
-              <FolderPen aria-hidden />
-            </ActionButton>
-            <ActionButton
-              variant="ghost"
-              size="icon-sm"
-              label={`Delete ${folder.title}`}
-              onClick={() => onOpen("delete")}
-            >
-              <Trash2 className="text-destructive" aria-hidden />
-            </ActionButton>
-          </>
-        ) : null}
+      <TableCell>
+        <div className="flex justify-end gap-1">
+          <ActionButton
+            variant="outline"
+            size="icon-sm"
+            label={`Copy MCP config for ${folder.title}`}
+            onClick={() => onOpen("mcp")}
+          >
+            <Copy aria-hidden />
+          </ActionButton>
+          {writable ? (
+            <>
+              <ActionButton
+                variant="outline"
+                size="icon-sm"
+                label={`Edit ${folder.title}`}
+                onClick={() => onOpen("edit")}
+              >
+                <Pencil aria-hidden />
+              </ActionButton>
+              <ActionButton
+                variant="outline"
+                size="icon-sm"
+                label={`Rename ${folder.name}`}
+                onClick={() => onOpen("rename")}
+              >
+                <FolderPen aria-hidden />
+              </ActionButton>
+              <ActionButton
+                variant="outline"
+                size="icon-sm"
+                label={`Delete ${folder.title}`}
+                onClick={() => onOpen("delete")}
+              >
+                <Trash2 className="text-destructive" aria-hidden />
+              </ActionButton>
+            </>
+          ) : null}
+        </div>
       </TableCell>
     </TableRow>
   );
@@ -328,7 +360,7 @@ function AccessCard({ status, loading }: { status: Status | undefined; loading: 
       description={
         status && !status.auth_required
           ? "This server runs with SECURE_LOCAL_NET=true, so it asks for no token: anyone who can reach it can read the notes."
-          : "The server asks for the token set in RAGDOWN_TOKEN. This browser keeps it after you enter it once."
+          : "The server asks for the token set in RAGDOWN_TOKEN. This device keeps it after you enter it once."
       }
       loading={loading}
       content={
@@ -348,7 +380,7 @@ function AccessCard({ status, loading }: { status: Status | undefined; loading: 
                     tooltip={false}
                     disabled={!stored}
                     title="Forget the token?"
-                    description="This browser stops sending it, and asks for it again before it shows anything. Keep a copy: the server cannot show it to you."
+                    description="This device stops sending it, and asks for it again before it shows anything. Keep a copy: the server cannot show it to you."
                     confirmLabel="Forget"
                     onConfirm={() => {
                       clearToken();
@@ -367,11 +399,12 @@ function AccessCard({ status, loading }: { status: Status | undefined; loading: 
   );
 }
 
-function ServerCard({ status, loading }: { status: Status | undefined; loading: boolean }) {
+/** What the index is doing now: nothing here is set, so no row names a variable. */
+function IndexStatusCard({ status, loading }: { status: Status | undefined; loading: boolean }) {
   const sync = status?.last_sync;
   return (
     <CardLayout
-      title="Index"
+      title="Index status"
       description={status ? `${status.name} ${status.version}` : undefined}
       action={
         status ? (
@@ -385,56 +418,6 @@ function ServerCard({ status, loading }: { status: Status | undefined; loading: 
         status ? (
           <DescriptionList
             content={[
-              <PropertyRow
-                key="docs"
-                label="Docs directory"
-                value={
-                  <code className="break-all text-xs leading-5">{status.docs_dir ?? "—"}</code>
-                }
-                hint={<Env name="RAGDOWN_DOCS_DIR" />}
-              />,
-              <PropertyRow
-                key="embedder"
-                label="Embedder"
-                value={status.embedder ?? "—"}
-                hint={
-                  <>
-                    <Env name="RAGDOWN_EMBEDDER" />. A new one rebuilds the index, and wants its own
-                    hook minimum score.
-                  </>
-                }
-              />,
-              <PropertyRow
-                key="role"
-                label="Role"
-                value={status.role ?? "—"}
-                hint={
-                  status.role === "reader"
-                    ? "Another process owns the index; this one reads it."
-                    : "This process owns the index and keeps it in sync."
-                }
-              />,
-              <PropertyRow
-                key="read-only"
-                label="Read-only"
-                value={status.read_only === undefined ? "—" : <YesNo value={status.read_only} />}
-                hint={
-                  <>
-                    <Env name="RAGDOWN_READ_ONLY" />. On, the MCP write tools are hidden.
-                  </>
-                }
-              />,
-              <PropertyRow
-                key="watch"
-                label="Watch for changes"
-                value={<YesNo value={status.settings.watch} />}
-                hint={
-                  <>
-                    <Env name="RAGDOWN_WATCH" />. Off, the index syncs at start and on{" "}
-                    <Code>ragdown_reindex</Code> only.
-                  </>
-                }
-              />,
               <PropertyRow
                 key="indexed"
                 label="Indexed"
@@ -460,6 +443,75 @@ function ServerCard({ status, loading }: { status: Status | undefined; loading: 
                   sync
                     ? `${sync.added} added, ${sync.updated} updated, ${sync.removed} removed`
                     : undefined
+                }
+              />,
+              <PropertyRow
+                key="role"
+                label="Role"
+                value={status.role ?? "—"}
+                hint={
+                  status.role === "reader"
+                    ? "Another process owns the index; this one reads it."
+                    : "This process owns the index and keeps it in sync."
+                }
+              />,
+            ]}
+          />
+        ) : null
+      }
+    />
+  );
+}
+
+/** How the index was set up at start: each row names the variable that changes it. */
+function IndexSettingsCard({ status, loading }: { status: Status | undefined; loading: boolean }) {
+  return (
+    <CardLayout
+      title="Index settings"
+      description="What is indexed, with which model, and how it is kept in sync."
+      loading={loading}
+      content={
+        status ? (
+          <DescriptionList
+            content={[
+              <PropertyRow
+                key="docs"
+                label="Docs directory"
+                value={
+                  <code className="break-all text-xs leading-5">{status.docs_dir ?? "—"}</code>
+                }
+                hint={<Env name="RAGDOWN_DOCS_DIR" />}
+              />,
+              <PropertyRow
+                key="embedder"
+                label="Embedder"
+                value={status.embedder ?? "—"}
+                hint={
+                  <>
+                    <Env name="RAGDOWN_EMBEDDER" />. A new one rebuilds the index, and wants its own
+                    hook minimum score.
+                  </>
+                }
+              />,
+              <PropertyRow
+                key="read-only"
+                label="Read-only"
+                value={status.read_only === undefined ? "—" : <YesNo value={status.read_only} />}
+                hint={
+                  <>
+                    <Env name="RAGDOWN_READ_ONLY" />. On, the MCP write tools are hidden.
+                  </>
+                }
+              />,
+              <PropertyRow
+                key="watch"
+                label="Watch for changes"
+                value={<YesNo value={status.settings.watch} />}
+                hint={
+                  <>
+                    <Env name="RAGDOWN_WATCH" />. Off, the index syncs at start and on{" "}
+                    <Code>ragdown_reindex</Code> only.
+                  </>
                 }
               />,
             ]}

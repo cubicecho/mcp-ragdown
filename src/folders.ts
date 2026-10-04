@@ -155,6 +155,19 @@ export async function looseFiles(docsDir: string): Promise<string[]> {
 }
 
 /**
+ * Delete one Markdown file that sits directly in the docs dir, outside every folder.
+ *
+ * @throws with `status: 404` when `name` is not one of the loose files: a path, a folder, a
+ *   symlink and a file that is not Markdown are all that same answer.
+ */
+export async function deleteLooseFile(docsDir: string, name: string): Promise<void> {
+  if (!(await looseFiles(docsDir)).includes(name)) {
+    throw Object.assign(new Error(`no such file outside a folder: ${name}`), { status: 404 });
+  }
+  await rm(join(docsDir, name));
+}
+
+/**
  * Make a folder and its settings file.
  *
  * @throws with `status: 400` for a bad name, `409` when something by that name exists.

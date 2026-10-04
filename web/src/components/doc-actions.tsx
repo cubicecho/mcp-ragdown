@@ -112,7 +112,7 @@ export function UploadDocs({ folder, title }: { folder: string; title: string })
       open={open}
       onOpenChange={reset}
       trigger={
-        <ActionButton label="Upload Markdown files" variant="ghost" size="icon-sm">
+        <ActionButton label="Upload Markdown files" variant="outline" size="icon-sm">
           <Upload aria-hidden />
         </ActionButton>
       }
@@ -182,7 +182,7 @@ export function UploadDocs({ folder, title }: { folder: string; title: string })
                   ) : null}
                   <ActionButton
                     label={`Remove ${file.name}`}
-                    variant="ghost"
+                    variant="outline"
                     size="icon-sm"
                     disabled={busy}
                     onClick={() =>
@@ -206,7 +206,7 @@ export function UploadDocs({ folder, title }: { folder: string; title: string })
       }
       footerActions={(close) => (
         <>
-          <Button variant="ghost" onClick={close}>
+          <Button variant="outline" onClick={close}>
             Cancel
           </Button>
           <form.AppForm>
@@ -307,7 +307,7 @@ export function NewNote({
       onOpenChange={reset}
       trigger={
         trigger ?? (
-          <ActionButton label="New note" variant="ghost" size="icon-sm">
+          <ActionButton label="New note" variant="outline" size="icon-sm">
             <Plus aria-hidden />
           </ActionButton>
         )
@@ -381,7 +381,7 @@ export function NewNote({
       }
       footerActions={(close) => (
         <>
-          <Button variant="ghost" onClick={close}>
+          <Button variant="outline" onClick={close}>
             Cancel
           </Button>
           <form.AppForm>
@@ -450,7 +450,7 @@ export function RenameDoc({ path }: { path: string }) {
       open={open}
       onOpenChange={reset}
       trigger={
-        <ActionButton label="Rename or move" variant="ghost" size="icon-sm">
+        <ActionButton label="Rename or move" variant="outline" size="icon-sm">
           <FilePen aria-hidden />
         </ActionButton>
       }
@@ -499,7 +499,7 @@ export function RenameDoc({ path }: { path: string }) {
       }
       footerActions={(close) => (
         <>
-          <Button variant="ghost" onClick={close}>
+          <Button variant="outline" onClick={close}>
             Cancel
           </Button>
           <form.AppForm>
@@ -521,7 +521,7 @@ export function DeleteDoc({ path }: { path: string }) {
   return (
     <ConfirmButton
       label="Delete document"
-      variant="ghost"
+      variant="outline"
       size="icon-sm"
       disabled={remove.isPending}
       title="Delete this document?"

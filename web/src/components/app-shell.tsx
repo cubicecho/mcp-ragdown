@@ -66,7 +66,7 @@ function LockButton() {
   if (!status.data?.auth_required) return null;
   return (
     <ActionButton
-      variant="ghost"
+      variant="outline"
       size="icon-sm"
       label="Lock"
       hint="Forget the stored token"
@@ -81,7 +81,7 @@ function LockButton() {
   );
 }
 
-/** Settings, at the foot of the sidebar; the theme is chosen there, under Browser. */
+/** Settings, at the foot of the sidebar; the theme is chosen there, under This device. */
 function SettingsLink() {
   const matchRoute = useMatchRoute();
   return (
@@ -123,7 +123,7 @@ function Nav() {
         writable ? (
           <CreateFolder
             trigger={
-              <ActionButton variant="ghost" size="icon-sm" label="Create folder" side="right">
+              <ActionButton variant="outline" size="icon-sm" label="Create folder" side="right">
                 <Plus aria-hidden />
               </ActionButton>
             }
@@ -176,7 +176,7 @@ function FolderSwitcher() {
   return (
     <Menu>
       <MenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="min-w-0 max-w-40 gap-1">
+        <Button variant="outline" size="sm" className="min-w-0 max-w-40 gap-1">
           <Folder aria-hidden />
           <span className="truncate">{current?.title ?? "Folders"}</span>
           <ChevronDown aria-hidden />
