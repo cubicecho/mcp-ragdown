@@ -89,6 +89,10 @@
   color-scheme: light;
   --scrollbar-thumb: oklch(0.145 0 0 / 20%);
   --scrollbar-thumb-hover: oklch(0.145 0 0 / 35%);
+  /* The file tree's selected and hovered rows, in this palette rather than cubeui's tint. */
+  --active: var(--accent);
+  --active-foreground: var(--accent-foreground);
+  --hover: var(--muted);
 }
 
 .dark {
@@ -127,6 +131,10 @@
   color-scheme: dark;
   --scrollbar-thumb: oklch(1 0 0 / 18%);
   --scrollbar-thumb-hover: oklch(1 0 0 / 32%);
+  /* The file tree's selected and hovered rows, in this palette rather than cubeui's tint. */
+  --active: var(--accent);
+  --active-foreground: var(--accent-foreground);
+  --hover: var(--muted);
 }
 
 @layer base {

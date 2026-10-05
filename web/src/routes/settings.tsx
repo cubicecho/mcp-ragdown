@@ -1,7 +1,6 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
-import { FolderPen } from "@/components/app-icons";
 import { CardLayout } from "@/components/card-layout";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DescriptionList, PropertyRow } from "@/components/description-list";
@@ -22,7 +21,15 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Code } from "@/components/ui/code";
-import { ArrowLeft, Copy, Folder as FolderIcon, Pencil, Plus, Trash2 } from "@/components/ui/icons";
+import {
+  ArrowLeft,
+  Copy,
+  Folder as FolderIcon,
+  FolderPen,
+  Pencil,
+  Plus,
+  Trash2,
+} from "@/components/ui/icons";
 import {
   Table,
   TableBody,

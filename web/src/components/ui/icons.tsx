@@ -15,6 +15,7 @@ export function icon(Source: LucideIcon): LucideIcon {
 }
 
 export {
+  ArrowDownWideNarrow,
   ArrowLeft,
   ArrowRight,
   Calendar,
@@ -32,10 +33,14 @@ export {
   Ellipsis,
   Eye,
   EyeOff,
+  File,
+  FilePen,
   FileText,
   Folder,
+  FolderPen,
   Info,
   KeyRound,
+  Library,
   LoaderCircle,
   Lock,
   Monitor,
@@ -55,5 +60,6 @@ export {
   TriangleAlert,
   Undo2,
   Upload,
+  UserRound,
   X,
 } from "lucide-react";

@@ -1,7 +1,7 @@
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
-import { ArrowDownWideNarrow, FilePlus } from "@/components/app-icons";
+import { FilePlus } from "@/components/app-icons";
 import { Backlinks } from "@/components/backlinks";
 import { DeleteDoc, NewNote, RenameDoc, UploadDocs } from "@/components/doc-actions";
 import { DocEditor } from "@/components/doc-editor";
@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import {
+  ArrowDownWideNarrow,
   Download,
   FileText,
   Folder as FolderIcon,
@@ -32,11 +33,11 @@ import { SegmentedButton, SegmentedGroup } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { type DocSummary, type Folder, getFile, type SearchHit } from "@/lib/api";
-import type { TreeEntry } from "@/lib/file-tree";
 import { inFolder, setLastFolder, withinFolder } from "@/lib/folders";
 import { formatAgo, formatBytes, formatCount } from "@/lib/format";
 import { listValue, slug, splitFrontmatter } from "@/lib/markdown";
 import { useDoc, useDocs, useFolders, useSearch, useWritable } from "@/lib/queries";
+import type { TreeEntry } from "@/lib/tree";
 import { cn } from "@/lib/utils";
 
 const route = getRouteApi("/f/$folder");
@@ -289,7 +290,7 @@ function DocList({
                 label="Notes"
                 entries={entries}
                 selected={selected ? withinFolder(selected) : undefined}
-                link={(node) => (
+                linkSlot={(node) => (
                   <Link
                     to="/f/$folder"
                     params={{ folder }}
@@ -297,8 +298,8 @@ function DocList({
                     title={node.entry?.doc.title}
                   />
                 )}
-                badge={(node) => (node.entry?.doc.superseded_by.length ? <Superseded /> : null)}
-                action={(node) =>
+                meta={(node) => (node.entry?.doc.superseded_by.length ? <Superseded /> : null)}
+                actionSlot={(node) =>
                   writable && node.type === "dir" ? (
                     <NewNote
                       folder={folder}
