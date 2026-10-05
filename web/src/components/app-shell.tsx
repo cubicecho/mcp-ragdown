@@ -1,6 +1,5 @@
 import { createLink, Link, Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { ActionButton } from "@/components/action-button";
-import { Library, UserRound } from "@/components/app-icons";
 import { CreateFolder } from "@/components/folder-actions";
 import { EmptyState } from "@/components/page";
 import { QueryState } from "@/components/query-state";
@@ -8,7 +7,16 @@ import { BarNavItem, Sidebar, SidebarNavItem, SidebarSection } from "@/component
 import { SidebarLayout } from "@/components/split-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, Folder, Lock, Plug, Plus, Settings } from "@/components/ui/icons";
+import {
+  ChevronDown,
+  Folder,
+  Library,
+  Lock,
+  Plug,
+  Plus,
+  Settings,
+  UserRound,
+} from "@/components/ui/icons";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { clearToken, requireAuth } from "@/lib/auth";

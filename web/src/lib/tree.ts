@@ -1,9 +1,3 @@
-/*
- * Copied from mcp-skills-manager (`app/src/components/domain/skill/editor/file-tree.ts`), made
- * generic over the entry as cubicecho/cubeui#226 proposes. It moves to cubeui with `FileTree`.
- */
-
-/** One file or folder in a flat listing, addressed by its `/` path. */
 export interface TreeEntry {
   path: string;
   type: "file" | "dir";
@@ -11,6 +5,7 @@ export interface TreeEntry {
 
 /** One file or folder in a tree, with its children nested under it. */
 export interface TreeNode<T extends TreeEntry = TreeEntry> {
+  /** The last segment of the path: what the row is called. */
   name: string;
   path: string;
   type: "file" | "dir";
@@ -20,7 +15,12 @@ export interface TreeNode<T extends TreeEntry = TreeEntry> {
 }
 
 /**
- * Build a nested tree from a flat entry list, synthesizing any missing parent folders.
+ * Nest a flat path list, adding any parent folder the list leaves out.
+ *
+ * A listing of files is what a server hands back — an object store has no folders at all, and a
+ * directory walk that skips empty ones names a folder only through what is inside it — so a parent
+ * is made from the path of its child rather than asked for.
+ *
  * @param entries the files and folders, in any order.
  * @returns the root nodes, folders first and then by name at every level.
  */
@@ -30,7 +30,7 @@ export function buildTree<T extends TreeEntry>(entries: readonly T[]): TreeNode<
   const ensure = (path: string, type: "file" | "dir", entry?: T): TreeNode<T> => {
     const found = byPath.get(path);
     if (found) {
-      // A folder synthesized for a child that came first takes its own entry when it arrives.
+      // A folder made for a child that came first takes its own entry when it arrives.
       if (entry) found.entry = entry;
       return found;
     }
