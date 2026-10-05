@@ -45,8 +45,10 @@ describe("MCP server", () => {
     expect((await writable.client.listTools()).tools.map((t) => t.name).sort()).toEqual([
       "ragdown_backlinks",
       "ragdown_context",
+      "ragdown_delete",
       "ragdown_edit",
       "ragdown_list",
+      "ragdown_move",
       "ragdown_read_doc",
       "ragdown_recall",
       "ragdown_reindex",
@@ -209,6 +211,62 @@ describe("MCP server", () => {
     expect(await readFile(join(t.docsDir, "a.md"), "utf8")).toBe(
       "# A\n\n## One\n\nfirst\n\nmore\n\n## Two\n\nsecond\n",
     );
+  });
+
+  it("moves a note and a subfolder, keeping the links to them", async () => {
+    const t = await connect();
+    await t.write("index.md", "# Index\n\nSee [[backups#Restore]] and [backups](ops/backups.md).");
+    await t.rag.sync(false);
+
+    const renamed = await t.call("ragdown_move", {
+      from: "ops/backups.md",
+      to: "ops/snapshots.md",
+    });
+    expect(JSON.parse(renamed.text)).toMatchObject({
+      from: "ops/backups.md",
+      to: "ops/snapshots.md",
+      updated: ["index.md"],
+    });
+    const folder = await t.call("ragdown_move", { from: "ops", to: "infra/db" });
+    expect(JSON.parse(folder.text)).toMatchObject({ from: "ops", to: "infra/db" });
+    expect(await readFile(join(t.docsDir, "index.md"), "utf8")).toBe(
+      "# Index\n\nSee [[snapshots#Restore]] and [backups](infra/db/snapshots.md).",
+    );
+    const listed = JSON.parse((await t.call("ragdown_list", {})).text);
+    expect(listed.notes.map((note: { path: string }) => note.path)).toEqual([
+      "index.md",
+      "infra/db/snapshots.md",
+    ]);
+
+    const taken = await t.call("ragdown_move", { from: "index.md", to: "infra/db/snapshots.md" });
+    expect(taken).toMatchObject({ isError: true, text: expect.stringMatching(/already exists/) });
+    const outside = await t.call("ragdown_move", { from: "index.md", to: "../index.md" });
+    expect(outside.isError).toBe(true);
+  });
+
+  it("deletes a note, and a subfolder that holds anything only when told to", async () => {
+    const t = await connect();
+    await t.write("ops/diagram.png", "png");
+    await t.write("ops/old/pg.md", "# Postgres");
+    await t.rag.sync(false);
+
+    const note = await t.call("ragdown_delete", { path: "ops/old/pg.md" });
+    expect(JSON.parse(note.text)).toMatchObject({ path: "ops/old/pg.md", sync: { removed: 1 } });
+    const again = await t.call("ragdown_delete", { path: "ops/old/pg.md" });
+    expect(again).toMatchObject({ isError: true, text: expect.stringMatching(/no such/) });
+    expect((await t.call("ragdown_delete", { path: "ops/old" })).isError).toBe(false);
+
+    const full = await t.call("ragdown_delete", { path: "ops" });
+    expect(full).toMatchObject({ isError: true, text: expect.stringMatching(/recursive/) });
+    expect(await readFile(join(t.docsDir, "ops/backups.md"), "utf8")).toContain("# Backups");
+    const attachment = await t.call("ragdown_delete", { path: "ops/diagram.png" });
+    expect(attachment.isError).toBe(true);
+
+    const gone = await t.call("ragdown_delete", { path: "ops", recursive: true });
+    expect(JSON.parse(gone.text)).toMatchObject({ path: "ops", sync: { removed: 1 } });
+    expect(JSON.parse((await t.call("ragdown_list", {})).text).total).toBe(0);
+    expect((await t.call("ragdown_delete", { path: ".", recursive: true })).isError).toBe(true);
+    expect((await t.call("ragdown_delete", { path: "..", recursive: true })).isError).toBe(true);
   });
 
   it("lists notes by folder and tag, most recent first", async () => {
