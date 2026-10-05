@@ -43,15 +43,21 @@ permalink: /docs/
             <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
             <tbody>
               <tr><td><code>ragdown_recall</code></td><td>Hybrid search. Returns path, line range, heading breadcrumb, tags and similarity for each hit. Takes <code>top_k</code>, <code>path_prefix</code>, <code>tag</code>, <code>format</code> (<code>text</code> or <code>json</code>) and <code>max_chars</code>.</td></tr>
-              <tr><td><code>ragdown_read_doc</code></td><td>Reads a file, or a line range of one, straight from disk. Never clipped. Also takes a wikilink target (<code>Note#Heading</code>); see <a href="#obsidian">Obsidian</a>.</td></tr>
+              <tr><td><code>ragdown_read_doc</code></td><td>Reads a file, or a line range of one, straight from disk. Never clipped. Also takes a wikilink target (<code>Note#Heading</code>); see <a href="#obsidian">Obsidian</a>. Returns the whole file's <code>hash</code>, for <code>ragdown_edit</code>, and <code>superseded_by</code> when another note replaces it.</td></tr>
+              <tr><td><code>ragdown_backlinks</code></td><td>The notes that link to a <code>path</code> — by wikilink, alias or relative Markdown link — with the lines the links are on. Links in code are not links.</td></tr>
+              <tr><td><code>ragdown_list</code></td><td>Browses rather than searches: each note's path, title, tags, last change, and <code>superseded_by</code> if it has been replaced. Takes <code>path_prefix</code>, <code>tag</code>, <code>sort</code> (<code>path</code> or <code>recent</code>) and <code>limit</code>.</td></tr>
               <tr><td><code>ragdown_context</code></td><td>For hooks: the sections related to a <code>prompt</code> as a <code>&lt;ragdown-context&gt;</code> block, or empty text. Filters by similarity, skips short prompts and slash commands, and never repeats a section for the same <code>session_id</code>. Takes <code>top_k</code>, <code>min_score</code>, <code>min_ratio</code> and <code>max_chars</code> to override the <code>RAGDOWN_HOOK_*</code> defaults.</td></tr>
               <tr><td><code>ragdown_stats</code></td><td>Folder, index size, embedder, role (primary or reader), whether a sync is running, and the last sync.</td></tr>
               <tr><td><code>ragdown_remember</code></td><td>Writes a new note (with frontmatter) under <code>RAGDOWN_NOTES_DIR</code> and indexes it before returning. Never overwrites a file. <code>supersedes</code> lists the notes this one replaces, which search then skips; <code>session_id</code> is recorded as provenance.</td></tr>
+              <tr><td><code>ragdown_edit</code></td><td>Changes a note at a <code>path</code>, or creates one. <code>text</code> replaces the whole file, which for an existing note needs <code>base_hash</code> — the <code>hash</code> <code>ragdown_read_doc</code> gave — so an agent never overwrites a version it has not read. <code>append: true</code> adds <code>text</code> at the end instead, or with <code>heading</code> at the end of that section. A file that changed since <code>base_hash</code> is not written.</td></tr>
+              <tr><td><code>ragdown_move</code></td><td>Renames or moves a note, or a subfolder with everything in it, from <code>from</code> to <code>to</code>, and rewrites every wikilink and relative Markdown link that pointed at what moved. Returns the notes it <code>updated</code>. Never overwrites what is already at <code>to</code>.</td></tr>
+              <tr><td><code>ragdown_delete</code></td><td>Deletes a note or a subfolder at <code>path</code>, for good: there is no trash. A subfolder that holds anything needs <code>recursive: true</code>, and then goes with its attachments too. Links to a deleted note are left as they are.</td></tr>
               <tr><td><code>ragdown_reindex</code></td><td>Syncs now; <code>full: true</code> re-embeds everything.</td></tr>
             </tbody>
           </table>
         </div>
-        <p>The two write tools, <code>ragdown_remember</code> and <code>ragdown_reindex</code>, are not listed when
+        <p>The write tools — <code>ragdown_remember</code>, <code>ragdown_edit</code>, <code>ragdown_move</code>,
+          <code>ragdown_delete</code> and <code>ragdown_reindex</code> — are not listed when
           <code>RAGDOWN_READ_ONLY=true</code>.</p>
 
         <h3>Superseding a note</h3>
@@ -103,6 +109,8 @@ created_by: ragdown_remember
             <code>&lt;folder&gt;/&lt;RAGDOWN_NOTES_DIR&gt;</code>.</li>
           <li><code>ragdown_stats</code> counts the subfolder's files and chunks, and <code>ragdown_context</code>'s
             per-session memory is kept separately for each endpoint.</li>
+          <li><code>ragdown_edit</code>, <code>ragdown_move</code> and <code>ragdown_delete</code> reach only what is
+            under it; a move still rewrites the links to what moved in the rest of the folder.</li>
           <li><code>ragdown_reindex</code> still syncs everything.</li>
         </ul>
         <p>A missing subfolder, a file, a symlink or a dot-folder is a 404.</p>
