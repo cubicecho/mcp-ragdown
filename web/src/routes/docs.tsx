@@ -1,10 +1,11 @@
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
-import { ArrowDownWideNarrow } from "@/components/app-icons";
+import { ArrowDownWideNarrow, FilePlus } from "@/components/app-icons";
 import { Backlinks } from "@/components/backlinks";
 import { DeleteDoc, NewNote, RenameDoc, UploadDocs } from "@/components/doc-actions";
 import { DocEditor } from "@/components/doc-editor";
+import { FileTree } from "@/components/file-tree";
 import { McpOffHint } from "@/components/folder-actions";
 import { StickyHeaderContentFooter } from "@/components/header-content-footer";
 import { MarkdownPreview } from "@/components/markdown-preview";
@@ -31,6 +32,7 @@ import { SegmentedButton, SegmentedGroup } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { type DocSummary, type Folder, getFile, type SearchHit } from "@/lib/api";
+import type { TreeEntry } from "@/lib/file-tree";
 import { inFolder, setLastFolder, withinFolder } from "@/lib/folders";
 import { formatAgo, formatBytes, formatCount } from "@/lib/format";
 import { listValue, slug, splitFrontmatter } from "@/lib/markdown";
@@ -121,6 +123,9 @@ function useDebounced<T>(value: T, ms: number): T {
 
 type Mode = "filter" | "search";
 
+/** A note as the file tree lists it: its path within the folder, and the note. */
+type NoteEntry = TreeEntry & { doc: DocSummary };
+
 /**
  * The folder's files. Filter narrows the list by title, path, tag and alias as you type, on this
  * side; search asks the index, so it finds what a note says rather than what it is called.
@@ -160,6 +165,10 @@ function DocList({
     });
     return sort === "recent" ? matching.sort((a, b) => b.mtime_ms - a.mtime_ms) : matching;
   }, [docs.data, text, tag, mode, sort]);
+  const entries = useMemo(
+    () => rows.map((doc): NoteEntry => ({ path: withinFolder(doc.path), type: "file", doc })),
+    [rows],
+  );
   const chunks = docs.data?.reduce((sum, doc) => sum + doc.chunks, 0) ?? 0;
   const searching = mode === "search" && query !== "";
 
@@ -267,12 +276,48 @@ function DocList({
                 />
               }
             />
-            {/* `ItemGroup` no longer claims `role="list"` itself; these rows are list items, so it does here. */}
-            <ItemGroup role="list">
-              {rows.map((doc) => (
-                <DocRow key={doc.path} folder={folder} doc={doc} active={doc.path === selected} />
-              ))}
-            </ItemGroup>
+            {sort === "recent" ? (
+              // Newest first has no folders to nest under, so it stays a flat list.
+              // `ItemGroup` no longer claims `role="list"` itself; these rows are list items, so it does here.
+              <ItemGroup role="list">
+                {rows.map((doc) => (
+                  <DocRow key={doc.path} folder={folder} doc={doc} active={doc.path === selected} />
+                ))}
+              </ItemGroup>
+            ) : (
+              <FileTree
+                label="Notes"
+                entries={entries}
+                selected={selected ? withinFolder(selected) : undefined}
+                link={(node) => (
+                  <Link
+                    to="/f/$folder"
+                    params={{ folder }}
+                    search={(prev) => ({ ...prev, doc: node.path })}
+                    title={node.entry?.doc.title}
+                  />
+                )}
+                badge={(node) => (node.entry?.doc.superseded_by.length ? <Superseded /> : null)}
+                action={(node) =>
+                  writable && node.type === "dir" ? (
+                    <NewNote
+                      folder={folder}
+                      title={title}
+                      dir={node.path}
+                      trigger={
+                        <ActionButton
+                          variant="ghost"
+                          size="icon-xs"
+                          label={`New note in ${node.path}`}
+                        >
+                          <FilePlus aria-hidden />
+                        </ActionButton>
+                      }
+                    />
+                  ) : null
+                }
+              />
+            )}
           </div>
         )
       }
@@ -421,6 +466,14 @@ function HitRow({ folder, hit, active }: { folder: string; hit: SearchHit; activ
   );
 }
 
+function Superseded() {
+  return (
+    <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
+      superseded
+    </Badge>
+  );
+}
+
 function DocRow({ folder, doc, active }: { folder: string; doc: DocSummary; active: boolean }) {
   const relative = withinFolder(doc.path);
   const dir = relative.includes("/") ? relative.slice(0, relative.lastIndexOf("/") + 1) : "";
@@ -441,11 +494,7 @@ function DocRow({ folder, doc, active }: { folder: string; doc: DocSummary; acti
         <ItemContent className="min-w-0 gap-0.5">
           <ItemTitle className="w-full">
             <span className="truncate">{doc.title}</span>
-            {doc.superseded_by.length > 0 ? (
-              <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
-                superseded
-              </Badge>
-            ) : null}
+            {doc.superseded_by.length > 0 ? <Superseded /> : null}
           </ItemTitle>
           <ItemDescription className="truncate text-xs">
             <span className="text-muted-foreground/70">{dir}</span>
