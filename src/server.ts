@@ -16,7 +16,7 @@ export const VERSION: string = (
 
 /**
  * The MCP surface, and the only way an agent or a hook reaches the notes. Tool names are `ragdown_*`,
- * after zeromem's `zeromem_*`: recall, read, list, backlinks, remember, edit, stats, plus reindex and context (for hooks). Under `RAGDOWN_READ_ONLY` the write tools are not listed at all — an
+ * after zeromem's `zeromem_*`: recall, read, list, backlinks, remember, edit, move, delete, stats, plus reindex and context (for hooks). Under `RAGDOWN_READ_ONLY` the write tools are not listed at all — an
  * agent should never see a tool it cannot call.
  *
  * @param ready resolves to the scope — the folder these tools treat as the root — once the model is
@@ -285,6 +285,61 @@ export function createMcpServer(
             baseHash: args.base_hash,
           }),
         ),
+    );
+
+    server.registerTool(
+      "ragdown_move",
+      {
+        title: "Move or rename a note or subfolder",
+        description:
+          "Rename or move a note, or a subfolder with everything in it, to a new path inside the notes folder. Every link that pointed at what moved ([[wikilinks]] and relative Markdown links, in any note) is rewritten to still point at it, and the result lists the notes that were updated. Never overwrites: if something is already at `to`, nothing moves. Use this rather than ragdown_edit plus a delete, which would break the links.",
+        inputSchema: {
+          from: z
+            .string()
+            .min(1)
+            .describe(
+              "Path of the note or subfolder relative to the notes root, e.g. 'ops/pg.md' or 'ops'",
+            ),
+          to: z
+            .string()
+            .min(1)
+            .describe(
+              "Its whole new path, name included: 'db/postgres.md', not 'db/'. Missing subfolders on the way are created. A note keeps a Markdown extension",
+            ),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      (args) => run(ready, (rag) => rag.move(args.from, args.to)),
+    );
+
+    server.registerTool(
+      "ragdown_delete",
+      {
+        title: "Delete a note or subfolder",
+        description:
+          "Permanently delete a note, or a subfolder, from the notes folder and the index. There is no trash and no undo. Call ragdown_backlinks first: links to a deleted note are left as they are, pointing at nothing. When a note is out of date rather than unwanted, prefer ragdown_remember with supersedes, which keeps the old text readable. A subfolder that holds anything is deleted only with recursive: true.",
+        inputSchema: {
+          path: z
+            .string()
+            .min(1)
+            .describe(
+              "Path of the note or subfolder relative to the notes root, e.g. 'ops/pg.md' or 'ops'",
+            ),
+          recursive: z
+            .boolean()
+            .default(false)
+            .describe(
+              "For a subfolder: also delete everything in it — notes, attachments and any other files",
+            ),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
+      },
+      (args) => run(ready, (rag) => rag.remove(args.path, args.recursive)),
     );
 
     server.registerTool(

@@ -8,6 +8,7 @@ import {
   realpath,
   rename,
   rm,
+  rmdir,
   stat,
   unlink,
   writeFile,
@@ -571,28 +572,36 @@ export class Scope {
   }
 
   /**
-   * Rename or move a note within its folder, and rewrite every link in the folder that pointed at
-   * it — wikilinks, aliases aside, and relative Markdown links — so none of them breaks. The note's
-   * own links are rewritten too where the move would break them. Any link that resolved before
-   * resolves to the same note after; one that already resolved to nothing is left alone.
+   * Rename or move a note, or a subfolder with everything in it, within its folder, and rewrite
+   * every link in the folder that pointed at what moved — wikilinks, aliases aside, and relative
+   * Markdown links — so none of them breaks. The moved notes' own links are rewritten too where the
+   * move would break them. Any link that resolved before resolves to the same note after; one that
+   * already resolved to nothing is left alone.
    *
    * A rewritten wikilink is the shortest target that still resolves where it should: the name when
    * that is unambiguous, else as much of the path as it takes. Headings and shown text are kept.
    *
-   * @throws with `status: 400` for a bad path or moving onto itself, `404` for no such note, and
-   *   `409` when something is already at `to`.
+   * @throws with `status: 400` for a bad path, moving onto itself or a subfolder into itself, `404`
+   *   for nothing at `from`, and `409` when something is already at `to`.
    */
-  async moveDoc(from: string, to: string) {
-    const source = await this.resolvePath(from, { create: false, markdownOnly: true });
-    const dest = await this.resolvePath(to, { create: false, markdownOnly: true });
+  async move(from: string, to: string) {
+    const anywhere = await this.resolvePath(from, { create: false, markdownOnly: false });
+    const isFolder = (await lstat(anywhere.full).catch(() => undefined))?.isDirectory() === true;
+    const source = isFolder
+      ? anywhere
+      : await this.resolvePath(from, { create: false, markdownOnly: true });
+    const dest = await this.resolvePath(to, { create: false, markdownOnly: !isFolder });
     const info = await lstat(source.full).catch(() => undefined);
-    if (!info?.isFile()) {
-      throw Object.assign(new Error(`no such note: ${from}`), { status: 404 });
+    if (!info || !(isFolder || info.isFile())) {
+      throw Object.assign(new Error(`no such note or folder: ${from}`), { status: 404 });
     }
     if (source.full === dest.full) {
       throw Object.assign(new Error(`${from} is already there`), { status: 400 });
     }
-    // A case-only rename on a case-insensitive disk finds the note itself at `to`: that is fine.
+    if (isFolder && isInside(source.full, dest.full)) {
+      throw Object.assign(new Error(`cannot move ${from} into itself`), { status: 400 });
+    }
+    // A case-only rename on a case-insensitive disk finds the source itself at `to`: that is fine.
     const occupied = await lstat(dest.full).catch(() => undefined);
     if (occupied && (occupied.ino !== info.ino || occupied.dev !== info.dev)) {
       throw Object.assign(new Error(`already exists: ${to}`), { status: 409 });
@@ -603,12 +612,20 @@ export class Scope {
     const inFolder = (full: string) => toPosix(relative(docsDir, full)).slice(prefix.length);
     const oldPath = inFolder(source.full);
     const newPath = inFolder(dest.full);
+    /** Where a file in the folder is after the move: itself, unless it is what moves or under it. */
+    const moved = (path: string) => {
+      if (path === oldPath) return newPath;
+      return isFolder && path.startsWith(`${oldPath}/`)
+        ? `${newPath}${path.slice(oldPath.length)}`
+        : path;
+    };
     const before = await this.folderNotes();
-    if (!before.some((note) => note.path === oldPath)) {
+    if (!isFolder && !before.some((note) => note.path === oldPath)) {
       before.push({ path: oldPath, aliases: [] });
     }
-    const after = before.map((note) => (note.path === oldPath ? { ...note, path: newPath } : note));
+    const after = before.map((note) => ({ ...note, path: moved(note.path) }));
     const attachments = await listAttachments(resolve(docsDir, this.folder));
+    const attachmentsAfter = attachments.map(moved);
 
     // Every note's new text, read and rewritten before anything is written.
     const rewrites = new Map<string, { original: string; text: string }>();
@@ -617,17 +634,17 @@ export class Scope {
       const original = await readFile(full, "utf8").catch(() => undefined);
       if (original === undefined) continue;
       const from = note.path;
-      const at = from === oldPath ? newPath : from;
+      const at = moved(from);
       const edits: { start: number; end: number; text: string }[] = [];
       for (const ref of findLinks(original)) {
         const was = resolveRef(ref, from, before, attachments);
         if (!was) continue;
-        const want = was === oldPath ? newPath : was;
-        if (resolveRef(ref, at, after, attachments) === want) continue;
+        const want = moved(was);
+        if (resolveRef(ref, at, after, attachmentsAfter) === want) continue;
         edits.push({
           start: ref.targetStart,
           end: ref.targetEnd,
-          text: linkTarget(ref, want, at, after, attachments),
+          text: linkTarget(ref, want, at, after, attachmentsAfter),
         });
       }
       let text = original;
@@ -637,26 +654,31 @@ export class Scope {
       if (text !== original || from === oldPath) rewrites.set(from, { original, text });
     }
 
-    const moved = rewrites.get(oldPath);
-    if (!moved) throw Object.assign(new Error(`no such note: ${from}`), { status: 404 });
     await mkdir(dirname(dest.full), { recursive: true });
-    if (occupied) {
+    if (isFolder) {
+      // One rename carries the notes, the attachments and whatever else is in there.
       await rename(source.full, dest.full);
-      if (moved.text !== moved.original) await writeFile(dest.full, moved.text);
     } else {
-      try {
-        await writeFile(dest.full, moved.text, { flag: "wx" });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        throw Object.assign(new Error(`already exists: ${to}`), { status: 409 });
+      const note = rewrites.get(oldPath);
+      if (!note) throw Object.assign(new Error(`no such note: ${from}`), { status: 404 });
+      if (occupied) {
+        await rename(source.full, dest.full);
+        if (note.text !== note.original) await writeFile(dest.full, note.text);
+      } else {
+        try {
+          await writeFile(dest.full, note.text, { flag: "wx" });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+          throw Object.assign(new Error(`already exists: ${to}`), { status: 409 });
+        }
+        await unlink(source.full);
       }
-      await unlink(source.full);
+      rewrites.delete(oldPath);
     }
 
     const updated: string[] = [];
     for (const [path, { original, text }] of rewrites) {
-      if (path === oldPath) continue;
-      const full = resolve(docsDir, `${prefix}${path}`);
+      const full = resolve(docsDir, `${prefix}${moved(path)}`);
       // Changed since it was read, by an editor or an agent: theirs wins, and this link is not fixed.
       if ((await readFile(full, "utf8").catch(() => undefined)) !== original) continue;
       const temp = join(dirname(full), `.${randomUUID()}.tmp`);
@@ -667,7 +689,7 @@ export class Scope {
         await rm(temp, { force: true });
         throw error;
       }
-      updated.push(path);
+      updated.push(moved(path));
     }
     const scoped = (path: string) => this.toScoped(`${prefix}${path}`);
     return {
@@ -689,6 +711,29 @@ export class Scope {
       throw Object.assign(new Error(`no such document: ${path}`), { status: 404 });
     }
     await unlink(full);
+    return { path: relPath, sync: await this.rag.sync(false) };
+  }
+
+  /**
+   * An agent's delete (`ragdown_delete`): a note as `deleteDoc` does, or a subfolder. Nothing is
+   * kept — there is no trash — so a subfolder that holds anything goes only with `recursive`, and
+   * then with its notes, its attachments and every file the index skips.
+   *
+   * @throws with `status: 400` for a bad path, `404` for nothing there, and `409` for a subfolder
+   *   that is not empty without `recursive`.
+   */
+  async remove(path: string, recursive = false) {
+    const { full, relPath } = await this.resolvePath(path, { create: false, markdownOnly: false });
+    if (!(await lstat(full).catch(() => undefined))?.isDirectory()) return this.deleteDoc(path);
+    const held = (await readdir(full)).length;
+    if (held > 0 && !recursive) {
+      throw Object.assign(
+        new Error(`${relPath} is not empty: pass recursive: true to delete everything in it`),
+        { status: 409 },
+      );
+    }
+    if (held > 0) await rm(full, { recursive: true });
+    else await rmdir(full);
     return { path: relPath, sync: await this.rag.sync(false) };
   }
 
