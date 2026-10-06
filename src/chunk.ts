@@ -7,6 +7,7 @@ import { defaults } from "./defaults.ts";
  */
 export const CHUNKER_VERSION = 2;
 
+/** One heading-scoped piece of a document: what is embedded, stored and returned by a search. */
 export interface Chunk {
   /** Position within the file, from 0. */
   index: number;

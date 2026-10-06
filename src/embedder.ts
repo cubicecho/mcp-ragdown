@@ -4,6 +4,7 @@ import { Agent } from "undici";
 import type { Config } from "./config.ts";
 import { defaults } from "./defaults.ts";
 
+/** What turns text into vectors: a local model, an OpenAI-compatible endpoint, or the test hash. */
 export interface Embedder {
   /** Recorded in the index; a different name on the next start rebuilds it. */
   readonly name: string;
@@ -131,7 +132,7 @@ class LocalEmbedder implements Embedder {
     this.dim = dim;
   }
 
-  /** @param threads ORT intra-op threads; 0 picks half the logical cores. */
+  /** @param threads - ORT intra-op threads; 0 picks half the logical cores. */
   static async load(model: LocalModel, modelsDir: string, threads: number): Promise<LocalEmbedder> {
     const { pipeline, env } = await import("@huggingface/transformers");
     env.cacheDir = modelsDir;

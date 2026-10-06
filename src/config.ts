@@ -14,6 +14,7 @@ import type { ServerSettings } from "./settings.ts";
  */
 export type Mode = "folders" | "single";
 
+/** Everything the server is configured with, read from the environment once at start. */
 export interface Config {
   /** Absolute path of the Markdown folder; the files there are the source of truth. */
   docsDir: string;

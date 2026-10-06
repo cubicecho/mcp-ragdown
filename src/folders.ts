@@ -30,6 +30,7 @@ export type FolderChanges = Partial<Omit<FolderSettings, "hook">> & {
   hook?: HookChanges;
 };
 
+/** A top-level directory of the docs dir, with the settings from its `.ragdown.json`. */
 export interface Folder extends FolderSettings {
   /** The directory name, which is also the `/mcp/<name>` segment. */
   name: string;

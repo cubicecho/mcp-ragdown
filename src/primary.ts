@@ -15,6 +15,7 @@ import { errorMessage, hasCode } from "./errors.ts";
  * commits survive.
  */
 
+/** What the primary does with one request a reader sent over the socket. */
 export type Handler = (request: Record<string, unknown>) => Promise<unknown>;
 
 /** Raised when there is no primary to talk to, as distinct from a primary that failed. */

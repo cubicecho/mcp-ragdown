@@ -7,6 +7,7 @@ export interface LinkDocument {
   aliases: string[];
 }
 
+/** Where a wikilink points, once resolved. */
 export interface ResolvedLink {
   /** Relative to the folder, `/`-separated: a document or an attachment. */
   path: string;
@@ -44,8 +45,8 @@ export function parseLink(raw: string): { target: string; anchor: string | undef
  * to the one beside the linking document, then the shortest path, then the first alphabetically.
  * Case is ignored except to prefer an exact match.
  *
- * @param from the linking document, relative to the folder; decides ties and relative links.
- * @param attachments every non-Markdown file in the folder, relative to it.
+ * @param from - the linking document, relative to the folder; decides ties and relative links.
+ * @param attachments - every non-Markdown file in the folder, relative to it.
  */
 export function resolveLink(
   raw: string,

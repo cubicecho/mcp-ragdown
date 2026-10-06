@@ -9,6 +9,7 @@ import type { Embedder } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
 import type { FileUpdate, Store } from "./store.ts";
 
+/** What one sync did: the documents it added, updated, removed and left alone, and how long. */
 export interface SyncReport {
   added: number;
   updated: number;
@@ -236,7 +237,7 @@ export class Indexer {
  * Every Markdown file under `root`, keyed by its `/`-separated relative path. Dot-directories and
  * `node_modules` are skipped, and symlinks are not followed, so a link cycle cannot hang a sync.
  *
- * @param loose when given, files directly in `root` are left out and their names pushed here.
+ * @param loose - when given, files directly in `root` are left out and their names pushed here.
  */
 export async function listMarkdown(
   root: string,

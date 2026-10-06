@@ -69,8 +69,8 @@ export class Scope {
    * Search the documents in this scope. Never waits for a sync: a partial answer (what is indexed
    * so far) beats a hook that times out.
    *
-   * @param pathPrefix limits the search to files under this folder, relative to the scope.
-   * @param tag limits it to documents with this tag or one nested under it.
+   * @param pathPrefix - limits the search to files under this folder, relative to the scope.
+   * @param tag - limits it to documents with this tag or one nested under it.
    */
   async recall(query: string, topK: number, pathPrefix?: string, tag?: string): Promise<Hit[]> {
     const folder = [this.dir, normalizeFolder(pathPrefix)].filter(Boolean).join("/");
@@ -171,7 +171,7 @@ export class Scope {
    * Resolve a wikilink target within the scope's folder, Obsidian-style (`links.ts`). A target the
    * folder has but this scope does not (a subfolder endpoint linking above itself) is not found.
    *
-   * @param from the linking document, relative to the scope; decides ties and relative links.
+   * @param from - the linking document, relative to the scope; decides ties and relative links.
    * @returns the path relative to the scope: a document, or with `attachments`, any file.
    */
   async resolveLink(
@@ -290,7 +290,7 @@ export class Scope {
    * `RAGDOWN_NOTES_DIR`; in a subfolder, in the subfolder itself, which is already where that
    * project's documents live.
    *
-   * @param name file name without extension; defaults to the date and a slug of the title. An
+   * @param name - file name without extension; defaults to the date and a slug of the title. An
    *   existing file is never overwritten: a numeric suffix is added instead.
    */
   async remember(
@@ -326,10 +326,10 @@ export class Scope {
    * Write a Markdown file at `path`, creating its folders, and index it before returning. For the
    * web UI's upload: unlike `remember`, the caller names the file and the text is written as given.
    *
-   * @param overwrite replace an existing file; without it, an existing file is refused.
-   * @param baseHash for an edit: the `hash` of the version the changes were made to. The file must
-   *   still be exactly that, so an edit never silently replaces what an agent or another tab wrote
-   *   meanwhile, and it keeps that version's CRLF line endings if it had them.
+   * @param overwrite - replace an existing file; without it, an existing file is refused.
+   * @param baseHash - for an edit: the `hash` of the version the changes were made to. The file
+   *   must still be exactly that, so an edit never silently replaces what an agent or another tab
+   *   wrote meanwhile, and it keeps that version's CRLF line endings if it had them.
    * @throws with `status: 400` for a path the indexer would not index (see `resolvePath`), and
    *   `409` for an existing file without `overwrite`, a folder where the file would go, or a file
    *   that is no longer `baseHash` (with `code: "changed"`).
@@ -382,10 +382,10 @@ export class Scope {
    * at the end of the section under `heading`. Written through `writeDocument`, so it is atomic and
    * indexed before returning.
    *
-   * @param baseHash the `hash` `readDocument` gave. Replacing an existing document requires it, so
-   *   an agent never overwrites a version it has not read; an append checks it when given. Either
-   *   way the write fails with `code: "changed"` if the file changed after the version edited was
-   *   read.
+   * @param baseHash - the `hash` `readDocument` gave. Replacing an existing document requires it,
+   *   so an agent never overwrites a version it has not read; an append checks it when given.
+   *   Either way the write fails with `code: "changed"` if the file changed after the version
+   *   edited was read.
    * @throws with `status: 404` to append to a missing document or under a missing heading.
    */
   async editDocument(
@@ -450,9 +450,9 @@ export class Scope {
   /**
    * The documents in this scope, for an agent to browse (`ragdown_list`) rather than search.
    *
-   * @param pathPrefix only documents under this folder, relative to the scope.
-   * @param tag only documents with this tag or one nested under it, as `recall` filters.
-   * @param sort `path`, or `recent` for the most recently changed first.
+   * @param pathPrefix - only documents under this folder, relative to the scope.
+   * @param tag - only documents with this tag or one nested under it, as `recall` filters.
+   * @param sort - `path`, or `recent` for the most recently changed first.
    */
   async listDocuments(
     options: { pathPrefix?: string; tag?: string; sort?: "path" | "recent"; limit?: number } = {},
@@ -592,7 +592,7 @@ export class Scope {
  * The scope for a folder named in a URL, or undefined when it is not one: a missing folder, a file,
  * a symlink, or a dot-folder or `node_modules` — anything the indexer would not walk into.
  *
- * @param dir the folder relative to the docs root, `/`-separated; empty for the root.
+ * @param dir - the folder relative to the docs root, `/`-separated; empty for the root.
  */
 export async function openScope(rag: Ragdown, dir: string): Promise<Scope | undefined> {
   const segments = dir.split("/").filter(Boolean);

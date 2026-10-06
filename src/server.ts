@@ -7,6 +7,7 @@ import { errorMessage } from "./errors.ts";
 import { formatHits, hitJson } from "./format.ts";
 import type { Scope } from "./scope.ts";
 
+/** The name the MCP server and `/api/status` give for themselves. */
 export const SERVER_NAME = "ragdown";
 /** The package's own version: semantic-release bumps `package.json`, which ships beside `src`. */
 export const VERSION: string = (
@@ -21,11 +22,11 @@ export const VERSION: string = (
  * delete, stats, plus reindex and context (for hooks). Under `RAGDOWN_READ_ONLY` the write tools
  * are not listed at all — an agent should never see a tool it cannot call.
  *
- * @param ready resolves to the scope — the folder these tools treat as the root — once the model is
- *   loaded. Taking a promise lets the stdio
+ * @param ready - resolves to the scope — the folder these tools treat as the root — once the model
+ *   is loaded. Taking a promise lets the stdio
  *   transport connect first, so a client's handshake never waits on the model; a call made before
  *   then waits instead.
- * @param folder names the server after its folder (`ragdown-<name>`) and tells the model which
+ * @param folder - names the server after its folder (`ragdown-<name>`) and tells the model which
  *   documents these are, since one client may connect to several folders' servers at once.
  */
 export function createMcpServer(

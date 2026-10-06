@@ -1,5 +1,6 @@
 import { isRecord } from "./json.ts";
 
+/** The text of something caught, whether or not it is an `Error`. */
 export const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 

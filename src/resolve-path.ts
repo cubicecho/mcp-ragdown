@@ -10,9 +10,9 @@ import { Refusal } from "./refusal.ts";
  * and no symlink or file on the way — the indexer does not follow symlinks, and a write through
  * one could land outside the docs. Resolved against the folder's real path, as `openScope` does.
  *
- * @param scopeRoot the scope's absolute directory.
- * @param create make the missing folders on the way.
- * @param markdownOnly also require a Markdown extension, as for anything that is written.
+ * @param scopeRoot - the scope's absolute directory.
+ * @param create - make the missing folders on the way.
+ * @param markdownOnly - also require a Markdown extension, as for anything that is written.
  */
 export async function resolvePath(
   scopeRoot: string,

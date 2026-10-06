@@ -26,6 +26,7 @@ export interface FileState {
   chunks: number;
 }
 
+/** A document as the index lists it: one entry for all its chunks. */
 export interface DocumentInfo {
   path: string;
   title: string;
@@ -38,6 +39,7 @@ export interface DocumentInfo {
   supersedes: string[];
 }
 
+/** A document read, chunked and embedded, ready to replace what the index holds for its path. */
 export interface FileUpdate {
   path: string;
   hash: string;
@@ -53,6 +55,7 @@ export interface FileUpdate {
   aliases?: string[];
 }
 
+/** One chunk a search returned. */
 export interface Hit {
   id: string;
   path: string;
@@ -156,7 +159,7 @@ export class Store {
   /**
    * Open the index under `dataDir`, creating it on first use.
    *
-   * @param writable a reader never drops a table it disagrees with — that is the writer's call —
+   * @param writable - a reader never drops a table it disagrees with — that is the writer's call —
    *   and instead fails, since its query vectors would be meaningless against the stored ones.
    */
   static async open(dataDir: string, embedder: Embedder, writable: boolean): Promise<Store> {
@@ -392,8 +395,8 @@ export class Store {
    * reads as confident prose is worse than no hit at all. The file stays on disk and `readDocument`
    * still opens it.
    *
-   * @param pathPrefix limits both retrievers to files under this relative path.
-   * @param tag limits both to documents with this tag or one nested under it (`project` takes in
+   * @param pathPrefix - limits both retrievers to files under this relative path.
+   * @param tag - limits both to documents with this tag or one nested under it (`project` takes in
    *   `project/alpha`).
    */
   async search(query: string, limit: number, pathPrefix?: string, tag?: string): Promise<Hit[]> {

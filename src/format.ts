@@ -13,6 +13,7 @@ export function formatHits(hits: Hit[], maxChars: number): string {
   return hits.map((hit, i) => `[${i + 1}] ${formatHit(hit, maxChars)}`).join("\n\n");
 }
 
+/** One hit as text: where it is, its tags and similarity, then its text cut to `maxChars`. */
 export function formatHit(hit: Hit, maxChars: number): string {
   const where = breadcrumb(hit.title, hit.heading);
   const tags = hit.tags.length > 0 ? ` [${hit.tags.map((tag) => `#${tag}`).join(" ")}]` : "";

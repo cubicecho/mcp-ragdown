@@ -48,6 +48,11 @@ export function assertWritable(config: Config): void {
   }
 }
 
+/**
+ * A request's JSON body, whatever it holds; an empty body reads as `{}`.
+ *
+ * @throws with `status: 413` past `limit` bytes and `400` for a body that is not JSON.
+ */
 export async function readJson(
   req: IncomingMessage,
   limit = defaults.maxBodyBytes,
@@ -84,6 +89,7 @@ export async function readJsonObject(
   return isRecord(body) ? body : {};
 }
 
+/** Answer with a JSON body. */
 export function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
 }
