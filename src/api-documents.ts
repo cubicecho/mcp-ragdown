@@ -3,16 +3,9 @@ import { stat } from "node:fs/promises";
 import { extname } from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { Config } from "./config.ts";
+import { defaults } from "./defaults.ts";
 import { getFolder } from "./folders.ts";
-import {
-  type ApiRequest,
-  allow,
-  assertWritable,
-  json,
-  MAX_UPLOAD_BYTES,
-  readJson,
-  required,
-} from "./http-io.ts";
+import { type ApiRequest, allow, assertWritable, json, readJson, required } from "./http-io.ts";
 import { Refusal } from "./refusal.ts";
 import { Scope } from "./scope.ts";
 import { supersededBy } from "./store.ts";
@@ -53,7 +46,7 @@ export async function handleDocuments(request: ApiRequest): Promise<void> {
   if (path === "/api/doc" && (method === "POST" || method === "DELETE")) {
     assertWritable(config);
     if (method === "POST") {
-      const body = (await readJson(req, MAX_UPLOAD_BYTES)) as Record<string, unknown>;
+      const body = (await readJson(req, defaults.maxUploadBytes)) as Record<string, unknown>;
       if (typeof body?.path !== "string" || typeof body.text !== "string") {
         json(res, 400, { error: "path and text are required strings" });
         return;
@@ -77,7 +70,7 @@ export async function handleDocuments(request: ApiRequest): Promise<void> {
   if (path === "/api/move") {
     allow(request, "POST");
     assertWritable(config);
-    const body = (await readJson(req, MAX_UPLOAD_BYTES)) as Record<string, unknown>;
+    const body = (await readJson(req, defaults.maxUploadBytes)) as Record<string, unknown>;
     if (typeof body?.from !== "string" || typeof body.to !== "string") {
       json(res, 400, { error: "from and to are required strings" });
       return;
@@ -135,7 +128,10 @@ export async function handleDocuments(request: ApiRequest): Promise<void> {
   if (path === "/api/search") {
     const name = required(request, "folder");
     const query = required(request, "q");
-    const topK = Math.min(50, Math.max(1, Number.parseInt(params.get("top_k") ?? "", 10) || 10));
+    const topK = Math.min(
+      defaults.maxTopK,
+      Math.max(1, Number.parseInt(params.get("top_k") ?? "", 10) || 10),
+    );
     if (!(await getFolder(config.docsDir, name))) {
       json(res, 404, { error: `no such folder: ${name}` });
       return;

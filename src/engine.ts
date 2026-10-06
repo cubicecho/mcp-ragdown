@@ -1,5 +1,6 @@
 import type { Server } from "node:net";
 import type { Config } from "./config.ts";
+import { defaults } from "./defaults.ts";
 import { createEmbedder, type Embedder, scoreScale } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
 import { Indexer, type SyncReport } from "./indexer.ts";
@@ -8,8 +9,6 @@ import { Refusal } from "./refusal.ts";
 import { SessionMemory } from "./session-memory.ts";
 import { type DocumentInfo, type FileState, type Hit, Store } from "./store.ts";
 
-/** How often a reader checks whether the primary has gone and it should take over. */
-const TAKEOVER_INTERVAL_MS = 30_000;
 /**
  * The running server's state: the embedder, the index, and — when this process is the primary —
  * the indexer and the socket. The tools and routes reach it through a `Scope` (`scope.ts`), which
@@ -98,8 +97,11 @@ export class Ragdown {
     if (this.indexer) {
       return full ? this.indexer.rebuild() : this.indexer.sync();
     }
-    // A full rebuild of a large folder takes minutes; the timeout is for a primary that hangs.
-    return (await request(this.config.socketPath, { op: "sync", full }, 30 * 60_000)) as SyncReport;
+    return (await request(
+      this.config.socketPath,
+      { op: "sync", full },
+      defaults.syncRequestTimeoutMs,
+    )) as SyncReport;
   }
 
   async stats(includeFiles: boolean) {
@@ -207,7 +209,7 @@ export class Ragdown {
       })().catch((error: unknown) => {
         console.error(`[ragdown] takeover failed: ${errorMessage(error)}`);
       });
-    }, TAKEOVER_INTERVAL_MS);
+    }, defaults.takeoverIntervalMs);
     this.takeover.unref();
   }
 }

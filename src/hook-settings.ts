@@ -1,3 +1,4 @@
+import { defaults } from "./defaults.ts";
 import { scoreScale } from "./embedder.ts";
 import { isRecord } from "./json.ts";
 import { Refusal } from "./refusal.ts";
@@ -28,15 +29,12 @@ export type HookChanges = { [K in keyof HookOverrides]?: number | null };
 /** Every key of `HookOverrides`, for the code that walks them. */
 export const HOOK_KEYS = ["top_k", "min_score", "min_ratio", "max_chars"] as const;
 
-/** The floor for an embedder nobody measured: the default model's, which is a guess. */
-const UNMEASURED_MIN_SCORE = 0.8;
-
 /**
  * The similarity floor that goes with an embedder when no setting names one. Cosine is on each
  * model's own scale, so this is the embedder's own measured floor where there is one.
  */
 export function embedderMinScore(embedder: string): number {
-  return scoreScale(embedder)?.minScore ?? UNMEASURED_MIN_SCORE;
+  return scoreScale(embedder)?.minScore ?? defaults.unmeasuredMinScore;
 }
 
 /**

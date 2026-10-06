@@ -1,17 +1,11 @@
 import { basename, extname, posix } from "node:path";
+import { defaults } from "./defaults.ts";
 
 /**
  * Bumped whenever chunk boundaries or the embedded text change, so an existing index built by the
  * old rules is rebuilt instead of mixing two kinds of chunk.
  */
 export const CHUNKER_VERSION = 2;
-
-/**
- * 1500 characters is roughly 350–450 tokens of prose: inside the window of every embedder here —
- * 512 tokens for the smallest of them — with room for the heading line, and still one idea's worth
- * of text rather than a whole page.
- */
-export const MAX_CHUNK_CHARS = 1500;
 
 export interface Chunk {
   /** Position within the file, from 0. */
@@ -44,7 +38,7 @@ interface Section {
 export function chunkMarkdown(
   source: string,
   relPath: string,
-  maxChars = MAX_CHUNK_CHARS,
+  maxChars: number = defaults.maxChunkChars,
 ): Chunk[] {
   const lines = source.replace(/\r\n?/g, "\n").split("\n");
   const { title: frontTitle, bodyStart } = readFrontmatter(lines);

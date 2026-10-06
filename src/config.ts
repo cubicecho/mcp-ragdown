@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, posix, resolve } from "node:path";
+import { defaults } from "./defaults.ts";
 import { isIndexedName } from "./document-paths.ts";
 import { embedderMinScore, type HookSettings } from "./hook-settings.ts";
 import type { ServerSettings } from "./settings.ts";
@@ -109,19 +110,17 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
   }
 
   const watch = bool(env, "RAGDOWN_WATCH", true);
-  const textLimit = int(env, "RAGDOWN_TEXT_LIMIT", 2000);
+  const textLimit = int(env, "RAGDOWN_TEXT_LIMIT", defaults.textLimit);
   const explicitMinScore =
     env.RAGDOWN_HOOK_MIN_SCORE === undefined || env.RAGDOWN_HOOK_MIN_SCORE === ""
       ? null
       : num(env, "RAGDOWN_HOOK_MIN_SCORE", 0);
   const hook = {
-    topK: int(env, "RAGDOWN_HOOK_TOP_K", 4),
+    topK: int(env, "RAGDOWN_HOOK_TOP_K", defaults.hookTopK),
     // A relative floor under the absolute one: a hit far below the best is a distractor even
     // when it clears `minScore`. Unlike `minScore` this is a ratio, so it carries across models.
-    // Measured on the benchmark corpus: 0.96 matched an ungated hook's recall exactly while
-    // injecting a third fewer chunks, and 0.95 sits on the flat part of that curve.
-    minRatio: ratio(env, "RAGDOWN_HOOK_MIN_RATIO", 0.95),
-    maxChars: int(env, "RAGDOWN_HOOK_MAX_CHARS", 6000),
+    minRatio: ratio(env, "RAGDOWN_HOOK_MIN_RATIO", defaults.hookMinRatio),
+    maxChars: int(env, "RAGDOWN_HOOK_MAX_CHARS", defaults.hookMaxChars),
   };
 
   return {
@@ -139,12 +138,10 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
     notesDir: notesDir === "." ? "" : notesDir.replace(/\/+$/, ""),
     textLimit,
     http: {
-      port: int(env, "PORT", 3000),
+      port: int(env, "PORT", defaults.port),
       token: env.RAGDOWN_TOKEN || null,
       secureLocalNet: bool(env, "SECURE_LOCAL_NET", false),
-      // Node's 5 s is shorter than the gap between two tool calls, and shorter than the 60 s
-      // nginx and ALB hold their side, which is how a proxy reuses a connection being closed.
-      keepAliveTimeoutMs: int(env, "HTTP_KEEP_ALIVE_TIMEOUT_MS", 75_000),
+      keepAliveTimeoutMs: int(env, "HTTP_KEEP_ALIVE_TIMEOUT_MS", defaults.httpKeepAliveTimeoutMs),
     },
     hook: {
       ...hook,

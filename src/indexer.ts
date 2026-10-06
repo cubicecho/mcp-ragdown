@@ -3,17 +3,11 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { chunkMarkdown, embeddingText, readDocumentMeta, readSupersedes } from "./chunk.ts";
 import { contentHash } from "./content-hash.ts";
+import { defaults } from "./defaults.ts";
 import { isSkippedEntry, MARKDOWN, toPosix } from "./document-paths.ts";
 import type { Embedder } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
 import type { FileUpdate, Store } from "./store.ts";
-
-/** An editor save is a burst of events (temp file, rename, chmod); one sync per burst. */
-const WATCH_DEBOUNCE_MS = 750;
-/** Chunks per embed-and-write round: a crash loses at most this much work, and progress is visible. */
-const BATCH_CHUNKS = 256;
-/** When the OS will not watch (inotify limits, network mounts), rescan on this interval instead. */
-const POLL_FALLBACK_MS = 60_000;
 
 export interface SyncReport {
   added: number;
@@ -96,7 +90,7 @@ export class Indexer {
   watch(): void {
     const schedule = () => {
       clearTimeout(this.timer);
-      this.timer = setTimeout(() => void this.sync().catch(logFailure), WATCH_DEBOUNCE_MS);
+      this.timer = setTimeout(() => void this.sync().catch(logFailure), defaults.watchDebounceMs);
     };
     try {
       this.watcher = watch(this.docsDir, { recursive: true, persistent: false }, (_event, name) => {
@@ -141,7 +135,7 @@ export class Indexer {
   }
 
   private poll(): void {
-    this.timer = setInterval(() => void this.sync().catch(logFailure), POLL_FALLBACK_MS);
+    this.timer = setInterval(() => void this.sync().catch(logFailure), defaults.pollFallbackMs);
     this.timer.unref();
   }
 
@@ -216,7 +210,7 @@ export class Indexer {
         ...readDocumentMeta(source),
       });
       batchChunks += chunks.length;
-      if (batchChunks >= BATCH_CHUNKS) {
+      if (batchChunks >= defaults.syncBatchChunks) {
         await flush();
       }
     }

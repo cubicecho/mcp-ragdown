@@ -3,6 +3,7 @@ import { join } from "node:path";
 import * as lancedb from "@lancedb/lancedb";
 import { Field, FixedSizeList, Float32, Float64, Int32, Schema, Utf8 } from "apache-arrow";
 import { CHUNKER_VERSION, type Chunk, embeddingText } from "./chunk.ts";
+import { defaults } from "./defaults.ts";
 import type { Embedder } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
 import { writeAtomic } from "./write-atomic.ts";
@@ -16,14 +17,6 @@ const META_FILE_MODE = 0o600;
  * chunks may be unchanged and still be stored differently.
  */
 const INDEX_VERSION = 3;
-/** Reciprocal-rank-fusion constant; 60 is the value from the original RRF paper and rarely worth tuning. */
-const RRF_K = 60;
-/**
- * Chunks below which no vector index is built. A folder of documents is nowhere near it, and under
- * it the flat scan wins anyway: measured at 10k chunks the index is twice as fast, at 1k it is
- * noise.
- */
-const VECTOR_INDEX_MIN_ROWS = 10_000;
 
 /** What the index remembers about a file, to decide on the next sync whether it changed. */
 export interface FileState {
@@ -343,13 +336,13 @@ export class Store {
    * reached yet are still scanned, so a search never misses a chunk that is in the table.
    */
   async compact(): Promise<void> {
-    await this.table.optimize({ cleanupOlderThan: new Date(Date.now() - 60_000) });
+    await this.table.optimize({ cleanupOlderThan: new Date(Date.now() - defaults.compactGraceMs) });
     await this.ensureVectorIndex();
   }
 
   /**
    * Build the vector index once the table is big enough to want one, and never before: under
-   * `VECTOR_INDEX_MIN_ROWS` a flat scan is the faster answer and an exact one.
+   * `defaults.vectorIndexMinRows` a flat scan is the faster answer and an exact one.
    *
    * IVF-flat, because it stores the vectors themselves rather than a quantisation of them: measured
    * over 10k and 100k chunks it returns exactly what the flat scan returns, two to five times
@@ -367,7 +360,7 @@ export class Store {
         return;
       }
       const rows = await this.table.countRows();
-      if (rows < VECTOR_INDEX_MIN_ROWS) {
+      if (rows < defaults.vectorIndexMinRows) {
         return;
       }
       console.error(`[store] building the vector index over ${rows} chunks`);
@@ -469,7 +462,7 @@ export class Store {
     const addRanked = (rows: ScoredRow[], source: "dense" | "lexical") => {
       rows.forEach((row, rank) => {
         const entry = fused.get(row.id) ?? { row, score: 0, sources: [] };
-        entry.score += 1 / (RRF_K + rank + 1);
+        entry.score += 1 / (defaults.rrfK + rank + 1);
         entry.sources.push(source);
         fused.set(row.id, entry);
       });

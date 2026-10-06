@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { defaults } from "./defaults.ts";
 import { errorMessage } from "./errors.ts";
 import { formatHits, hitJson } from "./format.ts";
 import type { Scope } from "./scope.ts";
@@ -50,7 +51,7 @@ export function createMcpServer(
         "Hybrid (semantic + keyword) search over the user's Markdown notes. Returns the most relevant sections with file path, line range, heading breadcrumb and cosine similarity (above ~0.8 is usually on topic). Use it before answering anything the notes may cover; follow up with ragdown_read_doc for the surrounding text.",
       inputSchema: {
         query: z.string().min(1).describe("What to look for, as a question or keywords"),
-        top_k: z.number().int().min(1).max(50).default(8),
+        top_k: z.number().int().min(1).max(defaults.maxTopK).default(8),
         path_prefix: z
           .string()
           .optional()
@@ -94,7 +95,13 @@ export function createMcpServer(
           .string()
           .optional()
           .describe("Stable id of the conversation; sections already returned for it are skipped"),
-        top_k: z.number().int().min(1).max(50).optional().describe("Default RAGDOWN_HOOK_TOP_K"),
+        top_k: z
+          .number()
+          .int()
+          .min(1)
+          .max(defaults.maxTopK)
+          .optional()
+          .describe("Default RAGDOWN_HOOK_TOP_K"),
         min_score: z
           .number()
           .min(0)

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { availableParallelism } from "node:os";
 import { Agent } from "undici";
 import type { Config } from "./config.ts";
+import { defaults } from "./defaults.ts";
 
 export interface Embedder {
   /** Recorded in the index; a different name on the next start rebuilds it. */
@@ -119,7 +120,6 @@ const LOCAL_MODELS: Record<string, LocalModel> = {
 class LocalEmbedder implements Embedder {
   readonly name: string;
   readonly dim: number;
-  static readonly BATCH = 16;
 
   private readonly model: LocalModel;
   private readonly extract: FeatureExtractor;
@@ -160,8 +160,8 @@ class LocalEmbedder implements Embedder {
     const lengths = inputs.map((text) => text.length);
     const order = lengths.map((_, i) => i).sort((a, b) => (lengths[a] ?? 0) - (lengths[b] ?? 0));
     const out = new Array<Float32Array>(inputs.length);
-    for (let i = 0; i < order.length; i += LocalEmbedder.BATCH) {
-      const indices = order.slice(i, i + LocalEmbedder.BATCH);
+    for (let i = 0; i < order.length; i += defaults.localEmbedBatch) {
+      const indices = order.slice(i, i + defaults.localEmbedBatch);
       const tensor = await this.extract(
         indices.map((index) => inputs[index] ?? ""),
         { pooling: this.model.pooling, normalize: true },
@@ -180,12 +180,8 @@ type FeatureExtractor = (
   options: { pooling: "cls" | "mean"; normalize: boolean },
 ) => Promise<{ data: Float32Array }>;
 
-/**
- * Connections to the embedding endpoint, kept for 30 s when idle rather than `fetch`'s 4. A hook
- * embeds one query a turn and turns are further apart than 4 s, so each one opened a new TLS
- * connection first: about 340 ms against api.openai.com where a kept connection took 85.
- */
-const keepAlive = new Agent({ keepAliveTimeout: 30_000 });
+/** Connections to the embedding endpoint, kept open between a hook's queries. */
+const keepAlive = new Agent({ keepAliveTimeout: defaults.embedKeepAliveMs });
 
 /**
  * Any OpenAI-compatible `/embeddings` endpoint: OpenAI itself, Ollama, llama.cpp, vLLM, LM Studio.
@@ -242,7 +238,7 @@ class OpenAiEmbedder implements Embedder {
         ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
       },
       body: JSON.stringify({ model, input }),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(defaults.embedRequestTimeoutMs),
       // Node's `fetch` takes a dispatcher its DOM-shaped `RequestInit` does not declare.
       dispatcher: keepAlive,
     } as RequestInit);

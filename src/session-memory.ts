@@ -1,5 +1,4 @@
-/** Sessions whose returned chunks are remembered; past this the oldest is forgotten. */
-const MAX_SESSIONS = 200;
+import { defaults } from "./defaults.ts";
 
 /**
  * The chunk ids `ragdown_context` already returned for each session, least recently used first.
@@ -15,7 +14,7 @@ export class SessionMemory {
       this.sessions.delete(key);
     } else {
       seen = new Set();
-      if (this.sessions.size >= MAX_SESSIONS) {
+      if (this.sessions.size >= defaults.maxSessions) {
         const oldest = this.sessions.keys().next().value;
         if (oldest !== undefined) {
           this.sessions.delete(oldest);

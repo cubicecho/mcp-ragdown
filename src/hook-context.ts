@@ -1,3 +1,4 @@
+import { defaults } from "./defaults.ts";
 import { formatHit } from "./format.ts";
 import type { HookSettings } from "./hook-settings.ts";
 import type { Hit } from "./store.ts";
@@ -33,7 +34,7 @@ export async function hookContext({
   const { topK, minScore, minRatio, maxChars } = settings;
   const trimmed = prompt.trim();
   // A slash command or a one-word reply ("yes", "go on") has nothing to retrieve on.
-  if (trimmed.length < 12 || trimmed.startsWith("/")) {
+  if (trimmed.length < defaults.minPromptChars || trimmed.startsWith("/")) {
     return undefined;
   }
 

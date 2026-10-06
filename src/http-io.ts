@@ -1,17 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Config } from "./config.ts";
+import { defaults } from "./defaults.ts";
 import type { Ragdown } from "./engine.ts";
 import { Refusal } from "./refusal.ts";
-
-/** An MCP message is a few kilobytes; anything near this is not one. */
-export const MAX_BODY_BYTES = 1024 * 1024;
-/**
- * An upload's JSON body. A hand-written document is kilobytes and a long one well under a megabyte;
- * JSON escaping can nearly double Markdown full of quotes and backslashes, and the request waits
- * while every chunk of the file is embedded, so a file much past this is not a document and would
- * hold the response for minutes on the CPU model.
- */
-export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 /** One authorized `/api` request, as each resource's handler is given it. */
 export interface ApiRequest {
@@ -56,7 +47,10 @@ export function assertWritable(config: Config): void {
   }
 }
 
-export async function readJson(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<unknown> {
+export async function readJson(
+  req: IncomingMessage,
+  limit = defaults.maxBodyBytes,
+): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
