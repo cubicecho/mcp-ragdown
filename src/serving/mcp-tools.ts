@@ -326,7 +326,7 @@ export function createMcpServer(
       {
         title: "Delete a note or subfolder",
         description:
-          "Permanently delete a note, or a subfolder, from the notes folder and the index. There is no trash and no undo. Call ragdown_backlinks first: links to a deleted note are left as they are, pointing at nothing. When a note is out of date rather than unwanted, prefer ragdown_remember with supersedes, which keeps the old text readable. A subfolder that holds anything is deleted only with recursive: true.",
+          "Permanently delete a note, or a subfolder, from the notes folder and the index. There is no trash and no undo. Call ragdown_backlinks first: links to a deleted note are left as they are, pointing at nothing. When a note is out of date rather than unwanted, prefer ragdown_remember with supersedes, which keeps the old text readable. A subfolder that holds anything is deleted only with recursive: true. Pass base_hash to delete a note only if it is still the version you read.",
         inputSchema: {
           path: z
             .string()
@@ -340,6 +340,12 @@ export function createMcpServer(
             .describe(
               "For a subfolder: also delete everything in it — notes, attachments and any other files",
             ),
+          base_hash: z
+            .string()
+            .optional()
+            .describe(
+              "For a note: the hash ragdown_read_doc returned. If the file changed since, nothing is deleted",
+            ),
         },
         annotations: {
           readOnlyHint: false,
@@ -348,7 +354,7 @@ export function createMcpServer(
           openWorldHint: false,
         },
       },
-      (args) => run(ready, (rag) => rag.remove(args.path, args.recursive)),
+      (args) => run(ready, (rag) => rag.remove(args.path, args.recursive, args.base_hash)),
     );
 
     server.registerTool(

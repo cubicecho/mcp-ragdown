@@ -514,15 +514,25 @@ export class Scope {
   /**
    * Delete a Markdown file and drop it from the index before returning.
    *
-   * @throws with `status: 400` for a path the indexer would not index, and `404` for no such file.
+   * @param baseHash - the `hash` `readDocument` gave: the file is deleted only while it is still
+   *   that version.
+   * @throws with `status: 400` for a path the indexer would not index, `404` for no such file, and
+   *   `409` (with `code: "changed"`) for a file that is no longer `baseHash`.
    */
-  async deleteDocument(path: string) {
+  async deleteDocument(path: string, baseHash?: string) {
     const { full, relPath } = await resolvePath(this.root, path, {
       create: false,
       markdownOnly: true,
     });
     if (!(await lstat(full).catch(() => undefined))?.isFile()) {
       throw new Refusal(404, `no such document: ${path}`);
+    }
+    if (baseHash !== undefined && contentHash(await readFile(full)) !== baseHash) {
+      throw new Refusal(
+        409,
+        `${relPath} changed since it was read, so it was not deleted: read it again and decide on what it says now`,
+        "changed",
+      );
     }
     await unlink(full);
     return { path: relPath, sync: await this.rag.sync(false) };
@@ -533,16 +543,23 @@ export class Scope {
    * Nothing is kept — there is no trash — so a subfolder that holds anything goes only with
    * `recursive`, and then with its documents, its attachments and every file the index skips.
    *
-   * @throws with `status: 400` for a bad path, `404` for nothing there, and `409` for a subfolder
-   *   that is not empty without `recursive`.
+   * @param baseHash - for a document, as `deleteDocument` takes it. A subfolder has no hash.
+   * @throws with `status: 400` for a bad path or a `baseHash` with a subfolder, `404` for nothing
+   *   there, and `409` for a subfolder that is not empty without `recursive`, or a changed document.
    */
-  async remove(path: string, recursive = false) {
+  async remove(path: string, recursive = false, baseHash?: string) {
     const { full, relPath } = await resolvePath(this.root, path, {
       create: false,
       markdownOnly: false,
     });
     if (!(await lstat(full).catch(() => undefined))?.isDirectory()) {
-      return this.deleteDocument(path);
+      return this.deleteDocument(path, baseHash);
+    }
+    if (baseHash !== undefined) {
+      throw new Refusal(
+        400,
+        `${relPath} is a subfolder: base_hash guards one document, so leave it out to delete a subfolder`,
+      );
     }
     const held = (await readdir(full)).length;
     if (held > 0 && !recursive) {

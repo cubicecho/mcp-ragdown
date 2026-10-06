@@ -252,7 +252,15 @@ describe("MCP server", () => {
     await t.write("ops/old/pg.md", "# Postgres");
     await t.rag.sync(false);
 
-    const note = await t.call("ragdown_delete", { path: "ops/old/pg.md" });
+    const { hash } = JSON.parse((await t.call("ragdown_read_doc", { path: "ops/old/pg.md" })).text);
+    const stale = await t.call("ragdown_delete", {
+      path: "ops/old/pg.md",
+      base_hash: "0".repeat(64),
+    });
+    expect(stale).toMatchObject({ isError: true, text: expect.stringMatching(/changed since/) });
+    const folder = await t.call("ragdown_delete", { path: "ops/old", base_hash: hash });
+    expect(folder).toMatchObject({ isError: true, text: expect.stringMatching(/subfolder/) });
+    const note = await t.call("ragdown_delete", { path: "ops/old/pg.md", base_hash: hash });
     expect(JSON.parse(note.text)).toMatchObject({ path: "ops/old/pg.md", sync: { removed: 1 } });
     const again = await t.call("ragdown_delete", { path: "ops/old/pg.md" });
     expect(again).toMatchObject({ isError: true, text: expect.stringMatching(/no such/) });

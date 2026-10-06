@@ -212,7 +212,7 @@ middle. A hook that fails or takes longer than min-agent's 3 seconds only loses 
 | `ragdown_remember` | Writes a new note (with frontmatter) under `RAGDOWN_NOTES_DIR` and indexes it before returning. Never overwrites a file. `supersedes` lists the notes this one replaces, which search then skips; `session_id` is recorded as provenance. |
 | `ragdown_edit` | Changes a note at a `path`, or creates one. `text` replaces the whole file, which for an existing note needs `base_hash` — the `hash` `ragdown_read_doc` gave — so an agent never overwrites a version it has not read. `append: true` adds `text` at the end instead, or with `heading` at the end of that section. A file that changed since `base_hash` is not written. |
 | `ragdown_move` | Renames or moves a note, or a subfolder with everything in it, from `from` to `to`, and rewrites every wikilink and relative Markdown link that pointed at what moved. Returns the notes it `updated`. Never overwrites what is already at `to`. |
-| `ragdown_delete` | Deletes a note or a subfolder at `path`, for good: there is no trash. A subfolder that holds anything needs `recursive: true`, and then goes with its attachments too. Links to a deleted note are left as they are. |
+| `ragdown_delete` | Deletes a note or a subfolder at `path`, for good: there is no trash. A subfolder that holds anything needs `recursive: true`, and then goes with its attachments too. Links to a deleted note are left as they are. With `base_hash` (the `hash` `ragdown_read_doc` gave), a note is deleted only if it has not changed since. |
 | `ragdown_reindex` | Syncs now; `full: true` re-embeds everything. |
 
 The write tools (`ragdown_remember`, `ragdown_edit`, `ragdown_move`, `ragdown_delete`,
