@@ -1,33 +1,34 @@
-import type { Dirent } from "node:fs";
 import {
   lstat,
-  mkdir,
   readdir,
   readFile,
   realpath,
-  rename,
   rm,
   rmdir,
   stat,
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join, posix, relative, resolve } from "node:path";
+import { join, posix, relative, resolve } from "node:path";
+import { listAttachments } from "./attachments.ts";
 import { contentHash } from "./content-hash.ts";
-import { isIndexedName, isInside, isSkippedEntry, MARKDOWN, toPosix } from "./document-paths.ts";
+import { isIndexedName, isInside, MARKDOWN, toPosix } from "./document-paths.ts";
 import type { Ragdown } from "./engine.ts";
 import { readSettings } from "./folders.ts";
-import { formatHit } from "./format.ts";
+import { headingRange } from "./headings.ts";
+import { hookContext } from "./hook-context.ts";
 import { type ContextOptions, resolveHook } from "./hook-settings.ts";
 import {
   findLinks,
   type LinkDocument,
-  type LinkRef,
   type ResolvedLink,
   resolveLink,
   resolveRef,
 } from "./links.ts";
+import { moveInFolder } from "./move.ts";
 import { Refusal } from "./refusal.ts";
+import { writeRemembered } from "./remember.ts";
+import { resolvePath } from "./resolve-path.ts";
 import { type Hit, supersededBy } from "./store.ts";
 import { writeAtomic } from "./write-atomic.ts";
 
@@ -90,40 +91,15 @@ export class Scope {
     const own = this.folder
       ? (await readSettings(resolve(this.config.docsDir, this.folder), this.folder)).hook
       : {};
-    const { topK, minScore, minRatio, maxChars } = resolveHook(options, own, this.config.hook);
-    const trimmed = prompt.trim();
-    // A slash command or a one-word reply ("yes", "go on") has nothing to retrieve on.
-    if (trimmed.length < 12 || trimmed.startsWith("/")) return undefined;
-
-    const seen = sessionId
-      ? this.rag.sessions.seen(`${this.dir}\0${sessionId}`)
-      : new Set<string>();
-    const ranked = (await this.recall(trimmed, topK * 2))
-      .filter((hit) => hit.similarity >= minScore && !seen.has(hit.id))
-      .sort((a, b) => b.similarity - a.similarity);
-    // Then the relative floor: whatever the best hit scored, a hit well below it is noise beside
-    // it, and injected noise costs accuracy rather than merely costing tokens.
-    const best = ranked[0]?.similarity ?? 0;
-    const hits = ranked.filter((hit) => hit.similarity >= best * minRatio).slice(0, topK);
-    if (hits.length === 0) return undefined;
-
-    const blocks: string[] = [];
-    let used = 0;
-    for (const hit of hits) {
-      const block = formatHit(hit, Math.min(this.config.textLimit, maxChars));
-      if (blocks.length > 0 && used + block.length > maxChars) break;
-      blocks.push(block);
-      used += block.length;
-      seen.add(hit.id);
-    }
-    return [
-      `<ragdown-context source="${this.root}">`,
-      "Excerpts from the user's Markdown notes that look related to this prompt, found by search, not chosen by the user.",
-      "They may be irrelevant or out of date. Use ragdown_read_doc for the whole file before relying on a fragment.",
-      "",
-      blocks.join("\n\n"),
-      "</ragdown-context>",
-    ].join("\n");
+    return hookContext({
+      prompt,
+      source: this.root,
+      settings: resolveHook(options, own, this.config.hook),
+      textLimit: this.config.textLimit,
+      seenBy: () =>
+        sessionId ? this.rag.sessions.seen(`${this.dir}\0${sessionId}`) : new Set<string>(),
+      recall: (query, topK) => this.recall(query, topK),
+    });
   }
 
   /**
@@ -273,7 +249,7 @@ export class Scope {
    * @throws with `status: 400` for such a path and `404` for no such file.
    */
   async fileFor(path: string): Promise<string> {
-    const { full } = await this.resolvePath(path, { create: false, markdownOnly: false });
+    const { full } = await resolvePath(this.root, path, { create: false, markdownOnly: false });
     if (!(await lstat(full).catch(() => undefined))?.isFile()) {
       throw new Refusal(404, `no such file: ${path}`);
     }
@@ -313,59 +289,16 @@ export class Scope {
   ) {
     const notesDir =
       this.dir === this.folder ? resolve(this.root, this.config.notesDir) : this.root;
-    const date = new Date().toISOString().slice(0, 10);
-    const base = name ?? `${date}-${slug(title)}`;
-
-    // Checked before anything is written: a dangling `supersedes` would silently hide nothing, and
-    // the agent that got the path wrong should hear about it rather than believe it replaced a
-    // document.
-    const replaced = await Promise.all(
-      (options.supersedes ?? []).map(async (path) => {
-        const target = resolve(this.root, path);
-        if (!isInside(this.root, target)) {
-          throw new Error(`supersedes is outside the notes folder: ${path}`);
-        }
-        if (!(await stat(target).catch(() => undefined))?.isFile()) {
-          throw new Error(`supersedes names no note in this folder: ${path}`);
-        }
-        return target;
-      }),
-    );
-
-    let full = "";
-    for (let n = 1; ; n++) {
-      full = resolve(notesDir, `${base}${n === 1 ? "" : `-${n}`}.md`);
-      if (!isInside(notesDir, full)) {
-        throw new Error(`note name escapes the notes folder: ${base}`);
-      }
-      const front = [
-        "---",
-        `title: ${JSON.stringify(title)}`,
-        `date: ${date}`,
-        ...(tags.length > 0 ? [`tags: [${tags.map((t) => JSON.stringify(t)).join(", ")}]`] : []),
-        // Relative to this document's own folder, which is how the indexer reads them back.
-        ...(replaced.length > 0
-          ? [
-              `supersedes: [${replaced
-                .map((target) => JSON.stringify(toPosix(relative(dirname(full), target))))
-                .join(", ")}]`,
-            ]
-          : []),
-        // Provenance: a document an agent wrote is not a document the user wrote, and whoever reads
-        // it later — person or model — should be able to tell which one they are holding.
-        "created_by: ragdown_remember",
-        ...(options.sessionId ? [`session: ${JSON.stringify(options.sessionId)}`] : []),
-        "---",
-        "",
-      ].join("\n");
-      await mkdir(dirname(full), { recursive: true });
-      try {
-        await writeFile(full, `${front}${content.trimEnd()}\n`, { flag: "wx" });
-        break;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      }
-    }
+    const { full, replaced } = await writeRemembered({
+      root: this.root,
+      notesDir,
+      title,
+      content,
+      tags,
+      name,
+      supersedes: options.supersedes ?? [],
+      sessionId: options.sessionId,
+    });
     const sync = await this.rag.sync(false);
     return {
       path: relative(this.root, full),
@@ -384,12 +317,15 @@ export class Scope {
    * @param baseHash for an edit: the `hash` of the version the changes were made to. The file must
    *   still be exactly that, so an edit never silently replaces what an agent or another tab wrote
    *   meanwhile, and it keeps that version's CRLF line endings if it had them.
-   * @throws with `status: 400` for a path the indexer would not index (see `resolveWritable`), and
+   * @throws with `status: 400` for a path the indexer would not index (see `resolvePath`), and
    *   `409` for an existing file without `overwrite`, a folder where the file would go, or a file
    *   that is no longer `baseHash` (with `code: "changed"`).
    */
   async writeDocument(path: string, text: string, overwrite = false, baseHash?: string) {
-    const { full, relPath } = await this.resolvePath(path, { create: true, markdownOnly: true });
+    const { full, relPath } = await resolvePath(this.root, path, {
+      create: true,
+      markdownOnly: true,
+    });
     const existing = await lstat(full).catch(() => undefined);
     if (existing && !existing.isFile()) {
       throw new Refusal(409, `not a file: ${path}`);
@@ -443,7 +379,10 @@ export class Scope {
     if (options.heading !== undefined && !options.append) {
       throw new Refusal(400, "heading is for append: true");
     }
-    const { full, relPath } = await this.resolvePath(path, { create: false, markdownOnly: true });
+    const { full, relPath } = await resolvePath(this.root, path, {
+      create: false,
+      markdownOnly: true,
+    });
     const current = (await lstat(full).catch(() => undefined))?.isFile()
       ? await readFile(full)
       : undefined;
@@ -534,111 +473,20 @@ export class Scope {
    *   for nothing at `from`, and `409` when something is already at `to`.
    */
   async move(from: string, to: string) {
-    const anywhere = await this.resolvePath(from, { create: false, markdownOnly: false });
-    const isFolder = (await lstat(anywhere.full).catch(() => undefined))?.isDirectory() === true;
-    const source = isFolder
-      ? anywhere
-      : await this.resolvePath(from, { create: false, markdownOnly: true });
-    const dest = await this.resolvePath(to, { create: false, markdownOnly: !isFolder });
-    const info = await lstat(source.full).catch(() => undefined);
-    if (!info || !(isFolder || info.isFile())) {
-      throw new Refusal(404, `no such note or folder: ${from}`);
-    }
-    if (source.full === dest.full) {
-      throw new Refusal(400, `${from} is already there`);
-    }
-    if (isFolder && isInside(source.full, dest.full)) {
-      throw new Refusal(400, `cannot move ${from} into itself`);
-    }
-    // A case-only rename on a case-insensitive disk finds the source itself at `to`: that is fine.
-    const occupied = await lstat(dest.full).catch(() => undefined);
-    if (occupied && (occupied.ino !== info.ino || occupied.dev !== info.dev)) {
-      throw new Refusal(409, `already exists: ${to}`);
-    }
-
-    const docsDir = this.rag.config.docsDir;
     const prefix = this.folder ? `${this.folder}/` : "";
-    const inFolder = (full: string) => toPosix(relative(docsDir, full)).slice(prefix.length);
-    const oldPath = inFolder(source.full);
-    const newPath = inFolder(dest.full);
-    /** Where a file in the folder is after the move: itself, unless it is what moves or under it. */
-    const moved = (path: string) => {
-      if (path === oldPath) return newPath;
-      return isFolder && path.startsWith(`${oldPath}/`)
-        ? `${newPath}${path.slice(oldPath.length)}`
-        : path;
-    };
-    const before = await this.folderDocuments();
-    if (!isFolder && !before.some((document) => document.path === oldPath)) {
-      before.push({ path: oldPath, aliases: [] });
-    }
-    const after = before.map((document) => ({ ...document, path: moved(document.path) }));
-    const attachments = await listAttachments(resolve(docsDir, this.folder));
-    const attachmentsAfter = attachments.map(moved);
-
-    // Every document's new text, read and rewritten before anything is written.
-    const rewrites = new Map<string, { original: string; text: string }>();
-    for (const document of before) {
-      const full = resolve(docsDir, `${prefix}${document.path}`);
-      const original = await readFile(full, "utf8").catch(() => undefined);
-      if (original === undefined) continue;
-      const from = document.path;
-      const at = moved(from);
-      const edits: { start: number; end: number; text: string }[] = [];
-      for (const ref of findLinks(original)) {
-        const was = resolveRef(ref, from, before, attachments);
-        if (!was) continue;
-        const want = moved(was);
-        if (resolveRef(ref, at, after, attachmentsAfter) === want) continue;
-        edits.push({
-          start: ref.targetStart,
-          end: ref.targetEnd,
-          text: linkTarget(ref, want, at, after, attachmentsAfter),
-        });
-      }
-      let text = original;
-      for (const edit of edits.reverse()) {
-        text = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
-      }
-      if (text !== original || from === oldPath) rewrites.set(from, { original, text });
-    }
-
-    await mkdir(dirname(dest.full), { recursive: true });
-    if (isFolder) {
-      // One rename carries the documents, the attachments and whatever else is in there.
-      await rename(source.full, dest.full);
-    } else {
-      const document = rewrites.get(oldPath);
-      if (!document) throw new Refusal(404, `no such note: ${from}`);
-      if (occupied) {
-        await rename(source.full, dest.full);
-        if (document.text !== document.original) await writeFile(dest.full, document.text);
-      } else {
-        try {
-          await writeFile(dest.full, document.text, { flag: "wx" });
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-          throw new Refusal(409, `already exists: ${to}`);
-        }
-        await unlink(source.full);
-      }
-      rewrites.delete(oldPath);
-    }
-
-    const updated: string[] = [];
-    for (const [path, { original, text }] of rewrites) {
-      const full = resolve(docsDir, `${prefix}${moved(path)}`);
-      // Changed since it was read, by an editor or an agent: theirs wins, and this link is not
-      // fixed.
-      if ((await readFile(full, "utf8").catch(() => undefined)) !== original) continue;
-      await writeAtomic(full, text);
-      updated.push(moved(path));
-    }
+    const moved = await moveInFolder({
+      docsDir: this.rag.config.docsDir,
+      folder: this.folder,
+      root: this.root,
+      documents: await this.folderDocuments(),
+      from,
+      to,
+    });
     const scoped = (path: string) => this.toScoped(`${prefix}${path}`);
     return {
-      from: scoped(oldPath),
-      to: scoped(newPath),
-      updated: updated.map(scoped),
+      from: scoped(moved.from),
+      to: scoped(moved.to),
+      updated: moved.updated.map(scoped),
       sync: await this.rag.sync(false),
     };
   }
@@ -649,7 +497,10 @@ export class Scope {
    * @throws with `status: 400` for a path the indexer would not index, and `404` for no such file.
    */
   async deleteDocument(path: string) {
-    const { full, relPath } = await this.resolvePath(path, { create: false, markdownOnly: true });
+    const { full, relPath } = await resolvePath(this.root, path, {
+      create: false,
+      markdownOnly: true,
+    });
     if (!(await lstat(full).catch(() => undefined))?.isFile()) {
       throw new Refusal(404, `no such document: ${path}`);
     }
@@ -666,7 +517,10 @@ export class Scope {
    *   that is not empty without `recursive`.
    */
   async remove(path: string, recursive = false) {
-    const { full, relPath } = await this.resolvePath(path, { create: false, markdownOnly: false });
+    const { full, relPath } = await resolvePath(this.root, path, {
+      create: false,
+      markdownOnly: false,
+    });
     if (!(await lstat(full).catch(() => undefined))?.isDirectory())
       return this.deleteDocument(path);
     const held = (await readdir(full)).length;
@@ -679,57 +533,6 @@ export class Scope {
     if (held > 0) await rm(full, { recursive: true });
     else await rmdir(full);
     return { path: relPath, sync: await this.rag.sync(false) };
-  }
-
-  /**
-   * Resolve a path a client wants to write, delete or download, relative to the scope. Refused with
-   * a 400 unless the indexer would walk to it: no dot-segment or `node_modules`, inside the folder,
-   * and no symlink or file on the way — the indexer does not follow symlinks, and a write through
-   * one could land outside the docs. Resolved against the folder's real path, as `openScope` does.
-   *
-   * @param create make the missing folders on the way.
-   * @param markdownOnly also require a Markdown extension, as for anything that is written.
-   */
-  private async resolvePath(
-    path: string,
-    { create, markdownOnly }: { create: boolean; markdownOnly: boolean },
-  ) {
-    const invalid = (why: string) => new Refusal(400, `${why}: ${path}`);
-    const posixPath = path.replaceAll("\\", "/");
-    if (!posixPath || posix.isAbsolute(posixPath) || /^[a-z]:/i.test(posixPath)) {
-      throw invalid("path must be relative to the docs folder");
-    }
-    const segments = posix
-      .normalize(posixPath)
-      .split("/")
-      .filter((segment) => segment && segment !== ".");
-    if (segments.length === 0 || segments.includes("..")) {
-      throw invalid("path is outside the docs folder");
-    }
-    if (segments.some((segment) => !isIndexedName(segment))) {
-      throw invalid("path names a folder or file the index skips");
-    }
-    if (markdownOnly && !MARKDOWN.test(segments.at(-1) ?? "")) {
-      throw invalid("only Markdown files (.md, .markdown, .mdx) can be written");
-    }
-
-    const root = await realpath(this.root);
-    let current = root;
-    for (const segment of segments.slice(0, -1)) {
-      current = join(current, segment);
-      let info = await lstat(current).catch(() => undefined);
-      if (!info && create) {
-        await mkdir(current).catch((error: NodeJS.ErrnoException) => {
-          if (error.code !== "EEXIST") throw error;
-        });
-        info = await lstat(current);
-      }
-      if (!info) break;
-      if (!info.isDirectory()) throw invalid("a folder on the path is a file or a symlink");
-    }
-    const full = join(root, ...segments);
-    if (!isInside(root, full)) throw invalid("path is outside the docs folder");
-    return { full, relPath: segments.join("/") };
   }
 
   /** Sync (or with `full`, rebuild) the whole index: there is one, shared by every scope. */
@@ -783,88 +586,6 @@ export async function openScope(rag: Ragdown, dir: string): Promise<Scope | unde
   return new Scope(rag, normalized);
 }
 
-/**
- * The lines of the section under a heading, 1-based and inclusive: from the heading to the line
- * before the next heading at its level or above. `A#B` names `B` under `A`; only the last part is
- * matched. Undefined when no heading matches, and the caller reads the whole document.
- */
-function headingRange(lines: string[], anchor: string): { start: number; end: number } | undefined {
-  const wanted = (anchor.split("#").at(-1) ?? "").trim().toLowerCase();
-  let fence: string | null = null;
-  let start: number | undefined;
-  let level = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    const fenceMatch = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
-    if (fenceMatch?.[1]) {
-      const marker = fenceMatch[1];
-      if (fence === null) fence = marker;
-      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null;
-      continue;
-    }
-    if (fence !== null) continue;
-    const heading = /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
-    if (!heading?.[1] || !heading[2]) continue;
-    if (start === undefined) {
-      if (heading[2].trim().toLowerCase() === wanted) {
-        start = i + 1;
-        level = heading[1].length;
-      }
-    } else if (heading[1].length <= level) {
-      return { start, end: i };
-    }
-  }
-  return start === undefined ? undefined : { start, end: lines.length };
-}
-
-/**
- * What to write in place of a link's target so it points at `want` from the document at `from`. A
- * Markdown link gets the relative path; a wikilink, the shortest trailing part of the path that
- * resolves there, keeping `.md` if the link had it.
- */
-function linkTarget(
-  ref: LinkRef,
-  want: string,
-  from: string,
-  documents: LinkDocument[],
-  attachments: string[],
-): string {
-  if (ref.kind === "markdown") {
-    return encodeURI(posix.relative(posix.dirname(from), want))
-      .replaceAll("(", "%28")
-      .replaceAll(")", "%29");
-  }
-  const document = MARKDOWN.test(want);
-  const keepExtension = document && MARKDOWN.test(ref.target);
-  const bare = document && !keepExtension ? want.replace(MARKDOWN, "") : want;
-  const segments = bare.split("/");
-  for (let k = 1; k <= segments.length; k++) {
-    const candidate = segments.slice(-k).join("/");
-    if (resolveLink(candidate, from, documents, attachments)?.path === want) return candidate;
-  }
-  return bare;
-}
-
-/**
- * Every file under `root` a wikilink may embed that is not a document: images, PDFs and the like,
- * by `/`-separated relative path. Skips what the indexer skips.
- */
-async function listAttachments(root: string): Promise<string[]> {
-  const out: string[] = [];
-  const walk = async (dir: string): Promise<void> => {
-    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [] as Dirent[]);
-    for (const entry of entries) {
-      if (isSkippedEntry(entry.name)) continue;
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) await walk(full);
-      else if (entry.isFile() && !MARKDOWN.test(entry.name))
-        out.push(toPosix(relative(root, full)));
-    }
-  };
-  await walk(root);
-  return out;
-}
-
 /** `path_prefix` as a folder: `./projects/` and `projects` both mean files under `projects/`. */
 function normalizeFolder(prefix: string | undefined): string {
   if (!prefix) return "";
@@ -883,15 +604,4 @@ function withSupersededBy(paths: string[]): { superseded_by?: string[] } {
 
 function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
-
-function slug(title: string): string {
-  return (
-    title
-      .toLowerCase()
-      .normalize("NFKD")
-      .replace(/[^\p{L}\p{N}]+/gu, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 60) || "note"
-  );
 }
