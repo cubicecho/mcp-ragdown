@@ -18,12 +18,11 @@ import {
   type Folder,
   type FolderChanges,
   getFolder,
-  HOOK_KEYS,
-  hookValueError,
   listFolders,
   looseFiles,
   updateFolder,
 } from "./folders.ts";
+import { parseHookChanges } from "./hook-settings.ts";
 import { Refusal } from "./refusal.ts";
 import { openScope, Scope } from "./scope.ts";
 import { createMcpServer, SERVER_NAME, VERSION } from "./server.ts";
@@ -623,20 +622,7 @@ function settingsFrom(body: Record<string, unknown> | undefined): FolderChanges 
     }
     out.mcp = body.mcp;
   }
-  if (body?.hook !== undefined) {
-    const hook = body.hook as Record<string, unknown> | null;
-    if (!hook || typeof hook !== "object" || Array.isArray(hook)) {
-      throw new Refusal(400, "hook must be an object");
-    }
-    out.hook = {};
-    for (const key of HOOK_KEYS) {
-      const value = hook[key];
-      if (value === undefined) continue;
-      const error = value === null ? undefined : hookValueError(key, value);
-      if (error) throw new Refusal(400, error);
-      out.hook[key] = value as number | null;
-    }
-  }
+  if (body?.hook !== undefined) out.hook = parseHookChanges(body.hook);
   return out;
 }
 

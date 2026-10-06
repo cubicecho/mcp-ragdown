@@ -3,6 +3,13 @@ import { lstat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from
 import { join } from "node:path";
 import { isIndexedName, MARKDOWN } from "./document-paths.ts";
 import { errorMessage } from "./errors.ts";
+import {
+  type HookChanges,
+  type HookOverrides,
+  mergeHookChanges,
+  readHookOverrides,
+} from "./hook-settings.ts";
+import { isRecord } from "./json.ts";
 import { Refusal } from "./refusal.ts";
 
 /** A folder's settings file, at its root. A dot-file: Obsidian and the indexer both skip it. */
@@ -18,32 +25,10 @@ export interface FolderSettings {
   hook: HookOverrides;
 }
 
-/** `ragdown_context`'s defaults as a folder may set them, named as the tool's arguments are. */
-export interface HookOverrides {
-  top_k?: number;
-  min_score?: number;
-  min_ratio?: number;
-  max_chars?: number;
-}
-
 /** What a change may say about the settings: a `null` hook value takes the override away. */
 export type FolderChanges = Partial<Omit<FolderSettings, "hook">> & {
-  hook?: { [K in keyof HookOverrides]?: number | null };
+  hook?: HookChanges;
 };
-
-export const HOOK_KEYS = ["top_k", "min_score", "min_ratio", "max_chars"] as const;
-
-/** Why `value` cannot be the hook default `key`, held to what `RAGDOWN_HOOK_*` accepts; undefined when it can. */
-export function hookValueError(key: keyof HookOverrides, value: unknown): string | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return `${key} must be a number`;
-  if (key === "min_score") return undefined;
-  if (key === "min_ratio") {
-    return value < 0 || value > 1 ? `${key} must be between 0 and 1` : undefined;
-  }
-  return Number.isInteger(value) && value >= 0
-    ? undefined
-    : `${key} must be a non-negative integer`;
-}
 
 export interface Folder extends FolderSettings {
   /** The directory name, which is also the `/mcp/<name>` segment. */
@@ -75,19 +60,8 @@ export async function readSettings(dir: string, name: string): Promise<FolderSet
   return {
     title: typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : name,
     mcp: raw.mcp === true,
-    hook: readHook(raw.hook),
+    hook: readHookOverrides(raw.hook),
   };
-}
-
-/** The overrides in a settings file that are valid; a bad one is skipped, so the default applies. */
-function readHook(raw: unknown): HookOverrides {
-  const hook: HookOverrides = {};
-  if (!raw || typeof raw !== "object") return hook;
-  for (const key of HOOK_KEYS) {
-    const value = (raw as Record<string, unknown>)[key];
-    if (typeof value === "number" && !hookValueError(key, value)) hook[key] = value;
-  }
-  return hook;
 }
 
 async function readRaw(dir: string): Promise<Record<string, unknown>> {
@@ -247,14 +221,7 @@ async function writeSettings(
   }
   if (changes.mcp !== undefined) next.mcp = changes.mcp;
   if (changes.hook !== undefined) {
-    const current = next.hook;
-    const hook: Record<string, unknown> =
-      current && typeof current === "object" && !Array.isArray(current) ? { ...current } : {};
-    for (const key of HOOK_KEYS) {
-      const value = changes.hook[key];
-      if (value === null) delete hook[key];
-      else if (value !== undefined) hook[key] = value;
-    }
+    const hook = mergeHookChanges(isRecord(next.hook) ? next.hook : {}, changes.hook);
     if (Object.keys(hook).length > 0) next.hook = hook;
     else delete next.hook;
   }

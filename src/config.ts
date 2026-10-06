@@ -3,7 +3,7 @@ import { statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, posix, resolve } from "node:path";
 import { isIndexedName } from "./document-paths.ts";
-import { scoreScale } from "./embedder.ts";
+import { embedderMinScore, type HookSettings } from "./hook-settings.ts";
 import type { ServerSettings } from "./settings.ts";
 
 /**
@@ -43,13 +43,7 @@ export interface Config {
     keepAliveTimeoutMs: number;
   };
   /** Defaults for `ragdown_context`, which a hook calls before each turn. */
-  hook: {
-    topK: number;
-    minScore: number;
-    /** Lowest share of the best hit's similarity a hit may have and still be injected; 0 disables. */
-    minRatio: number;
-    maxChars: number;
-  };
+  hook: HookSettings;
   /**
    * What the environment said for the settings the web UI can change. `embedder`, `watch`,
    * `textLimit` and `hook` above are these with `saved` laid over them (`settings.ts`).
@@ -152,9 +146,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
     },
     hook: {
       ...hook,
-      // Cosine is on each model's own scale, so the default is the embedder's own measured floor.
-      // An embedder nobody measured gets the default model's, which is a guess: set the variable.
-      minScore: explicitMinScore ?? scoreScale(embedder)?.minScore ?? 0.8,
+      minScore: explicitMinScore ?? embedderMinScore(embedder),
     },
     env: { embedder, watch, textLimit, hook: { ...hook, minScore: explicitMinScore } },
     saved: {},

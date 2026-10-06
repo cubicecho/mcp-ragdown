@@ -1,9 +1,15 @@
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { Config } from "./config.ts";
-import { scoreScale } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
-import { HOOK_KEYS, type HookOverrides, hookValueError } from "./folders.ts";
+import {
+  embedderMinScore,
+  type HookChanges,
+  type HookOverrides,
+  mergeHookChanges,
+  parseHookChanges,
+  resolveHook,
+} from "./hook-settings.ts";
 import { Refusal } from "./refusal.ts";
 import { writeAtomic } from "./write-atomic.ts";
 
@@ -26,7 +32,7 @@ export interface SettingsChanges {
   embedder?: string | null;
   watch?: boolean | null;
   text_limit?: number | null;
-  hook?: { [K in keyof HookOverrides]?: number | null };
+  hook?: HookChanges;
 }
 
 const invalid = (message: string) => new Refusal(400, message);
@@ -94,20 +100,7 @@ export function parseChanges(body: Record<string, unknown> | undefined): Setting
     }
     out.text_limit = body.text_limit;
   }
-  if (body?.hook !== undefined) {
-    const hook = body.hook as Record<string, unknown> | null;
-    if (!hook || typeof hook !== "object" || Array.isArray(hook)) {
-      throw invalid("hook must be an object");
-    }
-    out.hook = {};
-    for (const key of HOOK_KEYS) {
-      const value = hook[key];
-      if (value === undefined) continue;
-      const error = value === null ? undefined : hookValueError(key, value);
-      if (error) throw invalid(error);
-      out.hook[key] = value as number | null;
-    }
-  }
+  if (body?.hook !== undefined) out.hook = parseHookChanges(body.hook);
   return out;
 }
 
@@ -121,12 +114,7 @@ export function applyChanges(saved: ServerSettings, changes: SettingsChanges): S
   if (changes.text_limit === null) delete out.text_limit;
   else if (changes.text_limit !== undefined) out.text_limit = changes.text_limit;
   if (changes.hook) {
-    const hook: HookOverrides = { ...saved.hook };
-    for (const key of HOOK_KEYS) {
-      const value = changes.hook[key];
-      if (value === null) delete hook[key];
-      else if (value !== undefined) hook[key] = value;
-    }
+    const hook = mergeHookChanges(saved.hook ?? {}, changes.hook);
     if (Object.keys(hook).length > 0) out.hook = hook;
     else delete out.hook;
   }
@@ -144,12 +132,9 @@ export function applySettings(config: Config, saved: ServerSettings): void {
   config.embedder = saved.embedder ?? env.embedder;
   config.watch = saved.watch ?? env.watch;
   config.textLimit = saved.text_limit ?? env.textLimit;
-  config.hook = {
-    topK: saved.hook?.top_k ?? env.hook.topK,
+  config.hook = resolveHook({}, saved.hook ?? {}, {
+    ...env.hook,
     // Unset everywhere, the floor is the embedder's own, so it moves when the embedder does.
-    minScore:
-      saved.hook?.min_score ?? env.hook.minScore ?? scoreScale(config.embedder)?.minScore ?? 0.8,
-    minRatio: saved.hook?.min_ratio ?? env.hook.minRatio,
-    maxChars: saved.hook?.max_chars ?? env.hook.maxChars,
-  };
+    minScore: env.hook.minScore ?? embedderMinScore(config.embedder),
+  });
 }

@@ -18,6 +18,7 @@ import { isIndexedName, isInside, isSkippedEntry, MARKDOWN, toPosix } from "./do
 import type { Ragdown } from "./engine.ts";
 import { readSettings } from "./folders.ts";
 import { formatHit } from "./format.ts";
+import { type ContextOptions, resolveHook } from "./hook-settings.ts";
 import {
   findLinks,
   type LinkNote,
@@ -32,14 +33,6 @@ import { writeAtomic } from "./write-atomic.ts";
 
 /** Sessions whose returned chunks are remembered; past this the oldest is forgotten. */
 const MAX_SESSIONS = 200;
-
-/** Per-call overrides of `context`'s defaults: the folder's own, else the `RAGDOWN_HOOK_*` ones. */
-export interface ContextOptions {
-  topK?: number;
-  minScore?: number;
-  minRatio?: number;
-  maxChars?: number;
-}
 
 /**
  * The chunk ids `ragdown_context` already returned for each session, least recently used first.
@@ -123,10 +116,7 @@ export class Scope {
     const own = this.folder
       ? (await readSettings(resolve(this.config.docsDir, this.folder), this.folder)).hook
       : {};
-    const topK = options.topK ?? own.top_k ?? this.config.hook.topK;
-    const minScore = options.minScore ?? own.min_score ?? this.config.hook.minScore;
-    const minRatio = options.minRatio ?? own.min_ratio ?? this.config.hook.minRatio;
-    const maxChars = options.maxChars ?? own.max_chars ?? this.config.hook.maxChars;
+    const { topK, minScore, minRatio, maxChars } = resolveHook(options, own, this.config.hook);
     const trimmed = prompt.trim();
     // A slash command or a one-word reply ("yes", "go on") has nothing to retrieve on.
     if (trimmed.length < 12 || trimmed.startsWith("/")) return undefined;
