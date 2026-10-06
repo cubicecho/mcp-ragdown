@@ -1,9 +1,9 @@
 // Shared by the vector-search benchmarks (qdrant.ts, lance-tuning.ts): the corpus embedded as the
 // server would, its vectors jittered up to any N, exact ground truth, and a latency timer.
 import { join } from "node:path";
-import { type Chunk, chunkMarkdown, embeddingText } from "../../src/chunk.ts";
-import { createEmbedder } from "../../src/embedder.ts";
-import type { FileUpdate } from "../../src/store.ts";
+import { type Chunk, chunkMarkdown, embeddingText } from "../../src/documents/chunk.ts";
+import { createEmbedder } from "../../src/indexing/embedder.ts";
+import type { FileUpdate } from "../../src/indexing/store.ts";
 import { docs, questions, renderDoc } from "./gen.ts";
 
 /** Synthetic rows are spread over this many top-level folders; a filter on one keeps 10%. */

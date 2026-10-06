@@ -123,9 +123,9 @@ const haystack = docs.map((d) => file(d.slug)).join("\n\n");
  */
 async function retriever() {
   const { mkdtempSync } = await import("node:fs");
-  const { chunkMarkdown, embeddingText } = await import("../../src/chunk.ts");
-  const { createEmbedder } = await import("../../src/embedder.ts");
-  const { Store } = await import("../../src/store.ts");
+  const { chunkMarkdown, embeddingText } = await import("../../src/documents/chunk.ts");
+  const { createEmbedder } = await import("../../src/indexing/embedder.ts");
+  const { Store } = await import("../../src/indexing/store.ts");
   const embedder = await createEmbedder({
     embedder: "granite-small",
     modelsDir: join(process.env.HOME ?? "", ".cache/ragdown-bench-models"),

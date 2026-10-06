@@ -6,9 +6,9 @@
 //   E4 E1 + E3
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type Chunk, chunkMarkdown, embeddingText } from "../../src/chunk.ts";
-import { createEmbedder } from "../../src/embedder.ts";
-import { Store } from "../../src/store.ts";
+import { type Chunk, chunkMarkdown, embeddingText } from "../../src/documents/chunk.ts";
+import { createEmbedder } from "../../src/indexing/embedder.ts";
+import { Store } from "../../src/indexing/store.ts";
 import { docs, questions, renderDoc } from "./gen.ts";
 
 const here = import.meta.dirname;

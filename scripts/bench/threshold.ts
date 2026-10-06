@@ -2,9 +2,9 @@
 // same for prompts the corpus cannot answer. A model's scale is its own; 0.7 means nothing across them.
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
-import { chunkMarkdown } from "../../src/chunk.ts";
-import { createEmbedder } from "../../src/embedder.ts";
-import { Store } from "../../src/store.ts";
+import { chunkMarkdown } from "../../src/documents/chunk.ts";
+import { createEmbedder } from "../../src/indexing/embedder.ts";
+import { Store } from "../../src/indexing/store.ts";
 import { docs, questions, renderDoc } from "./gen.ts";
 
 const here = import.meta.dirname;

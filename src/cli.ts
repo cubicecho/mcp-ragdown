@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { basename } from "node:path";
 import { parseArgs } from "node:util";
-import { type Config, loadConfig } from "./config.ts";
-import { errorMessage } from "./errors.ts";
+import { type Config, loadConfig } from "./shared/config.ts";
+import { errorMessage } from "./shared/errors.ts";
 
 /*
  * Both commands log to stderr only: for `stdio` stdout is the JSON-RPC channel, and a stray
@@ -55,10 +55,10 @@ async function stdio(config: Config): Promise<void> {
   const [{ StdioServerTransport }, { Ragdown }, { Scope }, { createMcpServer }, { readSettings }] =
     await Promise.all([
       import("@modelcontextprotocol/sdk/server/stdio.js"),
-      import("./engine.ts"),
-      import("./scope.ts"),
-      import("./server.ts"),
-      import("./folders.ts"),
+      import("./serving/engine.ts"),
+      import("./documents/scope.ts"),
+      import("./serving/mcp-tools.ts"),
+      import("./folders/folder-settings.ts"),
     ]);
   const ready = Ragdown.start(config);
   // Logged here; each tool call awaits the same promise and reports the failure as its result.
@@ -89,7 +89,11 @@ async function serve(config: Config): Promise<void> {
     { Ragdown },
     { assertAuthConfigured, createHttpServer },
     { applySettings, readServerSettings },
-  ] = await Promise.all([import("./engine.ts"), import("./http.ts"), import("./settings.ts")]);
+  ] = await Promise.all([
+    import("./serving/engine.ts"),
+    import("./serving/http.ts"),
+    import("./shared/server-settings.ts"),
+  ]);
   assertAuthConfigured(config);
   // What the web UI saved wins over the environment it was started with.
   applySettings(config, await readServerSettings(config.docsDir));

@@ -9,9 +9,9 @@
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import * as lancedb from "@lancedb/lancedb";
-import { chunkMarkdown } from "../../src/chunk.ts";
-import { createEmbedder } from "../../src/embedder.ts";
-import { Store } from "../../src/store.ts";
+import { chunkMarkdown } from "../../src/documents/chunk.ts";
+import { createEmbedder } from "../../src/indexing/embedder.ts";
+import { Store } from "../../src/indexing/store.ts";
 import { docs, renderDoc } from "./gen.ts";
 
 const here = import.meta.dirname;

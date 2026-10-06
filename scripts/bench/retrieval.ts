@@ -1,9 +1,9 @@
 // Retrieval benchmark: ragdown's real Store (LanceDB FTS + bge-small, RRF) per format.
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type Chunk, chunkMarkdown, embeddingText } from "../../src/chunk.ts";
-import { createEmbedder } from "../../src/embedder.ts";
-import { Store } from "../../src/store.ts";
+import { type Chunk, chunkMarkdown, embeddingText } from "../../src/documents/chunk.ts";
+import { createEmbedder } from "../../src/indexing/embedder.ts";
+import { Store } from "../../src/indexing/store.ts";
 import { docs, type Fmt, FORMATS, questions, renderBlocks, renderDoc } from "./gen.ts";
 
 const here = import.meta.dirname;
