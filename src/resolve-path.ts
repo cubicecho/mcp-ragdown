@@ -44,14 +44,22 @@ export async function resolvePath(
     let info = await lstat(current).catch(() => undefined);
     if (!info && create) {
       await mkdir(current).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "EEXIST") throw error;
+        if (error.code !== "EEXIST") {
+          throw error;
+        }
       });
       info = await lstat(current);
     }
-    if (!info) break;
-    if (!info.isDirectory()) throw invalid("a folder on the path is a file or a symlink");
+    if (!info) {
+      break;
+    }
+    if (!info.isDirectory()) {
+      throw invalid("a folder on the path is a file or a symlink");
+    }
   }
   const full = join(root, ...segments);
-  if (!isInside(root, full)) throw invalid("path is outside the docs folder");
+  if (!isInside(root, full)) {
+    throw invalid("path is outside the docs folder");
+  }
   return { full, relPath: segments.join("/") };
 }

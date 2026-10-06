@@ -65,13 +65,18 @@ export function createHttpServer(
   return createServer({ keepAliveTimeout: config.http.keepAliveTimeoutMs }, (req, res) => {
     handle(ready, config, webDir, req, res).catch((error: unknown) => {
       const status = error instanceof Refusal ? error.status : 500;
-      if (status >= 500) console.error(`[http] ${req.method} ${req.url}: ${errorMessage(error)}`);
+      if (status >= 500) {
+        console.error(`[http] ${req.method} ${req.url}: ${errorMessage(error)}`);
+      }
       const body =
         error instanceof Refusal && error.code !== undefined
           ? { error: errorMessage(error), code: error.code }
           : { error: errorMessage(error) };
-      if (!res.headersSent) json(res, status, body);
-      else res.end();
+      if (!res.headersSent) {
+        json(res, status, body);
+      } else {
+        res.end();
+      }
     });
   });
 }
@@ -114,8 +119,11 @@ async function handle(
   const mcp = path === "/mcp" || path.startsWith("/mcp/");
   const api = mcp || path.startsWith("/api/");
   if (!api) {
-    if (req.method === "GET" || req.method === "HEAD") await serveWeb(webDir, path, res);
-    else json(res, 404, { error: "Not found" });
+    if (req.method === "GET" || req.method === "HEAD") {
+      await serveWeb(webDir, path, res);
+    } else {
+      json(res, 404, { error: "Not found" });
+    }
     return;
   }
   if (!mcp && !API_ROUTES.has(path) && !path.startsWith("/api/folders/")) {
@@ -220,9 +228,13 @@ function scopeDir(path: string): string {
 }
 
 function authorized(config: Config, header: string | undefined): boolean {
-  if (config.http.secureLocalNet) return true;
+  if (config.http.secureLocalNet) {
+    return true;
+  }
   const provided = header?.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!provided || !config.http.token) return false;
+  if (!provided || !config.http.token) {
+    return false;
+  }
   // Compared as digests so neither the content nor the length leaks through timing.
   const digest = (value: string) => createHash("sha256").update(value).digest();
   return timingSafeEqual(digest(provided), digest(config.http.token));

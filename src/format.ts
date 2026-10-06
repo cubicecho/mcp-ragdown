@@ -7,7 +7,9 @@ import type { Hit } from "./store.ts";
  * documents are incomplete and goes looking elsewhere.
  */
 export function formatHits(hits: Hit[], maxChars: number): string {
-  if (hits.length === 0) return "No matching notes.";
+  if (hits.length === 0) {
+    return "No matching notes.";
+  }
   return hits.map((hit, i) => `[${i + 1}] ${formatHit(hit, maxChars)}`).join("\n\n");
 }
 
@@ -35,7 +37,9 @@ export function hitJson(hit: Hit) {
 }
 
 function clip(hit: Hit, maxChars: number): string {
-  if (maxChars <= 0 || hit.text.length <= maxChars) return hit.text;
+  if (maxChars <= 0 || hit.text.length <= maxChars) {
+    return hit.text;
+  }
   const call = `ragdown_read_doc {path: ${JSON.stringify(hit.path)}, start_line: ${hit.lineStart}, end_line: ${hit.lineEnd}}`;
   return `${hit.text.slice(0, maxChars)}… [clipped: ${maxChars} of ${hit.text.length} characters — ${call}]`;
 }

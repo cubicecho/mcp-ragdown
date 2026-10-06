@@ -205,7 +205,9 @@ export async function handleDocuments(request: ApiRequest): Promise<void> {
     });
     await pipeline(createReadStream(full), res).catch((error: NodeJS.ErrnoException) => {
       // The client hung up, often right after the last byte and before `finish`: nothing to answer.
-      if (error.code !== "ERR_STREAM_PREMATURE_CLOSE") throw error;
+      if (error.code !== "ERR_STREAM_PREMATURE_CLOSE") {
+        throw error;
+      }
     });
     return;
   }

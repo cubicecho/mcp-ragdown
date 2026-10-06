@@ -74,7 +74,9 @@ export async function handleFolders(request: ApiRequest): Promise<void> {
       ...(rename !== undefined ? { rename } : {}),
     });
     // Every path in the folder changed: the index answers for the new ones before this returns.
-    if (renamed) await rag.sync(false);
+    if (renamed) {
+      await rag.sync(false);
+    }
     json(res, 200, { folder: await folderSummary(rag, folder) });
     return;
   }
@@ -100,7 +102,9 @@ function settingsFrom(body: Record<string, unknown> | undefined): FolderChanges 
     }
     out.mcp = body.mcp;
   }
-  if (body?.hook !== undefined) out.hook = parseHookChanges(body.hook);
+  if (body?.hook !== undefined) {
+    out.hook = parseHookChanges(body.hook);
+  }
   return out;
 }
 
@@ -117,7 +121,9 @@ function summarize(folder: Folder, files: Map<string, FileState>) {
   let count = 0;
   let chunks = 0;
   for (const [path, state] of files) {
-    if (!path.startsWith(`${folder.name}/`)) continue;
+    if (!path.startsWith(`${folder.name}/`)) {
+      continue;
+    }
     count++;
     chunks += state.chunks;
   }

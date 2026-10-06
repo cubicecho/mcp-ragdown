@@ -11,7 +11,9 @@ import { tempSetup } from "./testing.ts";
 
 const closers: (() => Promise<void>)[] = [];
 afterEach(async () => {
-  for (const close of closers.splice(0).reverse()) await close();
+  for (const close of closers.splice(0).reverse()) {
+    await close();
+  }
 });
 
 async function connect(env: Record<string, string> = {}) {

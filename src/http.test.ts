@@ -15,7 +15,9 @@ import { eventually, tempSetup } from "./testing.ts";
 
 const closers: (() => Promise<void>)[] = [];
 afterEach(async () => {
-  for (const close of closers.splice(0).reverse()) await close();
+  for (const close of closers.splice(0).reverse()) {
+    await close();
+  }
 });
 
 /** A server in folders mode over one folder, `ops`, with MCP on. */

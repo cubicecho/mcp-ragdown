@@ -49,7 +49,9 @@ export class Ragdown {
     }
     let pending: Ragdown | undefined;
     const handler = (req: Record<string, unknown>) => {
-      if (!pending) throw new Error("the primary is still starting");
+      if (!pending) {
+        throw new Error("the primary is still starting");
+      }
       return pending.handle(req);
     };
     const socket = await claimSocket(config.socketPath, handler);
@@ -59,10 +61,14 @@ export class Ragdown {
       : await openAsReader(config.dataDir, embedder);
     const ragdown = new Ragdown(config, embedder, store);
     pending = ragdown;
-    if (store.rebuiltBecause)
+    if (store.rebuiltBecause) {
       console.error(`[ragdown] rebuilding the index: ${store.rebuiltBecause}`);
-    if (socket) ragdown.becomePrimary(socket);
-    else ragdown.watchForTakeover(handler);
+    }
+    if (socket) {
+      ragdown.becomePrimary(socket);
+    } else {
+      ragdown.watchForTakeover(handler);
+    }
     return ragdown;
   }
 
@@ -89,7 +95,9 @@ export class Ragdown {
 
   /** Sync (or with `full`, rebuild) the index — here when primary, on the primary otherwise. */
   async sync(full: boolean): Promise<SyncReport> {
-    if (this.indexer) return full ? this.indexer.rebuild() : this.indexer.sync();
+    if (this.indexer) {
+      return full ? this.indexer.rebuild() : this.indexer.sync();
+    }
     // A full rebuild of a large folder takes minutes; the timeout is for a primary that hangs.
     return (await request(this.config.socketPath, { op: "sync", full }, 30 * 60_000)) as SyncReport;
   }
@@ -132,16 +140,21 @@ export class Ragdown {
     await this.indexer.stop();
     this.embedder = embedder;
     this.store = await Store.open(this.config.dataDir, embedder, true);
-    if (this.store.rebuiltBecause)
+    if (this.store.rebuiltBecause) {
       console.error(`[ragdown] rebuilding the index: ${this.store.rebuiltBecause}`);
+    }
     this.startIndexer();
   }
 
   /** Start or stop watching the docs dir, to match `config.watch`. A reader has nothing to watch. */
   setWatch(): void {
-    if (!this.indexer) return;
+    if (!this.indexer) {
+      return;
+    }
     this.indexer.close();
-    if (this.config.watch) this.indexer.watch();
+    if (this.config.watch) {
+      this.indexer.watch();
+    }
   }
 
   async close(): Promise<void> {
@@ -175,14 +188,18 @@ export class Ragdown {
     void this.indexer.sync().catch((error: unknown) => {
       console.error(`[ragdown] first sync failed: ${errorMessage(error)}`);
     });
-    if (this.config.watch) this.indexer.watch();
+    if (this.config.watch) {
+      this.indexer.watch();
+    }
   }
 
   private watchForTakeover(handler: (req: Record<string, unknown>) => Promise<unknown>): void {
     this.takeover = setInterval(() => {
       void (async () => {
         const socket = await claimSocket(this.config.socketPath, handler);
-        if (!socket) return;
+        if (!socket) {
+          return;
+        }
         clearInterval(this.takeover);
         // Reopened writable, so a meta mismatch the old primary left behind is repaired here.
         this.store = await Store.open(this.config.dataDir, this.embedder, true);
@@ -204,7 +221,9 @@ async function openAsReader(dataDir: string, embedder: Embedder): Promise<Store>
     try {
       return await Store.open(dataDir, embedder, false);
     } catch (error) {
-      if (attempt >= 20) throw error;
+      if (attempt >= 20) {
+        throw error;
+      }
       await new Promise((done) => setTimeout(done, 500));
     }
   }

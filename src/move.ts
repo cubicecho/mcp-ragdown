@@ -62,7 +62,9 @@ export async function moveInFolder({
   const newPath = inFolder(dest.full);
   /** Where a file in the folder is after the move: itself, unless it is what moves or under it. */
   const moved = (path: string) => {
-    if (path === oldPath) return newPath;
+    if (path === oldPath) {
+      return newPath;
+    }
     return isFolder && path.startsWith(`${oldPath}/`)
       ? `${newPath}${path.slice(oldPath.length)}`
       : path;
@@ -80,15 +82,21 @@ export async function moveInFolder({
   for (const document of before) {
     const full = resolve(docsDir, `${prefix}${document.path}`);
     const original = await readFile(full, "utf8").catch(() => undefined);
-    if (original === undefined) continue;
+    if (original === undefined) {
+      continue;
+    }
     const from = document.path;
     const at = moved(from);
     const edits: { start: number; end: number; text: string }[] = [];
     for (const ref of findLinks(original)) {
       const was = resolveRef(ref, from, before, attachments);
-      if (!was) continue;
+      if (!was) {
+        continue;
+      }
       const want = moved(was);
-      if (resolveRef(ref, at, after, attachmentsAfter) === want) continue;
+      if (resolveRef(ref, at, after, attachmentsAfter) === want) {
+        continue;
+      }
       edits.push({
         start: ref.targetStart,
         end: ref.targetEnd,
@@ -99,7 +107,9 @@ export async function moveInFolder({
     for (const edit of edits.reverse()) {
       text = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
     }
-    if (text !== original || from === oldPath) rewrites.set(from, { original, text });
+    if (text !== original || from === oldPath) {
+      rewrites.set(from, { original, text });
+    }
   }
 
   await mkdir(dirname(dest.full), { recursive: true });
@@ -108,15 +118,21 @@ export async function moveInFolder({
     await rename(source.full, dest.full);
   } else {
     const document = rewrites.get(oldPath);
-    if (!document) throw new Refusal(404, `no such note: ${from}`);
+    if (!document) {
+      throw new Refusal(404, `no such note: ${from}`);
+    }
     if (occupied) {
       await rename(source.full, dest.full);
-      if (document.text !== document.original) await writeFile(dest.full, document.text);
+      if (document.text !== document.original) {
+        await writeFile(dest.full, document.text);
+      }
     } else {
       try {
         await writeFile(dest.full, document.text, { flag: "wx" });
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+          throw error;
+        }
         throw new Refusal(409, `already exists: ${to}`);
       }
       await unlink(source.full);
@@ -129,7 +145,9 @@ export async function moveInFolder({
     const full = resolve(docsDir, `${prefix}${moved(path)}`);
     // Changed since it was read, by an editor or an agent: theirs wins, and this link is not
     // fixed.
-    if ((await readFile(full, "utf8").catch(() => undefined)) !== original) continue;
+    if ((await readFile(full, "utf8").catch(() => undefined)) !== original) {
+      continue;
+    }
     await writeAtomic(full, text);
     updated.push(moved(path));
   }
@@ -159,7 +177,9 @@ function linkTarget(
   const segments = bare.split("/");
   for (let k = 1; k <= segments.length; k++) {
     const candidate = segments.slice(-k).join("/");
-    if (resolveLink(candidate, from, documents, attachments)?.path === want) return candidate;
+    if (resolveLink(candidate, from, documents, attachments)?.path === want) {
+      return candidate;
+    }
   }
   return bare;
 }

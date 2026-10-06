@@ -21,13 +21,19 @@ export interface ResolvedLink {
  */
 export function parseLink(raw: string): { target: string; anchor: string | undefined } {
   let text = raw.trim();
-  if (text.startsWith("!")) text = text.slice(1);
-  if (text.startsWith("[[") && text.endsWith("]]")) text = text.slice(2, -2);
+  if (text.startsWith("!")) {
+    text = text.slice(1);
+  }
+  if (text.startsWith("[[") && text.endsWith("]]")) {
+    text = text.slice(2, -2);
+  }
   text = text.split("|")[0] ?? "";
   const hash = text.indexOf("#");
   const target = (hash === -1 ? text : text.slice(0, hash)).trim();
   let anchor = hash === -1 ? undefined : text.slice(hash + 1).trim();
-  if (!anchor || anchor.startsWith("^")) anchor = undefined;
+  if (!anchor || anchor.startsWith("^")) {
+    anchor = undefined;
+  }
   return { target: normalize(target), anchor };
 }
 
@@ -49,7 +55,9 @@ export function resolveLink(
 ): ResolvedLink | undefined {
   const { target, anchor } = parseLink(raw);
   const withAnchor = (path: string): ResolvedLink => (anchor ? { path, anchor } : { path });
-  if (!target) return from ? withAnchor(from) : undefined;
+  if (!target) {
+    return from ? withAnchor(from) : undefined;
+  }
 
   const fromDir = from ? posix.dirname(from) : ".";
   const documentPaths = documents.map((document) => document.path);
@@ -62,7 +70,9 @@ export function resolveLink(
     for (const want of wanted.flatMap(markdown)) {
       const key = insensitive ? want.toLowerCase() : want;
       const hit = all.find((path) => (insensitive ? path.toLowerCase() : path) === key);
-      if (hit) return withAnchor(hit);
+      if (hit) {
+        return withAnchor(hit);
+      }
     }
   }
 
@@ -77,7 +87,9 @@ export function resolveLink(
     ...attachments.filter(matches),
   ];
   const best = pick(byName, fromDir);
-  if (best) return withAnchor(best);
+  if (best) {
+    return withAnchor(best);
+  }
 
   const byAlias = documents
     .filter((document) => document.aliases.some((alias) => alias.toLowerCase() === needle))
@@ -140,11 +152,16 @@ export function findLinks(text: string): LinkRef[] {
     const fenceMatch = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
     if (fenceMatch?.[1]) {
       const marker = fenceMatch[1];
-      if (fence === null) fence = marker;
-      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+      if (fence === null) {
+        fence = marker;
+      } else if (marker[0] === fence[0] && marker.length >= fence.length) {
+        fence = null;
+      }
       continue;
     }
-    if (fence !== null) continue;
+    if (fence !== null) {
+      continue;
+    }
     // Inline code blanked out, keeping every offset.
     const masked = line.replace(/(`+)[^`]*?\1/g, (code) => " ".repeat(code.length));
     for (const match of masked.matchAll(/!?\[\[([^[\]\n]+?)\]\]/g)) {
@@ -162,7 +179,9 @@ export function findLinks(text: string): LinkRef[] {
     }
     for (const match of masked.matchAll(/\[[^\]\n]*\]\(<?([^)\s>]+)>?(?:\s+"[^"]*")?\)/g)) {
       const url = match[1] ?? "";
-      if (/^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith("#") || url.startsWith("/")) continue;
+      if (/^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith("#") || url.startsWith("/")) {
+        continue;
+      }
       const target = url.split("#")[0] ?? "";
       const at = start + (match.index ?? 0) + match[0].indexOf(url, match[0].indexOf("]("));
       out.push({
@@ -188,9 +207,13 @@ export function resolveRef(
   documents: LinkDocument[],
   attachments: string[] = [],
 ): string | undefined {
-  if (ref.kind === "wiki") return resolveLink(ref.raw, from, documents, attachments)?.path;
+  if (ref.kind === "wiki") {
+    return resolveLink(ref.raw, from, documents, attachments)?.path;
+  }
   const path = normalize(posix.join(posix.dirname(from), normalize(ref.target)));
-  if (!path || path.startsWith("../")) return undefined;
+  if (!path || path.startsWith("../")) {
+    return undefined;
+  }
   return documents.some((document) => document.path === path) || attachments.includes(path)
     ? path
     : undefined;

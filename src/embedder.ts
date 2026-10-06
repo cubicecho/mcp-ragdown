@@ -21,8 +21,12 @@ export interface Embedder {
 export async function createEmbedder(config: Config): Promise<Embedder> {
   const spec = config.embedder;
   const local = LOCAL_MODELS[spec];
-  if (local) return LocalEmbedder.load(local, config.modelsDir, config.threads);
-  if (spec === "hash") return new HashEmbedder();
+  if (local) {
+    return LocalEmbedder.load(local, config.modelsDir, config.threads);
+  }
+  if (spec === "hash") {
+    return new HashEmbedder();
+  }
   if (spec.startsWith("openai:")) {
     return OpenAiEmbedder.probe(config.embeddingUrl, spec.slice(7), config.embeddingApiKey);
   }
@@ -204,7 +208,9 @@ class OpenAiEmbedder implements Embedder {
 
   static async probe(url: string, model: string, apiKey?: string): Promise<OpenAiEmbedder> {
     const [vector] = await OpenAiEmbedder.request(url, model, apiKey, ["probe"]);
-    if (!vector) throw new Error(`embedding endpoint ${url} returned no vector for the probe`);
+    if (!vector) {
+      throw new Error(`embedding endpoint ${url} returned no vector for the probe`);
+    }
     return new OpenAiEmbedder(url, model, apiKey, vector.length);
   }
 
@@ -275,8 +281,14 @@ export class HashEmbedder implements Embedder {
 
 function normalize(vector: Float32Array): Float32Array {
   let norm = 0;
-  for (const v of vector) norm += v * v;
+  for (const v of vector) {
+    norm += v * v;
+  }
   norm = Math.sqrt(norm);
-  if (norm > 0) for (let i = 0; i < vector.length; i++) vector[i] = (vector[i] ?? 0) / norm;
+  if (norm > 0) {
+    for (let i = 0; i < vector.length; i++) {
+      vector[i] = (vector[i] ?? 0) / norm;
+    }
+  }
   return vector;
 }

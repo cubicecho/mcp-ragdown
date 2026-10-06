@@ -60,6 +60,16 @@
   },
   "overrides": [
     {
+      "includes": ["src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useBlockStatements": "error"
+          }
+        }
+      }
+    },
+    {
       "includes": [
         "web/src/components/ui/**",
         "web/src/components/sidebar.tsx",

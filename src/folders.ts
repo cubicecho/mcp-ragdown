@@ -107,9 +107,13 @@ export async function listFolders(docsDir: string): Promise<Folder[]> {
 
 /** One folder by name, or undefined when there is no such folder. */
 export async function getFolder(docsDir: string, name: string): Promise<Folder | undefined> {
-  if (!isIndexedName(name) || !name) return undefined;
+  if (!isIndexedName(name) || !name) {
+    return undefined;
+  }
   const dir = join(docsDir, name);
-  if (!(await lstat(dir).catch(() => undefined))?.isDirectory()) return undefined;
+  if (!(await lstat(dir).catch(() => undefined))?.isDirectory()) {
+    return undefined;
+  }
   return { name, ...(await readSettings(dir, name)) };
 }
 
@@ -150,7 +154,9 @@ export async function createFolder(
   try {
     await mkdir(dir);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      throw error;
+    }
     throw new Refusal(409, `already exists: ${name}`);
   }
   // `mcp` written out even when off, so whoever opens the file sees the switch.
@@ -190,7 +196,9 @@ export async function updateFolder(
   }
   const dir = join(docsDir, current);
   const { rename: _rename, ...settings } = changes;
-  if (Object.keys(settings).length > 0) await writeSettings(dir, await readRaw(dir), settings);
+  if (Object.keys(settings).length > 0) {
+    await writeSettings(dir, await readRaw(dir), settings);
+  }
   return {
     folder: { name: current, ...(await readSettings(dir, current)) },
     renamed: current !== name,
@@ -216,14 +224,22 @@ async function writeSettings(
 ): Promise<void> {
   const next = { ...raw };
   if (changes.title !== undefined) {
-    if (changes.title.trim()) next.title = changes.title.trim();
-    else delete next.title;
+    if (changes.title.trim()) {
+      next.title = changes.title.trim();
+    } else {
+      delete next.title;
+    }
   }
-  if (changes.mcp !== undefined) next.mcp = changes.mcp;
+  if (changes.mcp !== undefined) {
+    next.mcp = changes.mcp;
+  }
   if (changes.hook !== undefined) {
     const hook = mergeHookChanges(isRecord(next.hook) ? next.hook : {}, changes.hook);
-    if (Object.keys(hook).length > 0) next.hook = hook;
-    else delete next.hook;
+    if (Object.keys(hook).length > 0) {
+      next.hook = hook;
+    } else {
+      delete next.hook;
+    }
   }
   await writeFile(join(dir, SETTINGS_FILE), `${JSON.stringify(next, null, 2)}\n`);
 }

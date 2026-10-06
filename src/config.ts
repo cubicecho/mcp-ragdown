@@ -161,23 +161,35 @@ function expandHome(path: string): string {
 
 function bool(env: Env, name: string, fallback: boolean): boolean {
   const raw = env[name];
-  if (raw === undefined || raw === "") return fallback;
-  if (/^(1|true|yes|on)$/i.test(raw)) return true;
-  if (/^(0|false|no|off)$/i.test(raw)) return false;
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
+  if (/^(1|true|yes|on)$/i.test(raw)) {
+    return true;
+  }
+  if (/^(0|false|no|off)$/i.test(raw)) {
+    return false;
+  }
   throw new Error(`${name} must be true or false, got "${raw}"`);
 }
 
 function num(env: Env, name: string, fallback: number): number {
   const raw = env[name];
-  if (raw === undefined || raw === "") return fallback;
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
   const value = Number(raw);
-  if (!Number.isFinite(value)) throw new Error(`${name} must be a number, got "${raw}"`);
+  if (!Number.isFinite(value)) {
+    throw new Error(`${name} must be a number, got "${raw}"`);
+  }
   return value;
 }
 
 function ratio(env: Env, name: string, fallback: number): number {
   const value = num(env, name, fallback);
-  if (value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1, got "${value}"`);
+  if (value < 0 || value > 1) {
+    throw new Error(`${name} must be between 0 and 1, got "${value}"`);
+  }
   return value;
 }
 

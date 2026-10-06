@@ -111,7 +111,9 @@ export class Scope {
    */
   async readDocument(path: string, startLine?: number, endLine?: number) {
     let full = resolve(this.root, path);
-    if (!isInside(this.root, full)) throw new Error(`path is outside the docs folder: ${path}`);
+    if (!isInside(this.root, full)) {
+      throw new Error(`path is outside the docs folder: ${path}`);
+    }
     let anchor: string | undefined;
     let resolvedFrom: string | undefined;
     if (!(await stat(full).catch(() => undefined))?.isFile()) {
@@ -185,9 +187,13 @@ export class Scope {
       ? [this.dir.slice(prefix.length), from].filter(Boolean).join("/").replace(/^\//, "")
       : undefined;
     const link = resolveLink(raw, fromInFolder, documents, others);
-    if (!link) return undefined;
+    if (!link) {
+      return undefined;
+    }
     const rootPath = `${prefix}${link.path}`;
-    if (this.dir && !rootPath.startsWith(`${this.dir}/`)) return undefined;
+    if (this.dir && !rootPath.startsWith(`${this.dir}/`)) {
+      return undefined;
+    }
     return { ...link, path: this.toScoped(rootPath) };
   }
 
@@ -217,13 +223,19 @@ export class Scope {
         () => undefined,
       );
       // A cheap test first: most documents link to nothing at all.
-      if (!text || (!text.includes("[[") && !text.includes("]("))) continue;
+      if (!text || (!text.includes("[[") && !text.includes("]("))) {
+        continue;
+      }
       const from = doc.path.slice(prefix.length);
       const lines = new Set<number>();
       for (const ref of findLinks(text)) {
-        if (resolveRef(ref, from, documents) === target) lines.add(ref.line);
+        if (resolveRef(ref, from, documents) === target) {
+          lines.add(ref.line);
+        }
       }
-      if (lines.size === 0) continue;
+      if (lines.size === 0) {
+        continue;
+      }
       const all = text.split(/\r?\n/);
       backlinks.push({
         path: this.toScoped(doc.path),
@@ -339,7 +351,9 @@ export class Scope {
         const what = current ? "changed on disk" : "deleted";
         throw new Refusal(409, `${path} was ${what} since it was opened`, "changed");
       }
-      if (current.includes("\r\n")) text = text.replace(/\r?\n/g, "\r\n");
+      if (current.includes("\r\n")) {
+        text = text.replace(/\r?\n/g, "\r\n");
+      }
     }
     if (existing) {
       // Renamed over it, so a sync never reads half a file.
@@ -348,7 +362,9 @@ export class Scope {
       try {
         await writeFile(full, text, { flag: "wx" });
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+          throw error;
+        }
         throw new Refusal(409, `already exists: ${path}`);
       }
     }
@@ -395,7 +411,9 @@ export class Scope {
       }
       return this.writeDocument(relPath, text, false, options.baseHash);
     }
-    if (!current) throw new Refusal(404, `no such note: ${path}`);
+    if (!current) {
+      throw new Refusal(404, `no such note: ${path}`);
+    }
     const hash = contentHash(current);
     if (options.baseHash !== undefined && options.baseHash !== hash) {
       throw new Refusal(409, `${relPath} was changed on disk since it was opened`, "changed");
@@ -414,7 +432,9 @@ export class Scope {
     }
     // After the section's last non-blank line, with one blank line on each side.
     let last = end;
-    while (last > start && !lines[last - 1]?.trim()) last--;
+    while (last > start && !lines[last - 1]?.trim()) {
+      last--;
+    }
     const next = [
       ...lines.slice(0, last),
       ...(last > 0 ? [""] : []),
@@ -445,7 +465,9 @@ export class Scope {
         (!folder || doc.path.startsWith(`${folder}/`)) &&
         (!tag || doc.tags.some((t) => t === tag || t.startsWith(`${tag}/`))),
     );
-    if (options.sort === "recent") docs.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    if (options.sort === "recent") {
+      docs.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    }
     return {
       total: docs.length,
       notes: docs.slice(0, options.limit ?? docs.length).map((doc) => ({
@@ -521,8 +543,9 @@ export class Scope {
       create: false,
       markdownOnly: false,
     });
-    if (!(await lstat(full).catch(() => undefined))?.isDirectory())
+    if (!(await lstat(full).catch(() => undefined))?.isDirectory()) {
       return this.deleteDocument(path);
+    }
     const held = (await readdir(full)).length;
     if (held > 0 && !recursive) {
       throw new Refusal(
@@ -530,8 +553,11 @@ export class Scope {
         `${relPath} is not empty: pass recursive: true to delete everything in it`,
       );
     }
-    if (held > 0) await rm(full, { recursive: true });
-    else await rmdir(full);
+    if (held > 0) {
+      await rm(full, { recursive: true });
+    } else {
+      await rmdir(full);
+    }
     return { path: relPath, sync: await this.rag.sync(false) };
   }
 
@@ -573,7 +599,9 @@ export async function openScope(rag: Ragdown, dir: string): Promise<Scope | unde
     return undefined;
   }
   const docsDir = await realpath(rag.config.docsDir).catch(() => undefined);
-  if (!docsDir) return undefined;
+  if (!docsDir) {
+    return undefined;
+  }
   const normalized = segments.join("/");
   let current = docsDir;
   for (const segment of segments) {
@@ -581,16 +609,22 @@ export async function openScope(rag: Ragdown, dir: string): Promise<Scope | unde
     // lstat, not stat: the indexer does not follow symlinks, so a symlinked folder holds no
     // documents.
     const info = await lstat(current).catch(() => undefined);
-    if (!info?.isDirectory()) return undefined;
+    if (!info?.isDirectory()) {
+      return undefined;
+    }
   }
   return new Scope(rag, normalized);
 }
 
 /** `path_prefix` as a folder: `./projects/` and `projects` both mean files under `projects/`. */
 function normalizeFolder(prefix: string | undefined): string {
-  if (!prefix) return "";
+  if (!prefix) {
+    return "";
+  }
   const folder = posix.normalize(prefix.replaceAll("\\", "/")).replace(/^(\.?\/)+|\/+$/g, "");
-  if (folder === ".") return "";
+  if (folder === ".") {
+    return "";
+  }
   if (folder === ".." || folder.startsWith("../")) {
     throw new Error(`path_prefix is outside the docs folder: ${prefix}`);
   }

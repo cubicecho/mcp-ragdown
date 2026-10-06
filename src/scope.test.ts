@@ -9,7 +9,9 @@ import { tempSetup } from "./testing.ts";
 
 const closers: (() => Promise<void>)[] = [];
 afterEach(async () => {
-  for (const close of closers.splice(0).reverse()) await close();
+  for (const close of closers.splice(0).reverse()) {
+    await close();
+  }
 });
 
 async function setup() {
@@ -49,7 +51,9 @@ describe("Scope", () => {
   it("reads, remembers and counts inside its folder only", async () => {
     const t = await setup();
     const beta = await openScope(t.rag, "projects/beta/");
-    if (!beta) throw new Error("no scope");
+    if (!beta) {
+      throw new Error("no scope");
+    }
     expect(beta.dir).toBe("projects/beta");
 
     expect((await beta.readDocument("backups.md")).path).toBe("backups.md");
@@ -72,7 +76,9 @@ describe("Scope", () => {
   it("writes and deletes docs inside its folder only", async () => {
     const t = await setup();
     const beta = await openScope(t.rag, "projects/beta");
-    if (!beta) throw new Error("no scope");
+    if (!beta) {
+      throw new Error("no scope");
+    }
 
     const written = await beta.writeDocument("./sub/kafka.md", "# Kafka\n\nSeven days.");
     expect(written).toMatchObject({ path: "sub/kafka.md", created: true, sync: { added: 1 } });
@@ -100,7 +106,9 @@ describe("Scope", () => {
   it("saves an edit only over the version it was made to", async () => {
     const t = await setup();
     const beta = await openScope(t.rag, "projects/beta");
-    if (!beta) throw new Error("no scope");
+    if (!beta) {
+      throw new Error("no scope");
+    }
     const full = join(t.docsDir, "projects/beta/backups.md");
     await writeFile(full, "# Backups\r\n\r\nNightly.\r\n");
     await t.rag.sync(false);
@@ -146,7 +154,9 @@ describe("Scope", () => {
   it("gates hook context on each hit's share of the best similarity", async () => {
     const t = await setup();
     const alpha = await openScope(t.rag, "projects/alpha");
-    if (!alpha) throw new Error("no scope");
+    if (!alpha) {
+      throw new Error("no scope");
+    }
     const prompt = "how do I restore postgres?";
 
     // The gate is a ratio, so the cut is derived from the similarities this embedder actually

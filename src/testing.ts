@@ -44,7 +44,9 @@ export async function tempSetup(env: Record<string, string> = {}, mode: Mode = "
 export async function eventually(check: () => Promise<boolean>, timeoutMs = 5000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!(await check())) {
-    if (Date.now() > deadline) throw new Error("condition not met in time");
+    if (Date.now() > deadline) {
+      throw new Error("condition not met in time");
+    }
     await new Promise((done) => setTimeout(done, 50));
   }
 }

@@ -17,7 +17,9 @@ export class SessionMemory {
       seen = new Set();
       if (this.sessions.size >= MAX_SESSIONS) {
         const oldest = this.sessions.keys().next().value;
-        if (oldest !== undefined) this.sessions.delete(oldest);
+        if (oldest !== undefined) {
+          this.sessions.delete(oldest);
+        }
       }
     }
     this.sessions.set(key, seen);

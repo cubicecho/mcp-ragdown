@@ -33,7 +33,9 @@ export async function hookContext({
   const { topK, minScore, minRatio, maxChars } = settings;
   const trimmed = prompt.trim();
   // A slash command or a one-word reply ("yes", "go on") has nothing to retrieve on.
-  if (trimmed.length < 12 || trimmed.startsWith("/")) return undefined;
+  if (trimmed.length < 12 || trimmed.startsWith("/")) {
+    return undefined;
+  }
 
   const seen = seenBy();
   const ranked = (await recall(trimmed, topK * 2))
@@ -43,13 +45,17 @@ export async function hookContext({
   // it, and injected noise costs accuracy rather than merely costing tokens.
   const best = ranked[0]?.similarity ?? 0;
   const hits = ranked.filter((hit) => hit.similarity >= best * minRatio).slice(0, topK);
-  if (hits.length === 0) return undefined;
+  if (hits.length === 0) {
+    return undefined;
+  }
 
   const blocks: string[] = [];
   let used = 0;
   for (const hit of hits) {
     const block = formatHit(hit, Math.min(textLimit, maxChars));
-    if (blocks.length > 0 && used + block.length > maxChars) break;
+    if (blocks.length > 0 && used + block.length > maxChars) {
+      break;
+    }
     blocks.push(block);
     used += block.length;
     seen.add(hit.id);

@@ -12,11 +12,15 @@ export async function listAttachments(root: string): Promise<string[]> {
   const walk = async (dir: string): Promise<void> => {
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => [] as Dirent[]);
     for (const entry of entries) {
-      if (isSkippedEntry(entry.name)) continue;
+      if (isSkippedEntry(entry.name)) {
+        continue;
+      }
       const full = join(dir, entry.name);
-      if (entry.isDirectory()) await walk(full);
-      else if (entry.isFile() && !MARKDOWN.test(entry.name))
+      if (entry.isDirectory()) {
+        await walk(full);
+      } else if (entry.isFile() && !MARKDOWN.test(entry.name)) {
         out.push(toPosix(relative(root, full)));
+      }
     }
   };
   await walk(root);

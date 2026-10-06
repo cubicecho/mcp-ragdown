@@ -60,15 +60,20 @@ export function chunkMarkdown(
     const fenceMatch = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
     if (fenceMatch?.[1]) {
       const marker = fenceMatch[1];
-      if (fence === null) fence = marker;
-      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+      if (fence === null) {
+        fence = marker;
+      } else if (marker[0] === fence[0] && marker.length >= fence.length) {
+        fence = null;
+      }
     }
     const headingMatch = fence === null ? /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line) : null;
     if (headingMatch?.[1] && headingMatch[2]) {
       sections.push(current);
       const level = headingMatch[1].length;
       const name = headingMatch[2];
-      if (level === 1 && firstH1 === undefined) firstH1 = name;
+      if (level === 1 && firstH1 === undefined) {
+        firstH1 = name;
+      }
       stack.length = level - 1;
       stack[level - 1] = name;
       current = { heading: stack.filter(Boolean).join(" › "), lines: [], lineStart: i + 2 };
@@ -114,7 +119,9 @@ export function embeddingText(chunk: Pick<Chunk, "title" | "heading" | "text">):
  * is also its title; that repeat is dropped.
  */
 export function breadcrumb(title: string, heading: string): string {
-  if (!heading || heading === title) return title;
+  if (!heading || heading === title) {
+    return title;
+  }
   return heading.startsWith(`${title} › `) ? heading : `${title} › ${heading}`;
 }
 
@@ -133,9 +140,13 @@ export function readSupersedes(source: string, relPath: string): string[] {
     const relative = entry.replaceAll("\\", "/");
     // Checked before the join, which would otherwise turn `/etc/passwd` into
     // `notes/etc/passwd`.
-    if (posix.isAbsolute(relative)) continue;
+    if (posix.isAbsolute(relative)) {
+      continue;
+    }
     const path = posix.normalize(posix.join(dir === "." ? "" : dir, relative));
-    if (path === ".." || path.startsWith("../")) continue;
+    if (path === ".." || path.startsWith("../")) {
+      continue;
+    }
     out.push(path);
   }
   return out;
@@ -156,9 +167,13 @@ export function readDocumentMeta(source: string): { tags: string[]; aliases: str
   const tags = new Set<string>();
   const addTag = (raw: string) => {
     const tag = raw.trim().replace(/^#+/, "").replace(/\/+$/, "").toLowerCase();
-    if (tag && /^[\p{L}\p{N}_\-/]+$/u.test(tag) && !/^[\p{N}/]+$/u.test(tag)) tags.add(tag);
+    if (tag && /^[\p{L}\p{N}_\-/]+$/u.test(tag) && !/^[\p{N}/]+$/u.test(tag)) {
+      tags.add(tag);
+    }
   };
-  for (const entry of readList(front, "tags", /[\s,]+/)) addTag(entry);
+  for (const entry of readList(front, "tags", /[\s,]+/)) {
+    addTag(entry);
+  }
 
   let fence: string | null = null;
   for (let i = bodyStart; i < lines.length; i++) {
@@ -166,14 +181,21 @@ export function readDocumentMeta(source: string): { tags: string[]; aliases: str
     const fenceMatch = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
     if (fenceMatch?.[1]) {
       const marker = fenceMatch[1];
-      if (fence === null) fence = marker;
-      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+      if (fence === null) {
+        fence = marker;
+      } else if (marker[0] === fence[0] && marker.length >= fence.length) {
+        fence = null;
+      }
       continue;
     }
-    if (fence !== null || /^( {4}|\t)/.test(line)) continue;
+    if (fence !== null || /^( {4}|\t)/.test(line)) {
+      continue;
+    }
     // Inline code spans are code too: `#include` is not a tag.
     const prose = line.replace(/(`+)[^`]*?\1/g, " ");
-    for (const match of prose.matchAll(/(?:^|\s)#([\p{L}\p{N}_\-/]+)/gu)) addTag(match[1] ?? "");
+    for (const match of prose.matchAll(/(?:^|\s)#([\p{L}\p{N}_\-/]+)/gu)) {
+      addTag(match[1] ?? "");
+    }
   }
 
   const aliases = [...new Set(readList(front, "aliases").filter(Boolean))];
@@ -190,12 +212,16 @@ function readFrontmatter(lines: string[]): {
     return { title: undefined, supersedes: [], front: [], bodyStart: 0 };
   }
   const end = lines.findIndex((line, i) => i > 0 && /^(---|\.\.\.)\s*$/.test(line));
-  if (end === -1) return { title: undefined, supersedes: [], front: [], bodyStart: 0 };
+  if (end === -1) {
+    return { title: undefined, supersedes: [], front: [], bodyStart: 0 };
+  }
   const front = lines.slice(1, end);
   let title: string | undefined;
   for (const line of front) {
     const titleMatch = /^title:\s*(.+?)\s*$/.exec(line);
-    if (titleMatch?.[1]) title = unquote(titleMatch[1]);
+    if (titleMatch?.[1]) {
+      title = unquote(titleMatch[1]);
+    }
   }
   return { title, supersedes: readList(front, "supersedes", /,/), front, bodyStart: end + 1 };
 }
@@ -209,12 +235,16 @@ function readList(front: string[], key: string, split?: RegExp): string[] {
   const pattern = new RegExp(`^${key}:\\s*(.*)$`);
   for (let i = 0; i < front.length; i++) {
     const match = pattern.exec(front[i] ?? "");
-    if (!match) continue;
+    if (!match) {
+      continue;
+    }
     const inline = (match[1] ?? "").trim();
     if (inline.startsWith("[")) {
       for (const item of inline.slice(1).replace(/]\s*$/, "").split(",")) {
         const value = unquote(item.trim());
-        if (value) out.push(value);
+        if (value) {
+          out.push(value);
+        }
       }
     } else if (inline) {
       const value = unquote(inline);
@@ -230,7 +260,9 @@ function readList(front: string[], key: string, split?: RegExp): string[] {
       // The block form: `- a` lines until something that is not a list item.
       for (let j = i + 1; j < front.length; j++) {
         const item = /^\s*-\s*(.+?)\s*$/.exec(front[j] ?? "");
-        if (!item?.[1]) break;
+        if (!item?.[1]) {
+          break;
+        }
         out.push(unquote(item[1]));
         i = j;
       }
@@ -266,15 +298,20 @@ function splitSection(section: Section, maxChars: number): Piece[] {
     const fenceMatch = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
     if (fenceMatch?.[1]) {
       const marker = fenceMatch[1];
-      if (fence === null) fence = marker;
-      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+      if (fence === null) {
+        fence = marker;
+      } else if (marker[0] === fence[0] && marker.length >= fence.length) {
+        fence = null;
+      }
     }
     if (line.trim() === "" && fence === null) {
       flush(i);
       bufferStart = i + 1;
       return;
     }
-    if (buffer.length === 0) bufferStart = i;
+    if (buffer.length === 0) {
+      bufferStart = i;
+    }
     buffer.push(line);
   });
   flush(section.lines.length);
@@ -289,17 +326,23 @@ function splitSection(section: Section, maxChars: number): Piece[] {
         lineEnd: paragraph.lineEnd,
       };
     } else {
-      if (open) pieces.push(open);
+      if (open) {
+        pieces.push(open);
+      }
       open = paragraph;
     }
   }
-  if (open) pieces.push(open);
+  if (open) {
+    pieces.push(open);
+  }
   return pieces;
 }
 
 /** Cut a paragraph longer than `maxChars` at line boundaries, and a single huge line by length. */
 function hardSplit(paragraph: Piece, maxChars: number): Piece[] {
-  if (paragraph.text.length <= maxChars) return [paragraph];
+  if (paragraph.text.length <= maxChars) {
+    return [paragraph];
+  }
   const out: Piece[] = [];
   let text = "";
   let start = paragraph.lineStart;
@@ -309,7 +352,9 @@ function hardSplit(paragraph: Piece, maxChars: number): Piece[] {
       out.push({ text, lineStart: start, lineEnd: lineNo - 1 });
       text = "";
     }
-    if (!text) start = lineNo;
+    if (!text) {
+      start = lineNo;
+    }
     for (let rest = line; ; ) {
       if (text.length + rest.length <= maxChars) {
         text = text ? `${text}\n${rest}` : rest;
@@ -322,6 +367,8 @@ function hardSplit(paragraph: Piece, maxChars: number): Piece[] {
       rest = rest.slice(room);
     }
   });
-  if (text) out.push({ text, lineStart: start, lineEnd: paragraph.lineEnd });
+  if (text) {
+    out.push({ text, lineStart: start, lineEnd: paragraph.lineEnd });
+  }
   return out;
 }

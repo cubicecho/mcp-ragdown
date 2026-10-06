@@ -83,7 +83,9 @@ export async function writeRemembered({
       await writeFile(full, `${front}${content.trimEnd()}\n`, { flag: "wx" });
       break;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw error;
+      }
     }
   }
   return { full, replaced };

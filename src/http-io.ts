@@ -32,7 +32,9 @@ export interface ApiRequest {
  */
 export function required({ params }: ApiRequest, name: string): string {
   const value = params.get(name);
-  if (!value) throw new Refusal(400, `${name} is required`);
+  if (!value) {
+    throw new Refusal(400, `${name} is required`);
+  }
   return value;
 }
 
@@ -49,7 +51,9 @@ export function allow({ method }: ApiRequest, ...methods: string[]): void {
  * @throws with `status: 403` under `RAGDOWN_READ_ONLY`.
  */
 export function assertWritable(config: Config): void {
-  if (config.readOnly) throw new Refusal(403, "The server is read-only (RAGDOWN_READ_ONLY)");
+  if (config.readOnly) {
+    throw new Refusal(403, "The server is read-only (RAGDOWN_READ_ONLY)");
+  }
 }
 
 export async function readJson(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<unknown> {
@@ -57,11 +61,15 @@ export async function readJson(req: IncomingMessage, limit = MAX_BODY_BYTES): Pr
   let size = 0;
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > limit) throw new Refusal(413, "Body too large");
+    if (size > limit) {
+      throw new Refusal(413, "Body too large");
+    }
     chunks.push(chunk as Buffer);
   }
   const text = Buffer.concat(chunks).toString("utf8");
-  if (!text) return {};
+  if (!text) {
+    return {};
+  }
   try {
     return JSON.parse(text);
   } catch {

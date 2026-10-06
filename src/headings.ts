@@ -16,13 +16,20 @@ export function headingRange(
     const fenceMatch = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
     if (fenceMatch?.[1]) {
       const marker = fenceMatch[1];
-      if (fence === null) fence = marker;
-      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+      if (fence === null) {
+        fence = marker;
+      } else if (marker[0] === fence[0] && marker.length >= fence.length) {
+        fence = null;
+      }
       continue;
     }
-    if (fence !== null) continue;
+    if (fence !== null) {
+      continue;
+    }
     const heading = /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
-    if (!heading?.[1] || !heading[2]) continue;
+    if (!heading?.[1] || !heading[2]) {
+      continue;
+    }
     if (start === undefined) {
       if (heading[2].trim().toLowerCase() === wanted) {
         start = i + 1;

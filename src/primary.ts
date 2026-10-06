@@ -32,16 +32,22 @@ export async function claimSocket(path: string, handler: Handler): Promise<Serve
     await listen(server, path);
     return server;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
+    if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") {
+      throw error;
+    }
   }
-  if (await isAlive(path)) return undefined;
+  if (await isAlive(path)) {
+    return undefined;
+  }
   await unlink(path).catch(() => undefined);
   try {
     await listen(server, path);
     return server;
   } catch (error) {
     // Lost the race for the stale socket to another process, which is now the primary.
-    if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") return undefined;
+    if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {
+      return undefined;
+    }
     throw error;
   }
 }
@@ -72,8 +78,11 @@ export function request(
       clearTimeout(timer);
       try {
         const reply = JSON.parse(buffer) as { ok: boolean; result?: unknown; error?: string };
-        if (reply.ok) resolve(reply.result);
-        else reject(new Error(reply.error ?? "the primary reported an error"));
+        if (reply.ok) {
+          resolve(reply.result);
+        } else {
+          reject(new Error(reply.error ?? "the primary reported an error"));
+        }
       } catch (error) {
         reject(new Error(`unreadable reply from the primary: ${errorMessage(error)}`));
       }
@@ -82,7 +91,9 @@ export function request(
       clearTimeout(timer);
       if (error.code === "ENOENT" || error.code === "ECONNREFUSED") {
         reject(new NoPrimaryError(`no primary is listening on ${path}`));
-      } else reject(error);
+      } else {
+        reject(error);
+      }
     });
   });
 }
@@ -93,7 +104,9 @@ function serve(socket: Socket, handler: Handler): void {
   socket.on("data", (data) => {
     buffer += data;
     const newline = buffer.indexOf("\n");
-    if (newline === -1) return;
+    if (newline === -1) {
+      return;
+    }
     const line = buffer.slice(0, newline);
     socket.removeAllListeners("data");
     void (async () => {

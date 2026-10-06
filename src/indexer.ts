@@ -64,8 +64,12 @@ export class Indexer {
    * Any number of callers during one sync share that one follow-up.
    */
   sync(): Promise<SyncReport> {
-    if (this.stopped) return Promise.reject(new Error("the indexer was replaced; sync again"));
-    if (this.queued) return this.queued;
+    if (this.stopped) {
+      return Promise.reject(new Error("the indexer was replaced; sync again"));
+    }
+    if (this.queued) {
+      return this.queued;
+    }
     if (this.running) {
       this.queued = this.running
         .catch(() => undefined)
@@ -97,9 +101,13 @@ export class Indexer {
     try {
       this.watcher = watch(this.docsDir, { recursive: true, persistent: false }, (_event, name) => {
         // `.git/index` and editor swap files change on every save and are never indexed.
-        if (name?.split(/[/\\]/).some((part) => part.startsWith("."))) return;
+        if (name?.split(/[/\\]/).some((part) => part.startsWith("."))) {
+          return;
+        }
         // A directory rename reports the directory, which has no extension; sync for those too.
-        if (!name || MARKDOWN.test(name) || !/\.[^/\\]+$/.test(name)) schedule();
+        if (!name || MARKDOWN.test(name) || !/\.[^/\\]+$/.test(name)) {
+          schedule();
+        }
       });
       this.watcher.on("error", (error) => {
         console.error(`[indexer] watch failed, polling every 60 s: ${errorMessage(error)}`);
@@ -191,8 +199,11 @@ export class Indexer {
         continue;
       }
       const chunks = chunkMarkdown(source, path);
-      if (known) report.updated++;
-      else report.added++;
+      if (known) {
+        report.updated++;
+      } else {
+        report.added++;
+      }
       report.chunks += chunks.length;
       batch.push({
         path,
@@ -205,11 +216,17 @@ export class Indexer {
         ...readDocumentMeta(source),
       });
       batchChunks += chunks.length;
-      if (batchChunks >= BATCH_CHUNKS) await flush();
+      if (batchChunks >= BATCH_CHUNKS) {
+        await flush();
+      }
     }
-    if (batch.length > 0 || removed.length > 0) await flush();
+    if (batch.length > 0 || removed.length > 0) {
+      await flush();
+    }
 
-    if (report.added + report.updated + report.removed > 0) await this.store.compact();
+    if (report.added + report.updated + report.removed > 0) {
+      await this.store.compact();
+    }
     report.ms = Math.round(performance.now() - started);
     this.lastSync = { ...report, at: new Date().toISOString() };
     if (report.added + report.updated + report.removed > 0) {
@@ -241,10 +258,13 @@ export async function listMarkdown(
       return;
     }
     for (const entry of entries) {
-      if (isSkippedEntry(entry.name)) continue;
+      if (isSkippedEntry(entry.name)) {
+        continue;
+      }
       const full = join(dir, entry.name);
-      if (entry.isDirectory()) await walk(full);
-      else if (entry.isFile() && MARKDOWN.test(entry.name)) {
+      if (entry.isDirectory()) {
+        await walk(full);
+      } else if (entry.isFile() && MARKDOWN.test(entry.name)) {
         if (loose && dir === root) {
           loose.push(entry.name);
           continue;

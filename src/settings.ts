@@ -54,7 +54,9 @@ export async function readServerSettings(docsDir: string): Promise<ServerSetting
   }
   try {
     const raw: unknown = JSON.parse(text);
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("not a JSON object");
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new Error("not a JSON object");
+    }
     return applyChanges({}, parseChanges(raw as Record<string, unknown>));
   } catch (error) {
     console.error(`[ragdown] ignoring ${path}, using the environment: ${errorMessage(error)}`);
@@ -87,7 +89,9 @@ export function parseChanges(body: Record<string, unknown> | undefined): Setting
       throw invalid("embedder must be the name of an embedder");
     }
     out.embedder = body.embedder.trim();
-  } else if (body?.embedder === null) out.embedder = null;
+  } else if (body?.embedder === null) {
+    out.embedder = null;
+  }
   if (body?.watch !== undefined) {
     if (body.watch !== null && typeof body.watch !== "boolean") {
       throw invalid("watch must be true or false");
@@ -100,23 +104,37 @@ export function parseChanges(body: Record<string, unknown> | undefined): Setting
     }
     out.text_limit = body.text_limit;
   }
-  if (body?.hook !== undefined) out.hook = parseHookChanges(body.hook);
+  if (body?.hook !== undefined) {
+    out.hook = parseHookChanges(body.hook);
+  }
   return out;
 }
 
 /** The saved settings after `changes`: a key the change does not name is kept, a `null` is dropped. */
 export function applyChanges(saved: ServerSettings, changes: SettingsChanges): ServerSettings {
   const out: ServerSettings = { ...saved };
-  if (changes.embedder === null) delete out.embedder;
-  else if (changes.embedder !== undefined) out.embedder = changes.embedder;
-  if (changes.watch === null) delete out.watch;
-  else if (changes.watch !== undefined) out.watch = changes.watch;
-  if (changes.text_limit === null) delete out.text_limit;
-  else if (changes.text_limit !== undefined) out.text_limit = changes.text_limit;
+  if (changes.embedder === null) {
+    delete out.embedder;
+  } else if (changes.embedder !== undefined) {
+    out.embedder = changes.embedder;
+  }
+  if (changes.watch === null) {
+    delete out.watch;
+  } else if (changes.watch !== undefined) {
+    out.watch = changes.watch;
+  }
+  if (changes.text_limit === null) {
+    delete out.text_limit;
+  } else if (changes.text_limit !== undefined) {
+    out.text_limit = changes.text_limit;
+  }
   if (changes.hook) {
     const hook = mergeHookChanges(saved.hook ?? {}, changes.hook);
-    if (Object.keys(hook).length > 0) out.hook = hook;
-    else delete out.hook;
+    if (Object.keys(hook).length > 0) {
+      out.hook = hook;
+    } else {
+      delete out.hook;
+    }
   }
   return out;
 }

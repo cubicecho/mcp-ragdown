@@ -67,7 +67,9 @@ describe("findLinks", () => {
       ["wiki", "diagram.png", "diagram.png", 1],
       ["markdown", "../notes/Kafka.md#Setup", "../notes/Kafka.md", 2],
     ]);
-    for (const ref of refs) expect(text.slice(ref.targetStart, ref.targetEnd)).toBe(ref.target);
+    for (const ref of refs) {
+      expect(text.slice(ref.targetStart, ref.targetEnd)).toBe(ref.target);
+    }
   });
 
   it("resolves a Markdown link only as a path relative to its note", () => {

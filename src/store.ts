@@ -184,8 +184,9 @@ export class Store {
 
     let rebuiltBecause: string | undefined;
     if (names.includes(TABLE)) {
-      if (!existing) rebuiltBecause = "the index has no meta file";
-      else if (existing.embedder !== wanted.embedder) {
+      if (!existing) {
+        rebuiltBecause = "the index has no meta file";
+      } else if (existing.embedder !== wanted.embedder) {
         rebuiltBecause = `the embedder changed from ${existing.embedder} to ${wanted.embedder}`;
       } else if (existing.chunker_version !== wanted.chunker_version) {
         rebuiltBecause = `the chunker changed from v${existing.chunker_version} to v${wanted.chunker_version}`;
@@ -200,9 +201,12 @@ export class Store {
     }
 
     if (rebuiltBecause || !names.includes(TABLE)) {
-      if (!writable)
+      if (!writable) {
         throw new Error("the index does not exist yet; start the primary server first");
-      if (names.includes(TABLE)) await db.dropTable(TABLE);
+      }
+      if (names.includes(TABLE)) {
+        await db.dropTable(TABLE);
+      }
       const table = await db.createEmptyTable(TABLE, schema(embedder.dim));
       await table.createIndex("search_text", { config: lancedb.Index.fts() });
       await writeAtomic(metaPath, `${JSON.stringify(wanted, null, 2)}\n`, META_FILE_MODE);
@@ -220,8 +224,9 @@ export class Store {
     const files = new Map<string, FileState>();
     for (const row of rows as Pick<Row, "path" | "file_hash" | "mtime_ms" | "size">[]) {
       const state = files.get(row.path);
-      if (state) state.chunks++;
-      else {
+      if (state) {
+        state.chunks++;
+      } else {
         files.set(row.path, {
           hash: row.file_hash,
           mtimeMs: row.mtime_ms,
@@ -245,8 +250,9 @@ export class Store {
       "path" | "title" | "mtime_ms" | "size" | "tags" | "aliases" | "supersedes"
     >[]) {
       const doc = docs.get(row.path);
-      if (doc) doc.chunks++;
-      else {
+      if (doc) {
+        doc.chunks++;
+      } else {
         docs.set(row.path, {
           path: row.path,
           title: row.title,
@@ -268,7 +274,9 @@ export class Store {
    */
   async apply(updates: FileUpdate[], removed: string[]): Promise<void> {
     const paths = [...updates.map((u) => u.path), ...removed];
-    if (paths.length === 0) return;
+    if (paths.length === 0) {
+      return;
+    }
     await this.table.delete(`path IN (${paths.map(sqlString).join(", ")})`);
     const rows: Row[] = updates.flatMap((u) =>
       u.chunks.map((chunk, i) => ({
@@ -297,7 +305,9 @@ export class Store {
         vector: Array.from(u.vectors[i] ?? []),
       })),
     );
-    if (rows.length > 0) await this.table.add(rows as unknown as Record<string, unknown>[]);
+    if (rows.length > 0) {
+      await this.table.add(rows as unknown as Record<string, unknown>[]);
+    }
     this.superseded = undefined;
   }
 
@@ -307,14 +317,20 @@ export class Store {
    * one column of the few rows that name anything, not the table.
    */
   async supersededPaths(): Promise<Set<string>> {
-    if (this.superseded) return this.superseded;
+    if (this.superseded) {
+      return this.superseded;
+    }
     const rows = (await this.table
       .query()
       .where("supersedes <> ''")
       .select(["supersedes"])
       .toArray()) as Pick<Row, "supersedes">[];
     const paths = new Set<string>();
-    for (const row of rows) for (const path of row.supersedes.split("\n")) paths.add(path);
+    for (const row of rows) {
+      for (const path of row.supersedes.split("\n")) {
+        paths.add(path);
+      }
+    }
     this.superseded = paths;
     return paths;
   }
@@ -341,7 +357,9 @@ export class Store {
    * 5-20% of the true neighbours, which is a bad trade for a hook that injects four chunks.
    */
   private async ensureVectorIndex(): Promise<void> {
-    if (this.vectorIndexed) return;
+    if (this.vectorIndexed) {
+      return;
+    }
     try {
       const indices = await this.table.listIndices();
       if (indices.some((index) => index.columns.includes("vector"))) {
@@ -349,7 +367,9 @@ export class Store {
         return;
       }
       const rows = await this.table.countRows();
-      if (rows < VECTOR_INDEX_MIN_ROWS) return;
+      if (rows < VECTOR_INDEX_MIN_ROWS) {
+        return;
+      }
       console.error(`[store] building the vector index over ${rows} chunks`);
       await this.table.createIndex("vector", {
         config: lancedb.Index.ivfFlat({ distanceType: "cosine" }),
@@ -385,7 +405,9 @@ export class Store {
    */
   async search(query: string, limit: number, pathPrefix?: string, tag?: string): Promise<Hit[]> {
     const [queryVector] = await this.embedder.embed([query], "query");
-    if (!queryVector) return [];
+    if (!queryVector) {
+      return [];
+    }
     const pool = Math.max(limit * 4, 20);
     // Superseded documents are filtered here rather than after fusion, so a replaced document
     // cannot take up the pool a current one would have filled.
@@ -412,7 +434,9 @@ export class Store {
       .vectorSearch(queryVector)
       .distanceType("cosine")
       .select([...HIT_COLUMNS, "_distance"]);
-    if (where) dense = dense.where(where);
+    if (where) {
+      dense = dense.where(where);
+    }
     const denseRows = (await dense.limit(pool).toArray()) as (HitRow & { _distance: number })[];
     const denseScored: ScoredRow[] = denseRows.map(({ _distance, ...row }) => ({
       ...row,
@@ -423,7 +447,9 @@ export class Store {
     if (/[\p{L}\p{N}]/u.test(query)) {
       try {
         let lexical = this.table.search(query, "fts", "search_text");
-        if (where) lexical = lexical.where(where);
+        if (where) {
+          lexical = lexical.where(where);
+        }
         const rows = (await lexical.limit(pool).toArray()) as (HitRow & { vector: unknown })[];
         lexicalScored = rows.map(({ vector, ...row }) => ({
           ...row,
@@ -478,7 +504,9 @@ function toHit(row: ScoredRow, score: number, sources: Hit["sources"]): Hit {
 export function supersededBy(docs: DocumentInfo[]): Map<string, string[]> {
   const by = new Map<string, string[]>();
   for (const doc of docs) {
-    for (const old of doc.supersedes) by.set(old, [...(by.get(old) ?? []), doc.path]);
+    for (const old of doc.supersedes) {
+      by.set(old, [...(by.get(old) ?? []), doc.path]);
+    }
   }
   return by;
 }
@@ -493,10 +521,14 @@ function splitTags(tags: string): string[] {
  */
 function cosine(a: Float32Array, stored: unknown): number {
   const b = (stored as { toArray?: () => ArrayLike<number> } | undefined)?.toArray?.() ?? stored;
-  if (!b || typeof (b as ArrayLike<number>).length !== "number") return 0;
+  if (!b || typeof (b as ArrayLike<number>).length !== "number") {
+    return 0;
+  }
   const values = b as ArrayLike<number>;
   let dot = 0;
-  for (let i = 0; i < a.length; i++) dot += (a[i] ?? 0) * (values[i] ?? 0);
+  for (let i = 0; i < a.length; i++) {
+    dot += (a[i] ?? 0) * (values[i] ?? 0);
+  }
   return dot;
 }
 
