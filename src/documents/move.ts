@@ -43,7 +43,7 @@ export async function moveInFolder({
   const dest = await resolvePath(root, to, { create: false, markdownOnly: !isFolder });
   const info = await lstat(source.full).catch(() => undefined);
   if (!info || !(isFolder || info.isFile())) {
-    throw new Refusal(404, `no such note or folder: ${from}`);
+    throw new Refusal(404, `no such document or folder: ${from}`);
   }
   if (source.full === dest.full) {
     throw new Refusal(400, `${from} is already there`);
@@ -120,7 +120,7 @@ export async function moveInFolder({
   } else {
     const document = rewrites.get(oldPath);
     if (!document) {
-      throw new Refusal(404, `no such note: ${from}`);
+      throw new Refusal(404, `no such document: ${from}`);
     }
     if (occupied) {
       await rename(source.full, dest.full);

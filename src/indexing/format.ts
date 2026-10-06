@@ -8,7 +8,7 @@ import type { Hit } from "./store.ts";
  */
 export function formatHits(hits: Hit[], maxChars: number): string {
   if (hits.length === 0) {
-    return "No matching notes.";
+    return "No matching documents.";
   }
   return hits.map((hit, i) => `[${i + 1}] ${formatHit(hit, maxChars)}`).join("\n\n");
 }

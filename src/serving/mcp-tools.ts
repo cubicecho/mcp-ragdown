@@ -35,21 +35,21 @@ export function createMcpServer(
   folder?: { name: string; title: string },
 ): McpServer {
   const which = folder
-    ? `the "${folder.title}" folder of the user's Markdown notes`
-    : "the user's folder of Markdown notes";
+    ? `the "${folder.title}" folder of the user's Markdown documents`
+    : "the user's folder of Markdown documents";
   const server = new McpServer(
     { name: folder ? `${SERVER_NAME}-${folder.name}` : SERVER_NAME, version: VERSION },
     {
-      instructions: `Search ${which}. Call ragdown_recall before answering a question the notes might cover (project decisions, how-tos, runbooks, personal notes), then ragdown_read_doc to read around a hit before relying on it.`,
+      instructions: `Search ${which}. Call ragdown_recall before answering a question the documents might cover (project decisions, how-tos, runbooks, personal notes), then ragdown_read_doc to read around a hit before relying on it.`,
     },
   );
 
   server.registerTool(
     "ragdown_recall",
     {
-      title: "Search notes",
+      title: "Search documents",
       description:
-        "Hybrid (semantic + keyword) search over the user's Markdown notes. Returns the most relevant sections with file path, line range, heading breadcrumb and cosine similarity (above ~0.8 is usually on topic). Use it before answering anything the notes may cover; follow up with ragdown_read_doc for the surrounding text.",
+        "Hybrid (semantic + keyword) search over the user's Markdown documents. Returns the most relevant sections with file path, line range, heading breadcrumb and cosine similarity (above ~0.8 is usually on topic). Use it before answering anything the documents may cover; follow up with ragdown_read_doc for the surrounding text.",
       inputSchema: {
         query: z.string().min(1).describe("What to look for, as a question or keywords"),
         top_k: z.number().int().min(1).max(defaults.maxTopK).default(8),
@@ -57,13 +57,13 @@ export function createMcpServer(
           .string()
           .optional()
           .describe(
-            "Only search files under this subfolder, relative to the notes root, e.g. 'projects/'",
+            "Only search files under this subfolder, relative to the documents root, e.g. 'projects/'",
           ),
         tag: z
           .string()
           .optional()
           .describe(
-            "Only search notes with this tag (frontmatter tags or inline #tags); 'project' also matches 'project/alpha'",
+            "Only search documents with this tag (frontmatter tags or inline #tags); 'project' also matches 'project/alpha'",
           ),
         format: z.enum(["text", "json"]).default("text"),
         max_chars: z
@@ -89,7 +89,7 @@ export function createMcpServer(
     {
       title: "Context for a prompt",
       description:
-        "For hooks that run before a turn: the notes related to a user prompt, as a ready-to-inject <ragdown-context> block, or empty text when nothing is similar enough. Unlike ragdown_recall it filters by min_score, skips short prompts and slash commands, and never returns a section twice for the same session_id.",
+        "For hooks that run before a turn: the documents related to a user prompt, as a ready-to-inject <ragdown-context> block, or empty text when nothing is similar enough. Unlike ragdown_recall it filters by min_score, skips short prompts and slash commands, and never returns a section twice for the same session_id.",
       inputSchema: {
         prompt: z.string().describe("The user's prompt, verbatim"),
         session_id: z
@@ -141,15 +141,15 @@ export function createMcpServer(
   server.registerTool(
     "ragdown_read_doc",
     {
-      title: "Read a note",
+      title: "Read a document",
       description:
-        "Read a Markdown file from the notes folder, whole or by line range, straight from disk. Never clipped. Use it to see the context around a ragdown_recall hit, or to follow a [[wikilink]] in a note. The result's hash is the whole file's, for ragdown_edit's base_hash.",
+        "Read a Markdown file from the documents folder, whole or by line range, straight from disk. Never clipped. Use it to see the context around a ragdown_recall hit, or to follow a [[wikilink]] in a document. The result's hash is the whole file's, for ragdown_edit's base_hash.",
       inputSchema: {
         path: z
           .string()
           .min(1)
           .describe(
-            "Path relative to the notes root, as returned by ragdown_recall, or a wikilink target as written inside [[...]] ('Note', 'Note#Heading', 'sub/Note'); a heading narrows the text to that section",
+            "Path relative to the documents root, as returned by ragdown_recall, or a wikilink target as written inside [[...]] ('Note', 'Note#Heading', 'sub/Note'); a heading narrows the text to that section",
           ),
         start_line: z.number().int().min(1).optional(),
         end_line: z.number().int().min(1).optional(),
@@ -162,11 +162,11 @@ export function createMcpServer(
   server.registerTool(
     "ragdown_backlinks",
     {
-      title: "Notes linking here",
+      title: "Documents linking here",
       description:
-        "The notes that link to a note — by [[wikilink]], alias, or relative Markdown link — each with the lines the links are on. Use it to find what depends on or refers to a note, e.g. before changing or superseding it.",
+        "The documents that link to a document — by [[wikilink]], alias, or relative Markdown link — each with the lines the links are on. Use it to find what depends on or refers to a document, e.g. before changing or superseding it.",
       inputSchema: {
-        path: z.string().min(1).describe("Path of the note relative to the notes root"),
+        path: z.string().min(1).describe("Path of the document relative to the documents root"),
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -176,20 +176,20 @@ export function createMcpServer(
   server.registerTool(
     "ragdown_list",
     {
-      title: "List notes",
+      title: "List documents",
       description:
-        "Browse the notes rather than search them: every note's path, title, tags and last change, optionally under a subfolder or with a tag. sort: 'recent' puts the most recently changed first.",
+        "Browse the documents rather than search them: every document's path, title, tags and last change, optionally under a subfolder or with a tag. sort: 'recent' puts the most recently changed first.",
       inputSchema: {
         path_prefix: z
           .string()
           .optional()
           .describe(
-            "Only notes under this subfolder, relative to the notes root, e.g. 'projects/'",
+            "Only documents under this subfolder, relative to the documents root, e.g. 'projects/'",
           ),
         tag: z
           .string()
           .optional()
-          .describe("Only notes with this tag; 'project' also matches 'project/alpha'"),
+          .describe("Only documents with this tag; 'project' also matches 'project/alpha'"),
         sort: z.enum(["path", "recent"]).default("path"),
         limit: z.number().int().min(1).max(1000).default(100),
       },
@@ -211,7 +211,7 @@ export function createMcpServer(
     {
       title: "Index status",
       description:
-        "The notes folder, index size (files, chunks), embedder, whether this process is the indexing primary, and the last sync. include_files lists every indexed file.",
+        "The documents folder, index size (files, chunks), embedder, whether this process is the indexing primary, and the last sync. include_files lists every indexed file.",
       inputSchema: { include_files: z.boolean().default(false) },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -222,9 +222,9 @@ export function createMcpServer(
     server.registerTool(
       "ragdown_remember",
       {
-        title: "Write a note",
+        title: "Write a document",
         description:
-          "Save something worth keeping (a decision, a fix, a how-to) as a new Markdown note in the notes folder, indexed immediately so later searches find it. Never overwrites an existing file. When this note replaces an earlier one, pass that note's path as supersedes so searches stop returning the old version.",
+          "Save something worth keeping (a decision, a fix, a how-to) as a new Markdown document in the documents folder, indexed immediately so later searches find it. Never overwrites an existing file. When this document replaces an earlier one, pass that document's path as supersedes so searches stop returning the old version.",
         inputSchema: {
           title: z.string().min(1),
           content: z
@@ -236,18 +236,18 @@ export function createMcpServer(
             .string()
             .optional()
             .describe(
-              "File name under the notes folder, without .md; defaults to <date>-<title-slug>",
+              "File name under the documents folder, without .md; defaults to <date>-<title-slug>",
             ),
           supersedes: z
             .array(z.string())
             .optional()
             .describe(
-              "Paths of notes this one replaces, as returned by ragdown_recall. They stay on disk and ragdown_read_doc still opens them, but search and hook context skip them. Use it when a fact changed, not when you are merely writing about the same topic.",
+              "Paths of documents this one replaces, as returned by ragdown_recall. They stay on disk and ragdown_read_doc still opens them, but search and hook context skip them. Use it when a fact changed, not when you are merely writing about the same topic.",
             ),
           session_id: z
             .string()
             .optional()
-            .describe("Stable id of the conversation, recorded in the note's frontmatter"),
+            .describe("Stable id of the conversation, recorded in the document's frontmatter"),
         },
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
@@ -263,21 +263,24 @@ export function createMcpServer(
     server.registerTool(
       "ragdown_edit",
       {
-        title: "Edit a note",
+        title: "Edit a document",
         description:
-          "Change an existing note, or create one at a path you choose. By default text replaces the whole file (frontmatter included), which for an existing note needs base_hash: the hash ragdown_read_doc returned, so you never overwrite a version you have not read. append: true adds text at the end of the note, or with heading at the end of that section, leaving the rest as it is. If the file changed since base_hash, nothing is written: read it again and redo the edit.",
+          "Change an existing document, or create one at a path you choose. By default text replaces the whole file (frontmatter included), which for an existing document needs base_hash: the hash ragdown_read_doc returned, so you never overwrite a version you have not read. append: true adds text at the end of the document, or with heading at the end of that section, leaving the rest as it is. If the file changed since base_hash, nothing is written: read it again and redo the edit.",
         inputSchema: {
           path: z
             .string()
             .min(1)
             .describe(
-              "Path of a Markdown file relative to the notes root, e.g. 'projects/alpha.md'",
+              "Path of a Markdown file relative to the documents root, e.g. 'projects/alpha.md'",
             ),
-          text: z.string().min(1).describe("The note's new Markdown, or with append, what to add"),
+          text: z
+            .string()
+            .min(1)
+            .describe("The document's new Markdown, or with append, what to add"),
           base_hash: z
             .string()
             .optional()
-            .describe("The hash from ragdown_read_doc; required to replace an existing note"),
+            .describe("The hash from ragdown_read_doc; required to replace an existing document"),
           append: z.boolean().default(false),
           heading: z
             .string()
@@ -299,21 +302,21 @@ export function createMcpServer(
     server.registerTool(
       "ragdown_move",
       {
-        title: "Move or rename a note or subfolder",
+        title: "Move or rename a document or subfolder",
         description:
-          "Rename or move a note, or a subfolder with everything in it, to a new path inside the notes folder. Every link that pointed at what moved ([[wikilinks]] and relative Markdown links, in any note) is rewritten to still point at it, and the result lists the notes that were updated. Never overwrites: if something is already at `to`, nothing moves. Use this rather than ragdown_edit plus a delete, which would break the links.",
+          "Rename or move a document, or a subfolder with everything in it, to a new path inside the documents folder. Every link that pointed at what moved ([[wikilinks]] and relative Markdown links, in any document) is rewritten to still point at it, and the result lists the documents that were updated. Never overwrites: if something is already at `to`, nothing moves. Use this rather than ragdown_edit plus a delete, which would break the links.",
         inputSchema: {
           from: z
             .string()
             .min(1)
             .describe(
-              "Path of the note or subfolder relative to the notes root, e.g. 'ops/pg.md' or 'ops'",
+              "Path of the document or subfolder relative to the documents root, e.g. 'ops/pg.md' or 'ops'",
             ),
           to: z
             .string()
             .min(1)
             .describe(
-              "Its whole new path, name included: 'db/postgres.md', not 'db/'. Missing subfolders on the way are created. A note keeps a Markdown extension",
+              "Its whole new path, name included: 'db/postgres.md', not 'db/'. Missing subfolders on the way are created. A document keeps a Markdown extension",
             ),
         },
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
@@ -324,27 +327,27 @@ export function createMcpServer(
     server.registerTool(
       "ragdown_delete",
       {
-        title: "Delete a note or subfolder",
+        title: "Delete a document or subfolder",
         description:
-          "Permanently delete a note, or a subfolder, from the notes folder and the index. There is no trash and no undo. Call ragdown_backlinks first: links to a deleted note are left as they are, pointing at nothing. When a note is out of date rather than unwanted, prefer ragdown_remember with supersedes, which keeps the old text readable. A subfolder that holds anything is deleted only with recursive: true. Pass base_hash to delete a note only if it is still the version you read.",
+          "Permanently delete a document, or a subfolder, from the documents folder and the index. There is no trash and no undo. Call ragdown_backlinks first: links to a deleted document are left as they are, pointing at nothing. When a document is out of date rather than unwanted, prefer ragdown_remember with supersedes, which keeps the old text readable. A subfolder that holds anything is deleted only with recursive: true. Pass base_hash to delete a document only if it is still the version you read.",
         inputSchema: {
           path: z
             .string()
             .min(1)
             .describe(
-              "Path of the note or subfolder relative to the notes root, e.g. 'ops/pg.md' or 'ops'",
+              "Path of the document or subfolder relative to the documents root, e.g. 'ops/pg.md' or 'ops'",
             ),
           recursive: z
             .boolean()
             .default(false)
             .describe(
-              "For a subfolder: also delete everything in it — notes, attachments and any other files",
+              "For a subfolder: also delete everything in it — documents, attachments and any other files",
             ),
           base_hash: z
             .string()
             .optional()
             .describe(
-              "For a note: the hash ragdown_read_doc returned. If the file changed since, nothing is deleted",
+              "For a document: the hash ragdown_read_doc returned. If the file changed since, nothing is deleted",
             ),
         },
         annotations: {
@@ -360,7 +363,7 @@ export function createMcpServer(
     server.registerTool(
       "ragdown_reindex",
       {
-        title: "Reindex notes",
+        title: "Reindex documents",
         description:
           "Bring the index up to date with the folder now. Changes are normally picked up automatically within a second; use this after bulk edits made while no server was running, or full: true to re-embed everything.",
         inputSchema: { full: z.boolean().default(false) },

@@ -44,10 +44,10 @@ export async function writeRemembered({
     supersedes.map(async (path) => {
       const target = resolve(root, path);
       if (!isInside(root, target)) {
-        throw new Error(`supersedes is outside the notes folder: ${path}`);
+        throw new Error(`supersedes is outside the documents folder: ${path}`);
       }
       if (!(await stat(target).catch(() => undefined))?.isFile()) {
-        throw new Error(`supersedes names no note in this folder: ${path}`);
+        throw new Error(`supersedes names no document in this folder: ${path}`);
       }
       return target;
     }),
@@ -57,7 +57,7 @@ export async function writeRemembered({
   for (let n = 1; ; n++) {
     full = resolve(notesDir, `${base}${n === 1 ? "" : `-${n}`}.md`);
     if (!isInside(notesDir, full)) {
-      throw new Error(`note name escapes the notes folder: ${base}`);
+      throw new Error(`document name escapes the documents folder: ${base}`);
     }
     const front = [
       "---",

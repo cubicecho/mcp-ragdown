@@ -287,7 +287,7 @@ describe("superseding a note", () => {
     const root = new Scope(t.rag);
     await expect(
       root.remember("X", "body", [], "x", { supersedes: ["notes/missing.md"] }),
-    ).rejects.toThrow(/names no note/);
+    ).rejects.toThrow(/names no document/);
     await expect(
       root.remember("X", "body", [], "x", { supersedes: ["../outside.md"] }),
     ).rejects.toThrow(/outside/);
@@ -312,12 +312,12 @@ describe("superseding a note", () => {
     expect(section).toMatchObject({ path: "ops/pg.md", resolved_from: "pg#Vacuum" });
     expect(section.text).toBe("## Vacuum\n\nNightly on postgres.\n");
     expect((await work.readDocument("Elephant")).path).toBe("ops/pg.md");
-    await expect(work.readDocument("nothing")).rejects.toThrow(/no such note/);
+    await expect(work.readDocument("nothing")).rejects.toThrow(/no such document/);
 
     // A subfolder endpoint cannot follow a link above itself.
     const ops = (await openScope(rag, "work/ops")) as Scope;
     expect((await ops.readDocument("pg")).path).toBe("pg.md");
-    await expect(ops.readDocument("kafka")).rejects.toThrow(/no such note/);
+    await expect(ops.readDocument("kafka")).rejects.toThrow(/no such document/);
 
     const tagged = await work.recall("postgres", 10, undefined, "infra");
     expect(new Set(tagged.map((h) => h.path))).toEqual(new Set(["ops/pg.md"]));

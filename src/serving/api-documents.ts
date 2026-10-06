@@ -179,7 +179,7 @@ export async function handleDocuments(request: ApiRequest): Promise<void> {
       true,
     );
     if (!resolved) {
-      json(res, 404, { error: `no note or file matches ${JSON.stringify(link)}` });
+      json(res, 404, { error: `no document or file matches ${JSON.stringify(link)}` });
       return;
     }
     json(res, 200, { ...resolved, path: `${name}/${resolved.path}` });

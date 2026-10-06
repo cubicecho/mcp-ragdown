@@ -43,7 +43,7 @@ export class Ragdown {
     const unrelated = scoreScale(config.embedder)?.unrelated;
     if (unrelated !== undefined && config.hook.minScore <= unrelated) {
       console.error(
-        `[ragdown] the hook's minimum score, ${config.hook.minScore}, is too low for ${config.embedder}, which scores an unrelated prompt up to ${unrelated}: ragdown_context will inject notes into prompts they have nothing to do with. Unset it (RAGDOWN_HOOK_MIN_SCORE, or the server settings in the web UI) to use ${scoreScale(config.embedder)?.minScore}.`,
+        `[ragdown] the hook's minimum score, ${config.hook.minScore}, is too low for ${config.embedder}, which scores an unrelated prompt up to ${unrelated}: ragdown_context will inject documents into prompts they have nothing to do with. Unset it (RAGDOWN_HOOK_MIN_SCORE, or the server settings in the web UI) to use ${scoreScale(config.embedder)?.minScore}.`,
       );
     }
     let pending: Ragdown | undefined;

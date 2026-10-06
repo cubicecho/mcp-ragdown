@@ -120,7 +120,9 @@ export class Scope {
     if (!(await stat(full).catch(() => undefined))?.isFile()) {
       const link = await this.resolveLink(path);
       if (!link || !MARKDOWN.test(link.path)) {
-        throw new Error(`no such note: ${path} (not a path, and no note by that name or alias)`);
+        throw new Error(
+          `no such document: ${path} (not a path, and no document by that name or alias)`,
+        );
       }
       full = resolve(this.root, link.path);
       anchor = link.anchor;
@@ -413,7 +415,7 @@ export class Scope {
       return this.writeDocument(relPath, text, false, options.baseHash);
     }
     if (!current) {
-      throw new Refusal(404, `no such note: ${path}`);
+      throw new Refusal(404, `no such document: ${path}`);
     }
     const hash = contentHash(current);
     if (options.baseHash !== undefined && options.baseHash !== hash) {
