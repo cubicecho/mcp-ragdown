@@ -1,14 +1,13 @@
 import { createHash } from "node:crypto";
 import { type Dirent, type FSWatcher, watch } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { join, relative } from "node:path";
 import { chunkMarkdown, embeddingText, readDocMeta, readSupersedes } from "./chunk.ts";
+import { isSkippedEntry, MARKDOWN, toPosix } from "./document-paths.ts";
 import type { Embedder } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
 import type { FileUpdate, Store } from "./store.ts";
 
-/** The files the indexer reads; anything else in the folder is ignored. */
-export const MARKDOWN = /\.(md|markdown|mdx)$/i;
 /** An editor save is a burst of events (temp file, rename, chmod); one sync per burst. */
 const WATCH_DEBOUNCE_MS = 750;
 /** Chunks per embed-and-write round: a crash loses at most this much work, and progress is visible. */
@@ -242,7 +241,7 @@ export async function listMarkdown(
       return;
     }
     for (const entry of entries) {
-      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      if (isSkippedEntry(entry.name)) continue;
       const full = join(dir, entry.name);
       if (entry.isDirectory()) await walk(full);
       else if (entry.isFile() && MARKDOWN.test(entry.name)) {
@@ -252,7 +251,7 @@ export async function listMarkdown(
         }
         try {
           const info = await stat(full);
-          const path = relative(root, full).split(sep).join("/");
+          const path = toPosix(relative(root, full));
           files.set(path, { mtimeMs: info.mtimeMs, size: info.size });
         } catch (error) {
           console.error(`[indexer] skipped ${full}: ${errorMessage(error)}`);

@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, posix, resolve } from "node:path";
+import { isIndexedName } from "./document-paths.ts";
 import { scoreScale } from "./embedder.ts";
-import { isIndexedName } from "./folders.ts";
 import type { ServerSettings } from "./settings.ts";
 
 /**
@@ -159,11 +159,6 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
     env: { embedder, watch, textLimit, hook: { ...hook, minScore: explicitMinScore } },
     saved: {},
   };
-}
-
-/** True when `child` is `parent` or somewhere below it; both must be absolute and resolved. */
-export function isInside(parent: string, child: string): boolean {
-  return child === parent || child.startsWith(parent.endsWith("/") ? parent : `${parent}/`);
 }
 
 function expandHome(path: string): string {

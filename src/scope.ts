@@ -13,12 +13,11 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join, posix, relative, resolve, sep } from "node:path";
-import { isInside } from "./config.ts";
+import { dirname, join, posix, relative, resolve } from "node:path";
+import { isIndexedName, isInside, isSkippedEntry, MARKDOWN, toPosix } from "./document-paths.ts";
 import type { Ragdown } from "./engine.ts";
-import { isIndexedName, readSettings } from "./folders.ts";
+import { readSettings } from "./folders.ts";
 import { formatHit } from "./format.ts";
-import { MARKDOWN } from "./indexer.ts";
 import {
   findLinks,
   type LinkNote,
@@ -900,7 +899,7 @@ async function listAttachments(root: string): Promise<string[]> {
   const walk = async (dir: string): Promise<void> => {
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => [] as Dirent[]);
     for (const entry of entries) {
-      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      if (isSkippedEntry(entry.name)) continue;
       const full = join(dir, entry.name);
       if (entry.isDirectory()) await walk(full);
       else if (entry.isFile() && !MARKDOWN.test(entry.name))
@@ -922,14 +921,9 @@ function normalizeFolder(prefix: string | undefined): string {
   return folder;
 }
 
-/** A relative path with `/` separators, which is what frontmatter and the index both use. */
 /** `superseded_by` on a note that something replaces, and nothing on one that nothing does. */
 function withSupersededBy(paths: string[]): { superseded_by?: string[] } {
   return paths.length > 0 ? { superseded_by: paths } : {};
-}
-
-function toPosix(path: string): string {
-  return path.split(sep).join("/");
 }
 
 function clip(text: string, max: number): string {

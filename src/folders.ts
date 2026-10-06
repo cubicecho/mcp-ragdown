@@ -1,8 +1,8 @@
 import type { Dirent } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isIndexedName, MARKDOWN } from "./document-paths.ts";
 import { errorMessage } from "./errors.ts";
-import { MARKDOWN } from "./indexer.ts";
 import { Refusal } from "./refusal.ts";
 
 /** A folder's settings file, at its root. A dot-file: Obsidian and the indexer both skip it. */
@@ -55,11 +55,6 @@ const CREATABLE = /^[A-Za-z0-9_][A-Za-z0-9 _.-]{0,63}$/;
 
 /** Settings files already reported as invalid, keyed by path and contents, so each is logged once. */
 const reported = new Set<string>();
-
-/** True for a directory entry the indexer walks into: not a dot-entry and not `node_modules`. */
-export function isIndexedName(name: string): boolean {
-  return !name.startsWith(".") && name !== "node_modules" && !/[/\\\0]/.test(name);
-}
 
 /** @throws with `status: 400` unless `name` is one the UI may create a folder under. */
 export function assertCreatableName(name: string): void {

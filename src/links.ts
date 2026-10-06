@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import { MARKDOWN } from "./indexer.ts";
+import { MARKDOWN } from "./document-paths.ts";
 
 /** A note a wikilink may point at, relative to the folder. */
 export interface LinkNote {
