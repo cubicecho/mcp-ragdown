@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import { type Dirent, type FSWatcher, watch } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { chunkMarkdown, embeddingText, readDocMeta, readSupersedes } from "./chunk.ts";
+import { contentHash } from "./content-hash.ts";
 import { isSkippedEntry, MARKDOWN, toPosix } from "./document-paths.ts";
 import type { Embedder } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
@@ -185,7 +185,7 @@ export class Indexer {
         console.error(`[indexer] skipped ${path}: ${errorMessage(error)}`);
         continue;
       }
-      const hash = createHash("sha256").update(source).digest("hex");
+      const hash = contentHash(source);
       if (known?.hash === hash) {
         report.unchanged++;
         continue;

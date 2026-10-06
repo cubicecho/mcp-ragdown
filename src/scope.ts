@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import {
   lstat,
@@ -14,6 +14,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, posix, relative, resolve } from "node:path";
+import { contentHash } from "./content-hash.ts";
 import { isIndexedName, isInside, isSkippedEntry, MARKDOWN, toPosix } from "./document-paths.ts";
 import type { Ragdown } from "./engine.ts";
 import { readSettings } from "./folders.ts";
@@ -940,7 +941,3 @@ function slug(title: string): string {
       .slice(0, 60) || "note"
   );
 }
-
-/** What `readIndexedDoc` calls a file's `hash`, and `writeDoc` checks a `baseHash` against. */
-export const contentHash = (bytes: Buffer | string) =>
-  createHash("sha256").update(bytes).digest("hex");
