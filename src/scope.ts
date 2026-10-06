@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import {
   lstat,
@@ -29,6 +28,7 @@ import {
 } from "./links.ts";
 import { Refusal } from "./refusal.ts";
 import { type Hit, supersededBy } from "./store.ts";
+import { writeAtomic } from "./write-atomic.ts";
 
 /** Sessions whose returned chunks are remembered; past this the oldest is forgotten. */
 const MAX_SESSIONS = 200;
@@ -441,16 +441,8 @@ export class Scope {
       if (current.includes("\r\n")) text = text.replace(/\r?\n/g, "\r\n");
     }
     if (existing) {
-      // Written beside it and renamed over it: a sync never reads half a file. The dot name keeps
-      // the indexer and the watcher off the temp file.
-      const temp = join(dirname(full), `.${randomUUID()}.tmp`);
-      try {
-        await writeFile(temp, text);
-        await rename(temp, full);
-      } catch (error) {
-        await rm(temp, { force: true });
-        throw error;
-      }
+      // Renamed over it, so a sync never reads half a file.
+      await writeAtomic(full, text);
     } else {
       try {
         await writeFile(full, text, { flag: "wx" });
@@ -672,14 +664,7 @@ export class Scope {
       const full = resolve(docsDir, `${prefix}${moved(path)}`);
       // Changed since it was read, by an editor or an agent: theirs wins, and this link is not fixed.
       if ((await readFile(full, "utf8").catch(() => undefined)) !== original) continue;
-      const temp = join(dirname(full), `.${randomUUID()}.tmp`);
-      try {
-        await writeFile(temp, text);
-        await rename(temp, full);
-      } catch (error) {
-        await rm(temp, { force: true });
-        throw error;
-      }
+      await writeAtomic(full, text);
       updated.push(moved(path));
     }
     const scoped = (path: string) => this.toScoped(`${prefix}${path}`);

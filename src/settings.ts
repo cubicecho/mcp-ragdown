@@ -1,10 +1,11 @@
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { Config } from "./config.ts";
 import { scoreScale } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
 import { HOOK_KEYS, type HookOverrides, hookValueError } from "./folders.ts";
 import { Refusal } from "./refusal.ts";
+import { writeAtomic } from "./write-atomic.ts";
 
 /**
  * The server-wide settings the web UI can change, kept beside the folders rather than with the
@@ -65,9 +66,7 @@ export async function writeServerSettings(
     await rm(path, { force: true });
     return;
   }
-  const temp = `${path}.${process.pid}.tmp`;
-  await writeFile(temp, `${JSON.stringify(settings, null, 2)}\n`);
-  await rename(temp, path);
+  await writeAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
 /**

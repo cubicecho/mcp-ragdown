@@ -1,12 +1,15 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as lancedb from "@lancedb/lancedb";
 import { Field, FixedSizeList, Float32, Float64, Int32, Schema, Utf8 } from "apache-arrow";
 import { CHUNKER_VERSION, type Chunk, embeddingText } from "./chunk.ts";
 import type { Embedder } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
+import { writeAtomic } from "./write-atomic.ts";
 
 const TABLE = "chunks";
+/** The meta file's permission bits: readable and writable by its owner only. */
+const META_FILE_MODE = 0o600;
 /**
  * Bumped whenever the table's columns or indexes change, so an index built by the old layout is
  * rebuilt rather than queried with columns it does not have. Separate from `CHUNKER_VERSION`: the
@@ -201,7 +204,7 @@ export class Store {
       if (names.includes(TABLE)) await db.dropTable(TABLE);
       const table = await db.createEmptyTable(TABLE, schema(embedder.dim));
       await table.createIndex("search_text", { config: lancedb.Index.fts() });
-      await writeAtomic(metaPath, `${JSON.stringify(wanted, null, 2)}\n`);
+      await writeAtomic(metaPath, `${JSON.stringify(wanted, null, 2)}\n`, META_FILE_MODE);
       return new Store(dataDir, table, embedder, rebuiltBecause);
     }
     return new Store(dataDir, await db.openTable(TABLE), embedder, undefined);
@@ -528,10 +531,4 @@ async function readMeta(path: string): Promise<Meta | undefined> {
     // Missing or unreadable are the same answer: this index cannot be trusted as it is.
     return undefined;
   }
-}
-
-async function writeAtomic(path: string, contents: string): Promise<void> {
-  const temp = `${path}.${process.pid}.tmp`;
-  await writeFile(temp, contents, { mode: 0o600 });
-  await rename(temp, path);
 }
