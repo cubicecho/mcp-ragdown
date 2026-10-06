@@ -6,13 +6,10 @@ import { errorMessage, hasCode } from "./errors.ts";
 /**
  * One process per index is the primary: it writes the index and watches the folder. Every other
  * server on the same index — a second Claude Code window's stdio server, say — is a reader that
- * forwards syncs to it.
- *
- * Holding the unix socket *is* the lock, so the lock and the endpoint cannot disagree, and a
- * crashed primary leaves nothing that blocks the next one: a socket file nobody listens on is
- * refused on connect and taken over. Two processes taking over the same stale socket in the same
- * instant can both win; the cost is two writers until one exits, which LanceDB's optimistic
- * commits survive.
+ * forwards syncs to it. Holding the unix socket *is* the lock, so the lock and the endpoint cannot
+ * disagree, and a crashed primary leaves nothing that blocks the next one. Two processes taking
+ * over the same stale socket at once can both win: two writers until one exits, which LanceDB's
+ * optimistic commits survive.
  */
 
 /** What the primary does with one request a reader sent over the socket. */

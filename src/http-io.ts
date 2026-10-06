@@ -40,6 +40,9 @@ export function allow({ method }: ApiRequest, ...methods: string[]): void {
 }
 
 /**
+ * For a write to the documents or the folders. A folder's settings are not documents and skip
+ * this: otherwise a read-only server could never turn MCP on.
+ *
  * @throws with `status: 403` under `RAGDOWN_READ_ONLY`.
  */
 export function assertWritable(config: Config): void {

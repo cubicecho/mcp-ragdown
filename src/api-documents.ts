@@ -46,7 +46,11 @@ const FILE_TYPES: Record<string, string> = {
   ".mov": "video/quicktime",
 };
 
-/** Every `/api` route that reads, writes, moves, searches or links the documents in a folder. */
+/**
+ * Every `/api` route that reads, writes, moves, searches or links the documents in a folder. A
+ * path here is relative to the docs root, folder first: `work/notes/a.md`. A write answers once
+ * the index has synced, so the next `/api/docs` already reflects it.
+ */
 export async function handleDocuments(request: ApiRequest): Promise<void> {
   const { rag, config, path, method, params, req, res } = request;
   const root = new Scope(rag);

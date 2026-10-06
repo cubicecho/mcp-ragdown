@@ -15,47 +15,10 @@ import { createMcpServer, SERVER_NAME, VERSION } from "./server.ts";
 import { serveWeb, WEB_DIR } from "./web-ui.ts";
 
 /**
- * The HTTP face of the server, for running it in a container. Every top-level directory of the docs
- * is a folder (`folders.ts`), and each folder with MCP turned on is its own MCP server:
- *
- * - `GET /api/status` — unauthenticated liveness, with the index size once the model is loaded.
- * - `/mcp/<folder>` — Streamable HTTP MCP for one folder, stateless: a fresh `McpServer` per
- *   request, since every piece of state lives in the shared `Ragdown`. `/mcp/<folder>/<sub...>` is
- *   the same server narrowed to a subfolder. Its tools treat the folder as the root (`scope.ts`). A
- *   folder that does not exist and one that is human-only (MCP off) are the same 404, and bare
- *   `/mcp` is a 404 that says to pick a folder: there is no endpoint over every folder.
- * - `/api/folders` — list (`GET`) and create (`POST { name, title?, mcp? }`) folders;
- *   `/api/folders/<name>` — change a folder's settings or rename it (`PATCH { title?, mcp?, hook?,
- *   name? }`) and delete it with everything in it (`DELETE ?confirm=<name>`).
- * - `PATCH /api/settings` — save server-wide settings (`{ embedder?, watch?, text_limit?, hook? }`,
- *   a `null` giving a value back to its variable) to `.ragdown-server.json` in the docs dir and
- *   apply them at once. A new embedder rebuilds the index. `GET /api/status` shows the result.
- * - `DELETE /api/loose?name=` — remove one Markdown file directly in the docs dir, outside every
- *   folder. Only a name `GET /api/folders` lists as loose; nothing is indexed there, so no sync.
- * - `GET /api/docs[?folder=]` and `GET /api/doc?path=` — the indexed files and one file's text.
- * - `POST /api/doc` with `{ path, text, overwrite?, base_hash? }` and `DELETE /api/doc?path=` —
- *   upload, edit and remove a Markdown file inside a folder. Paths are held to what the indexer
- *   would index (`Scope.writeDocument`); an existing file is a 409 unless `overwrite` or
- *   `base_hash`, a missing one a 404. `base_hash` is the `hash` `GET /api/doc` gave: the editor's
- *   save, a 409 with `code: "changed"` when the file has changed or gone since. Each answers once
- *   the index has synced, so the next `/api/docs` already reflects it.
- * - `POST /api/move` with `{ from, to }` — rename or move a document, or a subfolder, within its
- *   folder, rewriting the links that pointed at what moved (`Scope.move`).
- * - `GET /api/search?folder=&q=[&tag=&top_k=]` — hybrid search within one folder, human-only ones
- *   included: the UI is for people.
- * - `GET /api/resolve?from=&link=` — a wikilink in the document `from`, resolved within its folder.
- * - `GET /api/backlinks?path=` — the documents in the same folder that link to `path`.
- * - `GET /api/file?path=` — any file inside a folder, raw, for the UI's images and embeds.
- * - Anything else under `GET` — the web UI from `webDir`, when it has been built.
- *
- * Every `/api` path is relative to the docs root, folder first: `work/notes/a.md`. Writes to
- * the documents and folders are a 403 under `RAGDOWN_READ_ONLY`; a folder's settings are not
- * documents, so they can still be changed — otherwise a read-only server could never turn MCP on.
- *
- * Agents and hooks use `/mcp/<folder>` only; the `/api` routes exist for the UI and the health
- * check. Everything under `/api` but status, and `/mcp`, needs `Authorization: Bearer
- * $RAGDOWN_TOKEN` unless `SECURE_LOCAL_NET=true`. The UI's static files do not: they hold no
- * documents. Plain `node:http` rather than Express: a handful of routes do not need a framework.
+ * The HTTP face of the server, for running it in a container: `/mcp/<folder>` for agents and
+ * hooks, `/api` for the web UI and the health check, and the built UI for every other `GET`. The
+ * README's "Commands and HTTP" lists every route and what it answers. Plain `node:http` rather than
+ * Express: a handful of routes do not need a framework.
  */
 export function createHttpServer(
   ready: Promise<Ragdown>,
@@ -119,6 +82,7 @@ async function handle(
   const mcp = path === "/mcp" || path.startsWith("/mcp/");
   const api = mcp || path.startsWith("/api/");
   if (!api) {
+    // The UI's static files need no token: they hold no documents.
     if (req.method === "GET" || req.method === "HEAD") {
       await serveWeb(webDir, path, res);
     } else {
@@ -157,6 +121,11 @@ const API_ROUTES = new Set([
 /** The same answer for a missing folder and a human-only one, so neither gives the other away. */
 const NO_MCP_FOLDER = "Not found: no folder with MCP turned on at this path";
 
+/**
+ * Streamable HTTP MCP for one folder, or a subfolder of one, whose tools treat it as the root.
+ * Stateless: a fresh `McpServer` per request, since every piece of state lives in the shared
+ * `Ragdown`. Bare `/mcp` is a 404 that says to pick a folder: no endpoint spans every folder.
+ */
 async function handleMcp(
   rag: Ragdown,
   config: Config,

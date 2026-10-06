@@ -484,13 +484,10 @@ export class Scope {
 
   /**
    * Rename or move a document, or a subfolder with everything in it, within its folder, and rewrite
-   * every link in the folder that pointed at what moved — wikilinks, aliases aside, and relative
-   * Markdown links — so none of them breaks. The moved documents' own links are rewritten too where
-   * the move would break them. Any link that resolved before resolves to the same document after;
-   * one that already resolved to nothing is left alone.
-   *
-   * A rewritten wikilink is the shortest target that still resolves where it should: the name when
-   * that is unambiguous, else as much of the path as it takes. Headings and shown text are kept.
+   * every link in the folder the move would break: wikilinks and relative Markdown links, the moved
+   * documents' own included. Any link that resolved before resolves to the same document after; one
+   * that resolved to nothing is left alone. A rewritten wikilink is the shortest target that still
+   * resolves where it should, with its heading and shown text kept.
    *
    * @throws with `status: 400` for a bad path, moving onto itself or a subfolder into itself, `404`
    *   for nothing at `from`, and `409` when something is already at `to`.

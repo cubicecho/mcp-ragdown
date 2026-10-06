@@ -385,15 +385,8 @@ export class Store {
   /**
    * Hybrid search: nearest chunks by cosine similarity and best chunks by BM25, fused by reciprocal
    * rank. Lexical search is what finds an exact error string or flag name that an embedding blurs;
-   * dense search is what finds the paragraph that answers a question in other words.
-   *
-   * Both retrievers read the chunk with its breadcrumb (`search_text`). Matching BM25 on the body
-   * alone loses every chunk that never repeats its own subject — a table of settings, a list of
-   * steps — and a lexical ranking that bad drags the fused one below dense search on its own.
-   *
-   * A document another document's frontmatter supersedes is left out: a replaced fact that still
-   * reads as confident prose is worse than no hit at all. The file stays on disk and `readDocument`
-   * still opens it.
+   * dense search is what finds the paragraph that answers a question in other words. A document
+   * another document's frontmatter supersedes is left out, though `readDocument` still opens it.
    *
    * @param pathPrefix - limits both retrievers to files under this relative path.
    * @param tag - limits both to documents with this tag or one nested under it (`project` takes in
@@ -405,8 +398,9 @@ export class Store {
       return [];
     }
     const pool = Math.max(limit * 4, 20);
-    // Superseded documents are filtered here rather than after fusion, so a replaced document
-    // cannot take up the pool a current one would have filled.
+    // A replaced fact that still reads as confident prose is worse than no hit at all. Filtered
+    // here rather than after fusion, so a replaced document cannot take up the pool a current one
+    // would have filled.
     const superseded = await this.supersededPaths();
     const wantedTag = tag?.trim().replace(/^#+/, "").replace(/\/+$/, "").toLowerCase();
     const clauses = [
@@ -442,6 +436,9 @@ export class Store {
     let lexicalScored: ScoredRow[] = [];
     if (/[\p{L}\p{N}]/u.test(query)) {
       try {
+        // On the chunk with its breadcrumb, as the dense side is. BM25 on the body alone loses
+        // every chunk that never repeats its own subject — a table of settings, a list of steps —
+        // and a lexical ranking that bad drags the fused one below dense search on its own.
         let lexical = this.table.search(query, "fts", "search_text");
         if (where) {
           lexical = lexical.where(where);
