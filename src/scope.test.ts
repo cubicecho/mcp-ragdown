@@ -1,6 +1,7 @@
 import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { loadConfig } from "./config.ts";
 import { Ragdown } from "./engine.ts";
 import { openScope, Scope } from "./scope.ts";
 import { applySettings } from "./settings.ts";
@@ -215,9 +216,16 @@ describe("Scope", () => {
     await mkdir(join(t.docsDir, ".hidden"));
     await symlink(join(t.docsDir, "projects/alpha"), join(t.docsDir, "linked"));
     expect((await openScope(t.rag, ""))?.dir).toBe("");
-    for (const dir of ["missing", "backups.md", ".hidden", "linked", "projects/..", "../docs"]) {
+    const refused = ["missing", "backups.md", ".hidden", "linked", "projects/..", "../docs"];
+    // One rule for a name, wherever a path comes in: a backslash and a NUL are refused alike.
+    for (const dir of [...refused, "projects\\alpha", "projects/al\0pha"]) {
       expect(await openScope(t.rag, dir), dir).toBeUndefined();
     }
+    const env = { RAGDOWN_DOCS_DIR: t.docsDir };
+    for (const notesDir of [".hidden", "a/node_modules", "no\0tes"]) {
+      expect(() => loadConfig({ ...env, RAGDOWN_NOTES_DIR: notesDir }), notesDir).toThrow(/skips/);
+    }
+    expect(loadConfig({ ...env, RAGDOWN_NOTES_DIR: "." }).notesDir).toBe("");
   });
 });
 

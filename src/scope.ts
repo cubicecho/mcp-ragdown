@@ -16,7 +16,7 @@ import {
 import { dirname, join, posix, relative, resolve, sep } from "node:path";
 import { isInside } from "./config.ts";
 import type { Ragdown } from "./engine.ts";
-import { readSettings } from "./folders.ts";
+import { isIndexedName, readSettings } from "./folders.ts";
 import { formatHit } from "./format.ts";
 import { MARKDOWN } from "./indexer.ts";
 import {
@@ -762,7 +762,7 @@ export class Scope {
     if (segments.length === 0 || segments.includes("..")) {
       throw invalid("path is outside the docs folder");
     }
-    if (segments.some((s) => s.startsWith(".") || s === "node_modules" || s.includes("\0"))) {
+    if (segments.some((segment) => !isIndexedName(segment))) {
       throw invalid("path names a folder or file the index skips");
     }
     if (markdownOnly && !MARKDOWN.test(segments.at(-1) ?? "")) {
@@ -822,7 +822,7 @@ export class Scope {
  */
 export async function openScope(rag: Ragdown, dir: string): Promise<Scope | undefined> {
   const segments = dir.split("/").filter(Boolean);
-  if (segments.some((s) => s.startsWith(".") || s === "node_modules" || s.includes("\\"))) {
+  if (segments.some((segment) => !isIndexedName(segment))) {
     return undefined;
   }
   const docsDir = await realpath(rag.config.docsDir).catch(() => undefined);

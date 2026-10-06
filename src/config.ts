@@ -3,6 +3,7 @@ import { statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, posix, resolve } from "node:path";
 import { scoreScale } from "./embedder.ts";
+import { isIndexedName } from "./folders.ts";
 import type { ServerSettings } from "./settings.ts";
 
 /**
@@ -106,7 +107,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
   if (posix.isAbsolute(notesDir) || notesDir === ".." || notesDir.startsWith("../")) {
     throw new Error(`RAGDOWN_NOTES_DIR must be a path inside the folder: ${notesDir}`);
   }
-  if (notesDir.split("/").some((s) => (s.startsWith(".") && s !== ".") || s === "node_modules")) {
+  if (notesDir !== "." && notesDir.split("/").some((segment) => !isIndexedName(segment))) {
     // The indexer skips those, so a note written there would never be found.
     throw new Error(`RAGDOWN_NOTES_DIR names a folder the index skips: ${notesDir}`);
   }
