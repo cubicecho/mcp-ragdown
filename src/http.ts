@@ -1,90 +1,18 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { extname, join, resolve } from "node:path";
-import { pipeline } from "node:stream/promises";
-import { fileURLToPath } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { handleDocuments } from "./api-documents.ts";
+import { handleFolders } from "./api-folders.ts";
+import { handleSettings, publicSettings } from "./api-settings.ts";
 import type { Config } from "./config.ts";
-import { isInside } from "./document-paths.ts";
-import { createEmbedder, LOCAL_EMBEDDERS, scoreScale } from "./embedder.ts";
 import type { Ragdown } from "./engine.ts";
 import { errorMessage } from "./errors.ts";
-import {
-  createFolder,
-  deleteFolder,
-  deleteLooseFile,
-  type Folder,
-  type FolderChanges,
-  getFolder,
-  listFolders,
-  looseFiles,
-  updateFolder,
-} from "./folders.ts";
-import { parseHookChanges } from "./hook-settings.ts";
+import { getFolder } from "./folders.ts";
+import { type ApiRequest, json, readJson } from "./http-io.ts";
 import { Refusal } from "./refusal.ts";
-import { openScope, Scope } from "./scope.ts";
+import { openScope } from "./scope.ts";
 import { createMcpServer, SERVER_NAME, VERSION } from "./server.ts";
-import {
-  applyChanges,
-  applySettings,
-  parseChanges,
-  type SettingsChanges,
-  writeServerSettings,
-} from "./settings.ts";
-import { type FileState, supersededBy } from "./store.ts";
-
-/** An MCP message is a few kilobytes; anything near this is not one. */
-const MAX_BODY_BYTES = 1024 * 1024;
-/**
- * An upload's JSON body. A hand-written document is kilobytes and a long one well under a megabyte;
- * JSON escaping can nearly double Markdown full of quotes and backslashes, and the request waits
- * while every chunk of the file is embedded, so a file much past this is not a document and would
- * hold the response for minutes on the CPU model.
- */
-const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
-
-/** Where `npm run build` puts the web UI. Absent in a checkout that never built it. */
-export const WEB_DIR = fileURLToPath(new URL("../web/dist", import.meta.url));
-
-const CONTENT_TYPES: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".ico": "image/x-icon",
-  ".woff2": "font/woff2",
-  ".json": "application/json",
-};
-
-/** What `/api/file` says a document's attachment is; anything else is a download. */
-const FILE_TYPES: Record<string, string> = {
-  ...CONTENT_TYPES,
-  ".md": "text/markdown; charset=utf-8",
-  ".markdown": "text/markdown; charset=utf-8",
-  ".mdx": "text/markdown; charset=utf-8",
-  ".txt": "text/plain; charset=utf-8",
-  ".csv": "text/csv; charset=utf-8",
-  ".html": "text/plain; charset=utf-8",
-  ".js": "text/plain; charset=utf-8",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".avif": "image/avif",
-  ".bmp": "image/bmp",
-  ".pdf": "application/pdf",
-  ".mp3": "audio/mpeg",
-  ".wav": "audio/wav",
-  ".ogg": "audio/ogg",
-  ".m4a": "audio/mp4",
-  ".flac": "audio/flac",
-  ".mp4": "video/mp4",
-  ".webm": "video/webm",
-  ".mov": "video/quicktime",
-};
+import { serveWeb, WEB_DIR } from "./web-ui.ts";
 
 /**
  * The HTTP face of the server, for running it in a container. Every top-level directory of the docs
@@ -158,79 +86,6 @@ export function assertAuthConfigured(config: Config): void {
       "set RAGDOWN_TOKEN (openssl rand -hex 32), or SECURE_LOCAL_NET=true on a trusted network",
     );
   }
-}
-
-/**
- * The settings the web UI shows, read from the environment at start. Served unauthenticated with
- * the status, so only tuning numbers belong here: never the token, a key, or an endpoint URL.
- */
-function publicSettings(config: Config) {
-  return {
-    embedder: config.embedder,
-    watch: config.watch,
-    text_limit: config.textLimit,
-    hook: {
-      top_k: config.hook.topK,
-      min_score: config.hook.minScore,
-      min_ratio: config.hook.minRatio,
-      max_chars: config.hook.maxChars,
-      // What an unrelated prompt scores on this embedder, so the UI can say a floor is too low.
-      unrelated_score: scoreScale(config.embedder)?.unrelated ?? null,
-    },
-    // The two layers under the values above: what the UI saved, and what applies without it.
-    saved: config.saved,
-    env: {
-      embedder: config.env.embedder,
-      watch: config.env.watch,
-      text_limit: config.env.textLimit,
-      hook: {
-        top_k: config.env.hook.topK,
-        min_score: config.env.hook.minScore,
-        min_ratio: config.env.hook.minRatio,
-        max_chars: config.env.hook.maxChars,
-      },
-    },
-    // The embedders a form can offer, each with the floor that goes with it.
-    embedders: Object.fromEntries(
-      [...new Set([...LOCAL_EMBEDDERS, config.embedder, config.env.embedder])].map((name) => [
-        name,
-        {
-          min_score: scoreScale(name)?.minScore ?? null,
-          unrelated_score: scoreScale(name)?.unrelated ?? null,
-        },
-      ]),
-    ),
-  };
-}
-
-/** One settings change at a time: two embedder changes at once would each rebuild the index. */
-let settingsChange: Promise<unknown> = Promise.resolve();
-
-/**
- * Save a change to the server settings and put it into effect. The new embedder is loaded before
- * anything is saved, so a name that cannot be loaded changes nothing.
- */
-async function changeSettings(rag: Ragdown, config: Config, changes: SettingsChanges) {
-  const saved = applyChanges(config.saved, changes);
-  const embedder = saved.embedder ?? config.env.embedder;
-  if (embedder !== config.embedder) {
-    if (rag.role !== "primary") {
-      throw new Refusal(
-        409,
-        "this process only reads the index: change the embedder where it is built",
-      );
-    }
-    const loaded = await createEmbedder({ ...config, embedder }).catch((error: unknown) => {
-      throw new Refusal(400, errorMessage(error));
-    });
-    await writeServerSettings(config.docsDir, saved);
-    applySettings(config, saved);
-    await rag.switchEmbedder(loaded);
-  } else {
-    await writeServerSettings(config.docsDir, saved);
-    applySettings(config, saved);
-  }
-  rag.setWatch();
 }
 
 async function handle(
@@ -328,6 +183,7 @@ async function handleMcp(
   await transport.handleRequest(req, res, req.method === "POST" ? await readJson(req) : undefined);
 }
 
+/** An authorized `/api` request, handed to the resource its path names. */
 async function handleApi(
   rag: Ragdown,
   config: Config,
@@ -335,323 +191,22 @@ async function handleApi(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  const params = new URL(req.url ?? "/", "http://localhost").searchParams;
-  const method = req.method ?? "GET";
-  const readOnly = () => {
-    throw new Refusal(403, "The server is read-only (RAGDOWN_READ_ONLY)");
+  const request: ApiRequest = {
+    rag,
+    config,
+    path,
+    method: req.method ?? "GET",
+    params: new URL(req.url ?? "/", "http://localhost").searchParams,
+    req,
+    res,
   };
-  const required = (name: string) => {
-    const value = params.get(name);
-    if (!value) throw new Refusal(400, `${name} is required`);
-    return value;
-  };
-  const allow = (...methods: string[]) => {
-    if (!methods.includes(method)) {
-      throw new Refusal(405, "Method not allowed");
-    }
-  };
-  const root = new Scope(rag);
-
-  if (path === "/api/folders") {
-    allow("GET", "POST");
-    if (method === "GET") {
-      const [folders, loose] = await Promise.all([
-        folderSummaries(rag, config),
-        looseFiles(config.docsDir),
-      ]);
-      json(res, 200, { folders, loose_files: loose });
-      return;
-    }
-    if (config.readOnly) readOnly();
-    const body = (await readJson(req)) as Record<string, unknown>;
-    if (typeof body?.name !== "string") {
-      json(res, 400, { error: "name is required" });
-      return;
-    }
-    const folder = await createFolder(config.docsDir, body.name, settingsFrom(body));
-    json(res, 201, { folder: await folderSummary(rag, folder) });
-    return;
+  if (path === "/api/folders" || path.startsWith("/api/folders/") || path === "/api/loose") {
+    await handleFolders(request);
+  } else if (path === "/api/settings") {
+    await handleSettings(request);
+  } else {
+    await handleDocuments(request);
   }
-
-  if (path.startsWith("/api/folders/")) {
-    allow("PATCH", "DELETE");
-    let name: string;
-    try {
-      name = decodeURIComponent(path.slice("/api/folders/".length));
-    } catch {
-      name = "";
-    }
-    if (method === "DELETE") {
-      if (config.readOnly) readOnly();
-      if (params.get("confirm") !== name) {
-        json(res, 400, {
-          error: "confirm must repeat the folder's name: this deletes every file in it",
-        });
-        return;
-      }
-      await deleteFolder(config.docsDir, name);
-      json(res, 200, { name, sync: await rag.sync(false) });
-      return;
-    }
-    const body = (await readJson(req)) as Record<string, unknown>;
-    if (body?.name !== undefined && typeof body.name !== "string") {
-      json(res, 400, { error: "name must be a string" });
-      return;
-    }
-    const rename = body?.name as string | undefined;
-    if (rename !== undefined && rename !== name && config.readOnly) readOnly();
-    const { folder, renamed } = await updateFolder(config.docsDir, name, {
-      ...settingsFrom(body),
-      ...(rename !== undefined ? { rename } : {}),
-    });
-    // Every path in the folder changed: the index answers for the new ones before this returns.
-    if (renamed) await rag.sync(false);
-    json(res, 200, { folder: await folderSummary(rag, folder) });
-    return;
-  }
-
-  if (path === "/api/settings") {
-    allow("PATCH");
-    if (config.readOnly) readOnly();
-    const changes = parseChanges((await readJson(req)) as Record<string, unknown>);
-    const change = settingsChange.then(() => changeSettings(rag, config, changes));
-    settingsChange = change.catch(() => undefined);
-    await change;
-    json(res, 200, { settings: publicSettings(config) });
-    return;
-  }
-
-  if (path === "/api/loose") {
-    allow("DELETE");
-    if (config.readOnly) readOnly();
-    const name = required("name");
-    await deleteLooseFile(config.docsDir, name);
-    json(res, 200, { name });
-    return;
-  }
-
-  if (path === "/api/doc" && (method === "POST" || method === "DELETE")) {
-    if (config.readOnly) readOnly();
-    if (method === "POST") {
-      const body = (await readJson(req, MAX_UPLOAD_BYTES)) as Record<string, unknown>;
-      if (typeof body?.path !== "string" || typeof body.text !== "string") {
-        json(res, 400, { error: "path and text are required strings" });
-        return;
-      }
-      await assertInFolder(config, body.path);
-      const written = await root.writeDocument(
-        body.path,
-        body.text,
-        body.overwrite === true,
-        typeof body.base_hash === "string" ? body.base_hash : undefined,
-      );
-      json(res, written.created ? 201 : 200, written);
-      return;
-    }
-    const docPath = required("path");
-    await assertInFolder(config, docPath);
-    json(res, 200, await root.deleteDocument(docPath));
-    return;
-  }
-
-  if (path === "/api/move") {
-    allow("POST");
-    if (config.readOnly) readOnly();
-    const body = (await readJson(req, MAX_UPLOAD_BYTES)) as Record<string, unknown>;
-    if (typeof body?.from !== "string" || typeof body.to !== "string") {
-      json(res, 400, { error: "from and to are required strings" });
-      return;
-    }
-    const name = await assertInFolder(config, body.from);
-    if ((await assertInFolder(config, body.to)) !== name) {
-      json(res, 400, { error: "a move stays within its folder: links do not cross folders" });
-      return;
-    }
-    const moved = await new Scope(rag, name).move(
-      body.from.slice(name.length + 1),
-      body.to.slice(name.length + 1),
-    );
-    json(res, 200, {
-      ...moved,
-      from: `${name}/${moved.from}`,
-      to: `${name}/${moved.to}`,
-      updated: moved.updated.map((each) => `${name}/${each}`),
-    });
-    return;
-  }
-
-  allow("GET");
-
-  if (path === "/api/docs") {
-    const name = params.get("folder");
-    if (name && !(await getFolder(config.docsDir, name))) {
-      json(res, 404, { error: `no such folder: ${name}` });
-      return;
-    }
-    const all = await rag.documents();
-    const replaced = supersededBy(all);
-    const docs = all.filter((doc) => !name || doc.path.startsWith(`${name}/`));
-    json(res, 200, {
-      docs: docs.map((doc) => ({
-        path: doc.path,
-        folder: doc.path.split("/")[0] ?? "",
-        title: doc.title,
-        mtime_ms: doc.mtimeMs,
-        size: doc.size,
-        chunks: doc.chunks,
-        tags: doc.tags,
-        aliases: doc.aliases,
-        superseded_by: replaced.get(doc.path) ?? [],
-      })),
-    });
-    return;
-  }
-
-  if (path === "/api/doc") {
-    json(res, 200, await root.readIndexedDocument(required("path")));
-    return;
-  }
-
-  if (path === "/api/search") {
-    const name = required("folder");
-    const query = required("q");
-    const topK = Math.min(50, Math.max(1, Number.parseInt(params.get("top_k") ?? "", 10) || 10));
-    if (!(await getFolder(config.docsDir, name))) {
-      json(res, 404, { error: `no such folder: ${name}` });
-      return;
-    }
-    const hits = await new Scope(rag, name).recall(
-      query,
-      topK,
-      undefined,
-      params.get("tag") || undefined,
-    );
-    json(res, 200, {
-      hits: hits.map((hit) => ({
-        path: `${name}/${hit.path}`,
-        title: hit.title,
-        heading: hit.heading,
-        start_line: hit.lineStart,
-        end_line: hit.lineEnd,
-        similarity: Number(hit.similarity.toFixed(4)),
-        text: hit.text,
-        tags: hit.tags,
-      })),
-    });
-    return;
-  }
-
-  if (path === "/api/resolve") {
-    const from = required("from");
-    const link = required("link");
-    const name = await assertInFolder(config, from);
-    const resolved = await new Scope(rag, name).resolveLink(
-      link,
-      from.slice(name.length + 1),
-      true,
-    );
-    if (!resolved) {
-      json(res, 404, { error: `no note or file matches ${JSON.stringify(link)}` });
-      return;
-    }
-    json(res, 200, { ...resolved, path: `${name}/${resolved.path}` });
-    return;
-  }
-
-  if (path === "/api/backlinks") {
-    const docPath = required("path");
-    const name = await assertInFolder(config, docPath);
-    const found = await new Scope(rag, name).backlinks(docPath.slice(name.length + 1));
-    json(res, 200, {
-      path: docPath,
-      backlinks: found.backlinks.map((link) => ({ ...link, path: `${name}/${link.path}` })),
-    });
-    return;
-  }
-
-  if (path === "/api/file") {
-    const filePath = required("path");
-    await assertInFolder(config, filePath);
-    const full = await root.fileFor(filePath);
-    const type = FILE_TYPES[extname(full).toLowerCase()] ?? "application/octet-stream";
-    const info = await stat(full);
-    res.writeHead(200, {
-      "content-type": type,
-      "content-length": info.size,
-      "cache-control": "no-cache",
-      "x-content-type-options": "nosniff",
-      // A document's SVG or HTML is someone's file, not this app: opened directly, it runs nothing.
-      "content-security-policy": "sandbox",
-    });
-    await pipeline(createReadStream(full), res).catch((error: NodeJS.ErrnoException) => {
-      // The client hung up, often right after the last byte and before `finish`: nothing to answer.
-      if (error.code !== "ERR_STREAM_PREMATURE_CLOSE") throw error;
-    });
-    return;
-  }
-
-  json(res, 404, { error: "Not found" });
-}
-
-/**
- * The folder a root-relative path is in, which must exist, and the path must be inside it: the
- * docs root itself holds no documents in folders mode.
- *
- * @throws with `status: 400` otherwise.
- */
-async function assertInFolder(config: Config, path: string): Promise<string> {
-  const segments = path.replaceAll("\\", "/").split("/").filter(Boolean);
-  const name = segments[0] ?? "";
-  if (segments.length < 2 || !(await getFolder(config.docsDir, name))) {
-    throw new Refusal(400, `not inside a folder: ${path} (start it with a folder's name)`);
-  }
-  return name;
-}
-
-function settingsFrom(body: Record<string, unknown> | undefined): FolderChanges {
-  const out: FolderChanges = {};
-  if (body?.title !== undefined) {
-    if (typeof body.title !== "string") {
-      throw new Refusal(400, "title must be a string");
-    }
-    out.title = body.title;
-  }
-  if (body?.mcp !== undefined) {
-    if (typeof body.mcp !== "boolean") {
-      throw new Refusal(400, "mcp must be true or false");
-    }
-    out.mcp = body.mcp;
-  }
-  if (body?.hook !== undefined) out.hook = parseHookChanges(body.hook);
-  return out;
-}
-
-async function folderSummaries(rag: Ragdown, config: Config) {
-  const [folders, files] = await Promise.all([listFolders(config.docsDir), rag.files()]);
-  return folders.map((folder) => summarize(folder, files));
-}
-
-async function folderSummary(rag: Ragdown, folder: Folder) {
-  return summarize(folder, await rag.files());
-}
-
-function summarize(folder: Folder, files: Map<string, FileState>) {
-  let count = 0;
-  let chunks = 0;
-  for (const [path, state] of files) {
-    if (!path.startsWith(`${folder.name}/`)) continue;
-    count++;
-    chunks += state.chunks;
-  }
-  return {
-    name: folder.name,
-    title: folder.title,
-    mcp: folder.mcp,
-    hook: folder.hook,
-    mcp_path: `/mcp/${encodeURIComponent(folder.name)}`,
-    files: count,
-    chunks,
-  };
 }
 
 /** The folder in `/mcp/<folder>`, decoded; empty for `/mcp`. A malformed escape names no folder. */
@@ -664,35 +219,6 @@ function scopeDir(path: string): string {
   }
 }
 
-/**
- * A file from the built UI, or its `index.html` for any path that is not one, so a reload on a
- * client-side route still lands in the app. Hashed assets are cached for good; the page never is.
- */
-async function serveWeb(webDir: string, path: string, res: ServerResponse): Promise<void> {
-  const root = resolve(webDir);
-  let file = join(root, "index.html");
-  try {
-    file = resolve(root, `.${decodeURIComponent(path)}`);
-  } catch {
-    // A malformed escape is not a file; the app answers it.
-  }
-  if (!isInside(root, file) || !(await stat(file).catch(() => undefined))?.isFile()) {
-    file = join(root, "index.html");
-  }
-  const body = await readFile(file).catch(() => undefined);
-  if (!body) {
-    json(res, 404, { error: "The web UI is not built: run npm run build" });
-    return;
-  }
-  const immutable = isInside(join(root, "assets"), file);
-  res
-    .writeHead(200, {
-      "content-type": CONTENT_TYPES[extname(file)] ?? "application/octet-stream",
-      "cache-control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
-    })
-    .end(body);
-}
-
 function authorized(config: Config, header: string | undefined): boolean {
   if (config.http.secureLocalNet) return true;
   const provided = header?.match(/^Bearer\s+(.+)$/i)?.[1];
@@ -700,25 +226,4 @@ function authorized(config: Config, header: string | undefined): boolean {
   // Compared as digests so neither the content nor the length leaks through timing.
   const digest = (value: string) => createHash("sha256").update(value).digest();
   return timingSafeEqual(digest(provided), digest(config.http.token));
-}
-
-async function readJson(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += (chunk as Buffer).length;
-    if (size > limit) throw new Refusal(413, "Body too large");
-    chunks.push(chunk as Buffer);
-  }
-  const text = Buffer.concat(chunks).toString("utf8");
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Refusal(400, "Body is not valid JSON");
-  }
-}
-
-function json(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
 }
