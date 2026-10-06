@@ -3,6 +3,7 @@ import { lstat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from
 import { join } from "node:path";
 import { errorMessage } from "./errors.ts";
 import { MARKDOWN } from "./indexer.ts";
+import { Refusal } from "./refusal.ts";
 
 /** A folder's settings file, at its root. A dot-file: Obsidian and the indexer both skip it. */
 export const SETTINGS_FILE = ".ragdown.json";
@@ -63,11 +64,9 @@ export function isIndexedName(name: string): boolean {
 /** @throws with `status: 400` unless `name` is one the UI may create a folder under. */
 export function assertCreatableName(name: string): void {
   if (!CREATABLE.test(name) || name.trim() !== name || name === "node_modules") {
-    throw Object.assign(
-      new Error(
-        `not a valid folder name: ${JSON.stringify(name)} (letters, digits, space, _ . -; up to 64; not starting with . or -)`,
-      ),
-      { status: 400 },
+    throw new Refusal(
+      400,
+      `not a valid folder name: ${JSON.stringify(name)} (letters, digits, space, _ . -; up to 64; not starting with . or -)`,
     );
   }
 }
@@ -162,7 +161,7 @@ export async function looseFiles(docsDir: string): Promise<string[]> {
  */
 export async function deleteLooseFile(docsDir: string, name: string): Promise<void> {
   if (!(await looseFiles(docsDir)).includes(name)) {
-    throw Object.assign(new Error(`no such file outside a folder: ${name}`), { status: 404 });
+    throw new Refusal(404, `no such file outside a folder: ${name}`);
   }
   await rm(join(docsDir, name));
 }
@@ -183,7 +182,7 @@ export async function createFolder(
     await mkdir(dir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    throw Object.assign(new Error(`already exists: ${name}`), { status: 409 });
+    throw new Refusal(409, `already exists: ${name}`);
   }
   // `mcp` written out even when off, so whoever opens the file sees the switch.
   await writeSettings(dir, {}, { mcp: false, ...settings });
@@ -202,7 +201,7 @@ export async function updateFolder(
   changes: FolderChanges & { rename?: string },
 ): Promise<{ folder: Folder; renamed: boolean }> {
   if (!(await getFolder(docsDir, name))) {
-    throw Object.assign(new Error(`no such folder: ${name}`), { status: 404 });
+    throw new Refusal(404, `no such folder: ${name}`);
   }
   let current = name;
   if (changes.rename !== undefined && changes.rename !== name) {
@@ -215,7 +214,7 @@ export async function updateFolder(
       (await realpath(target).catch(() => "")) ===
         (await realpath(join(docsDir, name)).catch(() => undefined));
     if (existing && !same) {
-      throw Object.assign(new Error(`already exists: ${changes.rename}`), { status: 409 });
+      throw new Refusal(409, `already exists: ${changes.rename}`);
     }
     await rename(join(docsDir, name), target);
     current = changes.rename;
@@ -236,7 +235,7 @@ export async function updateFolder(
  */
 export async function deleteFolder(docsDir: string, name: string): Promise<void> {
   if (!(await getFolder(docsDir, name))) {
-    throw Object.assign(new Error(`no such folder: ${name}`), { status: 404 });
+    throw new Refusal(404, `no such folder: ${name}`);
   }
   await rm(join(docsDir, name), { recursive: true });
 }

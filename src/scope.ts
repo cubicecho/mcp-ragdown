@@ -27,6 +27,7 @@ import {
   resolveLink,
   resolveRef,
 } from "./links.ts";
+import { Refusal } from "./refusal.ts";
 import { type Hit, supersededBy } from "./store.ts";
 
 /** Sessions whose returned chunks are remembered; past this the oldest is forgotten. */
@@ -262,7 +263,7 @@ export class Scope {
     const docs = await this.rag.documents();
     const rootPath = toPosix(relative(this.rag.config.docsDir, resolve(this.root, path)));
     if (!docs.some((doc) => doc.path === rootPath)) {
-      throw Object.assign(new Error(`not an indexed document: ${path}`), { status: 404 });
+      throw new Refusal(404, `not an indexed document: ${path}`);
     }
     const target = rootPath.slice(prefix.length);
     const notes = await this.folderNotes();
@@ -310,7 +311,7 @@ export class Scope {
   async fileFor(path: string): Promise<string> {
     const { full } = await this.resolvePath(path, { create: false, markdownOnly: false });
     if (!(await lstat(full).catch(() => undefined))?.isFile()) {
-      throw Object.assign(new Error(`no such file: ${path}`), { status: 404 });
+      throw new Refusal(404, `no such file: ${path}`);
     }
     return full;
   }
@@ -326,7 +327,7 @@ export class Scope {
     const rootPath = toPosix(relative(this.rag.config.docsDir, full));
     const doc = (await this.rag.documents()).find((d) => d.path === rootPath);
     if (!doc) {
-      throw Object.assign(new Error(`not an indexed document: ${path}`), { status: 404 });
+      throw new Refusal(404, `not an indexed document: ${path}`);
     }
     return { ...(await this.readDoc(path)), tags: doc.tags, aliases: doc.aliases };
   }
@@ -426,19 +427,16 @@ export class Scope {
     const { full, relPath } = await this.resolvePath(path, { create: true, markdownOnly: true });
     const existing = await lstat(full).catch(() => undefined);
     if (existing && !existing.isFile()) {
-      throw Object.assign(new Error(`not a file: ${path}`), { status: 409 });
+      throw new Refusal(409, `not a file: ${path}`);
     }
     if (existing && !overwrite && baseHash === undefined) {
-      throw Object.assign(new Error(`already exists: ${path}`), { status: 409 });
+      throw new Refusal(409, `already exists: ${path}`);
     }
     if (baseHash !== undefined) {
       const current = existing ? await readFile(full) : undefined;
       if (!current || contentHash(current) !== baseHash) {
         const what = current ? "changed on disk" : "deleted";
-        throw Object.assign(new Error(`${path} was ${what} since it was opened`), {
-          status: 409,
-          code: "changed",
-        });
+        throw new Refusal(409, `${path} was ${what} since it was opened`, "changed");
       }
       if (current.includes("\r\n")) text = text.replace(/\r?\n/g, "\r\n");
     }
@@ -458,7 +456,7 @@ export class Scope {
         await writeFile(full, text, { flag: "wx" });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        throw Object.assign(new Error(`already exists: ${path}`), { status: 409 });
+        throw new Refusal(409, `already exists: ${path}`);
       }
     }
     return {
@@ -485,7 +483,7 @@ export class Scope {
     options: { append?: boolean; heading?: string; baseHash?: string } = {},
   ) {
     if (options.heading !== undefined && !options.append) {
-      throw Object.assign(new Error("heading is for append: true"), { status: 400 });
+      throw new Refusal(400, "heading is for append: true");
     }
     const { full, relPath } = await this.resolvePath(path, { create: false, markdownOnly: true });
     const current = (await lstat(full).catch(() => undefined))?.isFile()
@@ -493,22 +491,17 @@ export class Scope {
       : undefined;
     if (!options.append) {
       if (current && options.baseHash === undefined) {
-        throw Object.assign(
-          new Error(
-            `${relPath} exists: pass the hash ragdown_read_doc returned as base_hash to replace it`,
-          ),
-          { status: 409 },
+        throw new Refusal(
+          409,
+          `${relPath} exists: pass the hash ragdown_read_doc returned as base_hash to replace it`,
         );
       }
       return this.writeDoc(relPath, text, false, options.baseHash);
     }
-    if (!current) throw Object.assign(new Error(`no such note: ${path}`), { status: 404 });
+    if (!current) throw new Refusal(404, `no such note: ${path}`);
     const hash = contentHash(current);
     if (options.baseHash !== undefined && options.baseHash !== hash) {
-      throw Object.assign(new Error(`${relPath} was changed on disk since it was opened`), {
-        status: 409,
-        code: "changed",
-      });
+      throw new Refusal(409, `${relPath} was changed on disk since it was opened`, "changed");
     }
     const lines = current.toString("utf8").split(/\r?\n/);
     const added = text.trimEnd().split(/\r?\n/);
@@ -517,9 +510,7 @@ export class Scope {
     if (options.heading) {
       const section = headingRange(lines, options.heading);
       if (!section) {
-        throw Object.assign(new Error(`no heading "${options.heading}" in ${relPath}`), {
-          status: 404,
-        });
+        throw new Refusal(404, `no heading "${options.heading}" in ${relPath}`);
       }
       start = section.start;
       end = section.end;
@@ -593,18 +584,18 @@ export class Scope {
     const dest = await this.resolvePath(to, { create: false, markdownOnly: !isFolder });
     const info = await lstat(source.full).catch(() => undefined);
     if (!info || !(isFolder || info.isFile())) {
-      throw Object.assign(new Error(`no such note or folder: ${from}`), { status: 404 });
+      throw new Refusal(404, `no such note or folder: ${from}`);
     }
     if (source.full === dest.full) {
-      throw Object.assign(new Error(`${from} is already there`), { status: 400 });
+      throw new Refusal(400, `${from} is already there`);
     }
     if (isFolder && isInside(source.full, dest.full)) {
-      throw Object.assign(new Error(`cannot move ${from} into itself`), { status: 400 });
+      throw new Refusal(400, `cannot move ${from} into itself`);
     }
     // A case-only rename on a case-insensitive disk finds the source itself at `to`: that is fine.
     const occupied = await lstat(dest.full).catch(() => undefined);
     if (occupied && (occupied.ino !== info.ino || occupied.dev !== info.dev)) {
-      throw Object.assign(new Error(`already exists: ${to}`), { status: 409 });
+      throw new Refusal(409, `already exists: ${to}`);
     }
 
     const docsDir = this.rag.config.docsDir;
@@ -660,7 +651,7 @@ export class Scope {
       await rename(source.full, dest.full);
     } else {
       const note = rewrites.get(oldPath);
-      if (!note) throw Object.assign(new Error(`no such note: ${from}`), { status: 404 });
+      if (!note) throw new Refusal(404, `no such note: ${from}`);
       if (occupied) {
         await rename(source.full, dest.full);
         if (note.text !== note.original) await writeFile(dest.full, note.text);
@@ -669,7 +660,7 @@ export class Scope {
           await writeFile(dest.full, note.text, { flag: "wx" });
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-          throw Object.assign(new Error(`already exists: ${to}`), { status: 409 });
+          throw new Refusal(409, `already exists: ${to}`);
         }
         await unlink(source.full);
       }
@@ -708,7 +699,7 @@ export class Scope {
   async deleteDoc(path: string) {
     const { full, relPath } = await this.resolvePath(path, { create: false, markdownOnly: true });
     if (!(await lstat(full).catch(() => undefined))?.isFile()) {
-      throw Object.assign(new Error(`no such document: ${path}`), { status: 404 });
+      throw new Refusal(404, `no such document: ${path}`);
     }
     await unlink(full);
     return { path: relPath, sync: await this.rag.sync(false) };
@@ -727,9 +718,9 @@ export class Scope {
     if (!(await lstat(full).catch(() => undefined))?.isDirectory()) return this.deleteDoc(path);
     const held = (await readdir(full)).length;
     if (held > 0 && !recursive) {
-      throw Object.assign(
-        new Error(`${relPath} is not empty: pass recursive: true to delete everything in it`),
-        { status: 409 },
+      throw new Refusal(
+        409,
+        `${relPath} is not empty: pass recursive: true to delete everything in it`,
       );
     }
     if (held > 0) await rm(full, { recursive: true });
@@ -750,7 +741,7 @@ export class Scope {
     path: string,
     { create, markdownOnly }: { create: boolean; markdownOnly: boolean },
   ) {
-    const invalid = (why: string) => Object.assign(new Error(`${why}: ${path}`), { status: 400 });
+    const invalid = (why: string) => new Refusal(400, `${why}: ${path}`);
     const posixPath = path.replaceAll("\\", "/");
     if (!posixPath || posix.isAbsolute(posixPath) || /^[a-z]:/i.test(posixPath)) {
       throw invalid("path must be relative to the docs folder");

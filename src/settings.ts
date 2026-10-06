@@ -4,6 +4,7 @@ import type { Config } from "./config.ts";
 import { scoreScale } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
 import { HOOK_KEYS, type HookOverrides, hookValueError } from "./folders.ts";
+import { Refusal } from "./refusal.ts";
 
 /**
  * The server-wide settings the web UI can change, kept beside the folders rather than with the
@@ -27,7 +28,7 @@ export interface SettingsChanges {
   hook?: { [K in keyof HookOverrides]?: number | null };
 }
 
-const invalid = (message: string) => Object.assign(new Error(message), { status: 400 });
+const invalid = (message: string) => new Refusal(400, message);
 
 const isCount = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= 0;

@@ -23,6 +23,7 @@ import {
   looseFiles,
   updateFolder,
 } from "./folders.ts";
+import { Refusal } from "./refusal.ts";
 import { openScope, Scope } from "./scope.ts";
 import { createMcpServer, SERVER_NAME, VERSION } from "./server.ts";
 import {
@@ -135,12 +136,11 @@ export function createHttpServer(
 ): Server {
   return createServer({ keepAliveTimeout: config.http.keepAliveTimeoutMs }, (req, res) => {
     handle(ready, config, webDir, req, res).catch((error: unknown) => {
-      const status = (error as { status?: number }).status ?? 500;
+      const status = error instanceof Refusal ? error.status : 500;
       if (status >= 500) console.error(`[http] ${req.method} ${req.url}: ${errorMessage(error)}`);
-      const code = (error as { code?: unknown }).code;
       const body =
-        typeof code === "string" && status < 500
-          ? { error: errorMessage(error), code }
+        error instanceof Refusal && error.code !== undefined
+          ? { error: errorMessage(error), code: error.code }
           : { error: errorMessage(error) };
       if (!res.headersSent) json(res, status, body);
       else res.end();
@@ -215,13 +215,13 @@ async function changeSettings(rag: Ragdown, config: Config, changes: SettingsCha
   const embedder = saved.embedder ?? config.env.embedder;
   if (embedder !== config.embedder) {
     if (rag.role !== "primary") {
-      throw Object.assign(
-        new Error("this process only reads the index: change the embedder where it is built"),
-        { status: 409 },
+      throw new Refusal(
+        409,
+        "this process only reads the index: change the embedder where it is built",
       );
     }
     const loaded = await createEmbedder({ ...config, embedder }).catch((error: unknown) => {
-      throw Object.assign(new Error(errorMessage(error)), { status: 400 });
+      throw new Refusal(400, errorMessage(error));
     });
     await writeServerSettings(config.docsDir, saved);
     applySettings(config, saved);
@@ -338,16 +338,16 @@ async function handleApi(
   const params = new URL(req.url ?? "/", "http://localhost").searchParams;
   const method = req.method ?? "GET";
   const readOnly = () => {
-    throw Object.assign(new Error("The server is read-only (RAGDOWN_READ_ONLY)"), { status: 403 });
+    throw new Refusal(403, "The server is read-only (RAGDOWN_READ_ONLY)");
   };
   const required = (name: string) => {
     const value = params.get(name);
-    if (!value) throw Object.assign(new Error(`${name} is required`), { status: 400 });
+    if (!value) throw new Refusal(400, `${name} is required`);
     return value;
   };
   const allow = (...methods: string[]) => {
     if (!methods.includes(method)) {
-      throw Object.assign(new Error("Method not allowed"), { status: 405 });
+      throw new Refusal(405, "Method not allowed");
     }
   };
   const root = new Scope(rag);
@@ -603,9 +603,7 @@ async function assertInFolder(config: Config, path: string): Promise<string> {
   const segments = path.replaceAll("\\", "/").split("/").filter(Boolean);
   const name = segments[0] ?? "";
   if (segments.length < 2 || !(await getFolder(config.docsDir, name))) {
-    throw Object.assign(new Error(`not inside a folder: ${path} (start it with a folder's name)`), {
-      status: 400,
-    });
+    throw new Refusal(400, `not inside a folder: ${path} (start it with a folder's name)`);
   }
   return name;
 }
@@ -614,27 +612,27 @@ function settingsFrom(body: Record<string, unknown> | undefined): FolderChanges 
   const out: FolderChanges = {};
   if (body?.title !== undefined) {
     if (typeof body.title !== "string") {
-      throw Object.assign(new Error("title must be a string"), { status: 400 });
+      throw new Refusal(400, "title must be a string");
     }
     out.title = body.title;
   }
   if (body?.mcp !== undefined) {
     if (typeof body.mcp !== "boolean") {
-      throw Object.assign(new Error("mcp must be true or false"), { status: 400 });
+      throw new Refusal(400, "mcp must be true or false");
     }
     out.mcp = body.mcp;
   }
   if (body?.hook !== undefined) {
     const hook = body.hook as Record<string, unknown> | null;
     if (!hook || typeof hook !== "object" || Array.isArray(hook)) {
-      throw Object.assign(new Error("hook must be an object"), { status: 400 });
+      throw new Refusal(400, "hook must be an object");
     }
     out.hook = {};
     for (const key of HOOK_KEYS) {
       const value = hook[key];
       if (value === undefined) continue;
       const error = value === null ? undefined : hookValueError(key, value);
-      if (error) throw Object.assign(new Error(error), { status: 400 });
+      if (error) throw new Refusal(400, error);
       out.hook[key] = value as number | null;
     }
   }
@@ -722,7 +720,7 @@ async function readJson(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<u
   let size = 0;
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > limit) throw Object.assign(new Error("Body too large"), { status: 413 });
+    if (size > limit) throw new Refusal(413, "Body too large");
     chunks.push(chunk as Buffer);
   }
   const text = Buffer.concat(chunks).toString("utf8");
@@ -730,7 +728,7 @@ async function readJson(req: IncomingMessage, limit = MAX_BODY_BYTES): Promise<u
   try {
     return JSON.parse(text);
   } catch {
-    throw Object.assign(new Error("Body is not valid JSON"), { status: 400 });
+    throw new Refusal(400, "Body is not valid JSON");
   }
 }
 

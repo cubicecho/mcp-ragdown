@@ -4,6 +4,7 @@ import { createEmbedder, type Embedder, scoreScale } from "./embedder.ts";
 import { errorMessage } from "./errors.ts";
 import { Indexer, type SyncReport } from "./indexer.ts";
 import { claimSocket, request } from "./primary.ts";
+import { Refusal } from "./refusal.ts";
 import { SessionMemory } from "./scope.ts";
 import { type DocumentInfo, type FileState, type Hit, Store } from "./store.ts";
 
@@ -123,9 +124,9 @@ export class Ragdown {
    */
   async switchEmbedder(embedder: Embedder): Promise<void> {
     if (!this.indexer) {
-      throw Object.assign(
-        new Error("this process only reads the index: change the embedder where it is built"),
-        { status: 409 },
+      throw new Refusal(
+        409,
+        "this process only reads the index: change the embedder where it is built",
       );
     }
     await this.indexer.stop();
