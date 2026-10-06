@@ -1,14 +1,14 @@
 import { posix } from "node:path";
 import { MARKDOWN } from "./document-paths.ts";
 
-/** A note a wikilink may point at, relative to the folder. */
-export interface LinkNote {
+/** A document a wikilink may point at, relative to the folder. */
+export interface LinkDocument {
   path: string;
   aliases: string[];
 }
 
 export interface ResolvedLink {
-  /** Relative to the folder, `/`-separated: a note or an attachment. */
+  /** Relative to the folder, `/`-separated: a document or an attachment. */
   path: string;
   /** The heading after `#`, when the link names one. Block references (`#^id`) are dropped. */
   anchor?: string;
@@ -16,7 +16,8 @@ export interface ResolvedLink {
 
 /**
  * The target and heading of a wikilink, from any of `[[Note]]`, `![[Note#Heading|shown]]`, or the
- * bare `Note#Heading` inside the brackets. An empty target is a link to a heading of the same note.
+ * bare `Note#Heading` inside the brackets. An empty target is a link to a heading of the same
+ * document.
  */
 export function parseLink(raw: string): { target: string; anchor: string | undefined } {
   let text = raw.trim();
@@ -32,18 +33,18 @@ export function parseLink(raw: string): { target: string; anchor: string | undef
 
 /**
  * Resolve a wikilink the way Obsidian does, within one folder: an exact path (with or without
- * `.md`, or relative to the linking note), then a note or attachment whose name — or trailing
- * path — matches, then a note that lists it as an alias. Ties between name matches go to the one
- * beside the linking note, then the shortest path, then the first alphabetically. Case is ignored
- * except to prefer an exact match.
+ * `.md`, or relative to the linking document), then a document or attachment whose name — or
+ * trailing path — matches, then a document that lists it as an alias. Ties between name matches go
+ * to the one beside the linking document, then the shortest path, then the first alphabetically.
+ * Case is ignored except to prefer an exact match.
  *
- * @param from the linking note, relative to the folder; decides ties and relative links.
+ * @param from the linking document, relative to the folder; decides ties and relative links.
  * @param attachments every non-Markdown file in the folder, relative to it.
  */
 export function resolveLink(
   raw: string,
   from: string | undefined,
-  notes: LinkNote[],
+  documents: LinkDocument[],
   attachments: string[] = [],
 ): ResolvedLink | undefined {
   const { target, anchor } = parseLink(raw);
@@ -51,8 +52,8 @@ export function resolveLink(
   if (!target) return from ? withAnchor(from) : undefined;
 
   const fromDir = from ? posix.dirname(from) : ".";
-  const notePaths = notes.map((note) => note.path);
-  const all = [...notePaths, ...attachments];
+  const documentPaths = documents.map((document) => document.path);
+  const all = [...documentPaths, ...attachments];
   const wanted = [target, ...(fromDir !== "." ? [posix.normalize(`${fromDir}/${target}`)] : [])];
   const markdown = (path: string) => (MARKDOWN.test(path) ? [path] : [path, `${path}.md`]);
 
@@ -72,15 +73,15 @@ export function resolveLink(
     return lower === needle || lower.endsWith(`/${needle}`);
   };
   const byName = [
-    ...notePaths.filter((path) => matches(stripMarkdown(path)) || matches(path)),
+    ...documentPaths.filter((path) => matches(stripMarkdown(path)) || matches(path)),
     ...attachments.filter(matches),
   ];
   const best = pick(byName, fromDir);
   if (best) return withAnchor(best);
 
-  const byAlias = notes
-    .filter((note) => note.aliases.some((alias) => alias.toLowerCase() === needle))
-    .map((note) => note.path);
+  const byAlias = documents
+    .filter((document) => document.aliases.some((alias) => alias.toLowerCase() === needle))
+    .map((document) => document.path);
   const alias = pick(byAlias, fromDir);
   return alias ? withAnchor(alias) : undefined;
 }
@@ -109,7 +110,7 @@ function normalize(target: string): string {
   return normalized === "." ? "" : normalized;
 }
 
-/** A link found in a note's text by `findLinks`. */
+/** A link found in a document's text by `findLinks`. */
 export interface LinkRef {
   /** `wiki` for `[[…]]` and `![[…]]`, `markdown` for `[text](path)` to a relative path. */
   kind: "wiki" | "markdown";
@@ -124,8 +125,8 @@ export interface LinkRef {
 }
 
 /**
- * Every wikilink, and every Markdown link to a relative path, in a note's text. Links in fenced code
- * or inline code are left out, as a renderer leaves them.
+ * Every wikilink, and every Markdown link to a relative path, in a document's text. Links in fenced
+ * code or inline code are left out, as a renderer leaves them.
  */
 export function findLinks(text: string): LinkRef[] {
   const out: LinkRef[] = [];
@@ -178,17 +179,19 @@ export function findLinks(text: string): LinkRef[] {
 }
 
 /**
- * Where a link found by `findLinks` in the note `from` points, within one folder: a wikilink as
+ * Where a link found by `findLinks` in the document `from` points, within one folder: a wikilink as
  * `resolveLink` does, a Markdown link only as a path relative to `from`.
  */
 export function resolveRef(
   ref: LinkRef,
   from: string,
-  notes: LinkNote[],
+  documents: LinkDocument[],
   attachments: string[] = [],
 ): string | undefined {
-  if (ref.kind === "wiki") return resolveLink(ref.raw, from, notes, attachments)?.path;
+  if (ref.kind === "wiki") return resolveLink(ref.raw, from, documents, attachments)?.path;
   const path = normalize(posix.join(posix.dirname(from), normalize(ref.target)));
   if (!path || path.startsWith("../")) return undefined;
-  return notes.some((note) => note.path === path) || attachments.includes(path) ? path : undefined;
+  return documents.some((document) => document.path === path) || attachments.includes(path)
+    ? path
+    : undefined;
 }

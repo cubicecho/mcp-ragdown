@@ -58,7 +58,7 @@ interface LocalModel {
 export interface ScoreScale {
   /** The `ragdown_context` floor that separates the two: the default `RAGDOWN_HOOK_MIN_SCORE`. */
   minScore: number;
-  /** The most an unrelated prompt scored. A floor at or under it injects notes into every prompt. */
+  /** The most an unrelated prompt scored. A floor at or under it injects documents into every prompt. */
   unrelated: number;
 }
 

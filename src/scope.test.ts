@@ -52,8 +52,8 @@ describe("Scope", () => {
     if (!beta) throw new Error("no scope");
     expect(beta.dir).toBe("projects/beta");
 
-    expect((await beta.readDoc("backups.md")).path).toBe("backups.md");
-    await expect(beta.readDoc("../alpha/backups.md")).rejects.toThrow(/outside/);
+    expect((await beta.readDocument("backups.md")).path).toBe("backups.md");
+    await expect(beta.readDocument("../alpha/backups.md")).rejects.toThrow(/outside/);
 
     const note = await beta.remember("Kafka", "Retention is seven days.", [], "kafka");
     expect(note.path).toBe("kafka.md");
@@ -74,23 +74,27 @@ describe("Scope", () => {
     const beta = await openScope(t.rag, "projects/beta");
     if (!beta) throw new Error("no scope");
 
-    const written = await beta.writeDoc("./sub/kafka.md", "# Kafka\n\nSeven days.");
+    const written = await beta.writeDocument("./sub/kafka.md", "# Kafka\n\nSeven days.");
     expect(written).toMatchObject({ path: "sub/kafka.md", created: true, sync: { added: 1 } });
     expect(await t.rag.files()).toHaveProperty("size", 6);
     expect(await readFile(join(t.docsDir, "projects/beta/sub/kafka.md"), "utf8")).toContain(
       "Seven",
     );
-    await expect(beta.writeDoc("sub/kafka.md", "# Other")).rejects.toMatchObject({ status: 409 });
-    await expect(beta.writeDoc("sub", "# Other", true)).rejects.toMatchObject({ status: 400 });
-    await expect(beta.writeDoc("../alpha/x.md", "# x")).rejects.toMatchObject({ status: 400 });
-    await expect(beta.writeDoc("backups.md/x.md", "# x")).rejects.toMatchObject({ status: 400 });
+    await expect(beta.writeDocument("sub/kafka.md", "# Other")).rejects.toMatchObject({
+      status: 409,
+    });
+    await expect(beta.writeDocument("sub", "# Other", true)).rejects.toMatchObject({ status: 400 });
+    await expect(beta.writeDocument("../alpha/x.md", "# x")).rejects.toMatchObject({ status: 400 });
+    await expect(beta.writeDocument("backups.md/x.md", "# x")).rejects.toMatchObject({
+      status: 400,
+    });
 
     await symlink(join(t.docsDir, "projects/alpha"), join(t.docsDir, "projects/beta/link"));
-    await expect(beta.writeDoc("link/x.md", "# x")).rejects.toMatchObject({ status: 400 });
-    await expect(beta.deleteDoc("link/backups.md")).rejects.toMatchObject({ status: 400 });
+    await expect(beta.writeDocument("link/x.md", "# x")).rejects.toMatchObject({ status: 400 });
+    await expect(beta.deleteDocument("link/backups.md")).rejects.toMatchObject({ status: 400 });
 
-    expect(await beta.deleteDoc("sub/kafka.md")).toMatchObject({ sync: { removed: 1 } });
-    await expect(beta.deleteDoc("sub/kafka.md")).rejects.toMatchObject({ status: 404 });
+    expect(await beta.deleteDocument("sub/kafka.md")).toMatchObject({ sync: { removed: 1 } });
+    await expect(beta.deleteDocument("sub/kafka.md")).rejects.toMatchObject({ status: 404 });
   });
 
   it("saves an edit only over the version it was made to", async () => {
@@ -101,20 +105,27 @@ describe("Scope", () => {
     await writeFile(full, "# Backups\r\n\r\nNightly.\r\n");
     await t.rag.sync(false);
 
-    const opened = await beta.readIndexedDoc("backups.md");
+    const opened = await beta.readIndexedDocument("backups.md");
     expect(opened.text).toBe("# Backups\n\nNightly.\n");
-    const saved = await beta.writeDoc("backups.md", "# Backups\n\nHourly.\n", false, opened.hash);
+    const saved = await beta.writeDocument(
+      "backups.md",
+      "# Backups\n\nHourly.\n",
+      false,
+      opened.hash,
+    );
     expect(saved).toMatchObject({ created: false, sync: { updated: 1 } });
     // Line endings follow the file, not the browser.
     expect(await readFile(full, "utf8")).toBe("# Backups\r\n\r\nHourly.\r\n");
-    expect((await beta.readIndexedDoc("backups.md")).hash).toBe(saved.hash);
+    expect((await beta.readIndexedDocument("backups.md")).hash).toBe(saved.hash);
 
-    await expect(beta.writeDoc("backups.md", "# x", false, opened.hash)).rejects.toMatchObject({
-      status: 409,
-      code: "changed",
-    });
-    await beta.deleteDoc("backups.md");
-    await expect(beta.writeDoc("backups.md", "# x", false, saved.hash)).rejects.toMatchObject({
+    await expect(beta.writeDocument("backups.md", "# x", false, opened.hash)).rejects.toMatchObject(
+      {
+        status: 409,
+        code: "changed",
+      },
+    );
+    await beta.deleteDocument("backups.md");
+    await expect(beta.writeDocument("backups.md", "# x", false, saved.hash)).rejects.toMatchObject({
       status: 409,
       code: "changed",
     });
@@ -258,7 +269,7 @@ describe("superseding a note", () => {
     expect(paths).toContain("notes/embedder-v2.md");
     expect(paths).not.toContain("notes/embedder.md");
     // Superseded is not deleted: the file is still there and still readable.
-    expect((await root.readDoc("notes/embedder.md")).text).toContain("bge-small");
+    expect((await root.readDocument("notes/embedder.md")).text).toContain("bge-small");
   });
 
   it("refuses a supersedes path that names no note in the folder", async () => {
@@ -287,16 +298,16 @@ describe("superseding a note", () => {
     const work = (await openScope(rag, "work")) as Scope;
 
     expect(work.folder).toBe("work");
-    const section = await work.readDoc("pg#Vacuum");
+    const section = await work.readDocument("pg#Vacuum");
     expect(section).toMatchObject({ path: "ops/pg.md", resolved_from: "pg#Vacuum" });
     expect(section.text).toBe("## Vacuum\n\nNightly on postgres.\n");
-    expect((await work.readDoc("Elephant")).path).toBe("ops/pg.md");
-    await expect(work.readDoc("nothing")).rejects.toThrow(/no such note/);
+    expect((await work.readDocument("Elephant")).path).toBe("ops/pg.md");
+    await expect(work.readDocument("nothing")).rejects.toThrow(/no such note/);
 
     // A subfolder endpoint cannot follow a link above itself.
     const ops = (await openScope(rag, "work/ops")) as Scope;
-    expect((await ops.readDoc("pg")).path).toBe("pg.md");
-    await expect(ops.readDoc("kafka")).rejects.toThrow(/no such note/);
+    expect((await ops.readDocument("pg")).path).toBe("pg.md");
+    await expect(ops.readDocument("kafka")).rejects.toThrow(/no such note/);
 
     const tagged = await work.recall("postgres", 10, undefined, "infra");
     expect(new Set(tagged.map((h) => h.path))).toEqual(new Set(["ops/pg.md"]));
@@ -356,7 +367,7 @@ describe("moving a note", () => {
     );
     // Another folder's links never resolved to it.
     expect(await t.read("home/link.md")).toBe("[[pg]]");
-    expect((await t.work.readDoc("postgres")).path).toBe("db/postgres.md");
+    expect((await t.work.readDocument("postgres")).path).toBe("db/postgres.md");
   });
 
   it("keeps as much of the path as the new name needs to stay unambiguous", async () => {
@@ -392,8 +403,8 @@ describe("moving a note", () => {
     expect(await t.read("work/db/main/tuning.md")).toBe(
       "# Tuning\n\n![[pg.png]], [pg](pg.md) and [[book]].",
     );
-    expect((await t.work.listDocs({ pathPrefix: "ops" })).total).toBe(0);
-    expect((await t.work.listDocs({ pathPrefix: "db/main" })).total).toBe(2);
+    expect((await t.work.listDocuments({ pathPrefix: "ops" })).total).toBe(0);
+    expect((await t.work.listDocuments({ pathPrefix: "db/main" })).total).toBe(2);
 
     await expect(t.work.move("db", "db/main/db")).rejects.toMatchObject({ status: 400 });
     await expect(t.work.move("db", "run")).rejects.toMatchObject({ status: 409 });

@@ -19,8 +19,9 @@ const INDEX_VERSION = 3;
 /** Reciprocal-rank-fusion constant; 60 is the value from the original RRF paper and rarely worth tuning. */
 const RRF_K = 60;
 /**
- * Chunks below which no vector index is built. A folder of notes is nowhere near it, and under it
- * the flat scan wins anyway: measured at 10k chunks the index is twice as fast, at 1k it is noise.
+ * Chunks below which no vector index is built. A folder of documents is nowhere near it, and under
+ * it the flat scan wins anyway: measured at 10k chunks the index is twice as fast, at 1k it is
+ * noise.
  */
 const VECTOR_INDEX_MIN_ROWS = 10_000;
 
@@ -53,9 +54,9 @@ export interface FileUpdate {
   vectors: Float32Array[];
   /** Paths, relative to the docs root, this file's frontmatter says it replaces. */
   supersedes: string[];
-  /** Frontmatter and inline tags, lowercased without `#` (`readDocMeta`); none when omitted. */
+  /** Frontmatter and inline tags, lowercased without `#` (`readDocumentMeta`); none when omitted. */
   tags?: string[];
-  /** Frontmatter aliases: other names the note answers to in a wikilink; none when omitted. */
+  /** Frontmatter aliases: other names the document answers to in a wikilink; none when omitted. */
   aliases?: string[];
 }
 
@@ -282,8 +283,8 @@ export class Store {
         text: chunk.text,
         // Lexical search sees the breadcrumb the embedder sees: a table of settings says
         // "Replicas | 2 | 12" and never names the service its heading names. The first chunk also
-        // carries the aliases, so a search for a note's other name finds it; once, not on every
-        // chunk, where it would lift a whole long note over the section that answers.
+        // carries the aliases, so a search for a document's other name finds it; once, not on every
+        // chunk, where it would lift a whole long document over the section that answers.
         search_text:
           chunk.index === 0 && u.aliases?.length
             ? `${embeddingText(chunk)}\n\n${u.aliases.join("\n")}`
@@ -301,9 +302,9 @@ export class Store {
   }
 
   /**
-   * Every path some other note's frontmatter replaces, so search can leave the old one out. Cached
-   * because it is read on every search and changes only when the index does; the scan reads one
-   * column of the few rows that name anything, not the table.
+   * Every path some other document's frontmatter replaces, so search can leave the old one out.
+   * Cached because it is read on every search and changes only when the index does; the scan reads
+   * one column of the few rows that name anything, not the table.
    */
   async supersededPaths(): Promise<Set<string>> {
     if (this.superseded) return this.superseded;
@@ -322,8 +323,8 @@ export class Store {
    * Fold the small files the adds and deletes left behind, bring the full-text index up to date and
    * delete old table versions. The one-minute grace keeps a reader mid-query on its version.
    *
-   * `optimize` also folds new chunks into the vector index, if there is one; rows it has not reached
-   * yet are still scanned, so a search never misses a chunk that is in the table.
+   * `optimize` also folds new chunks into the vector index, if there is one; rows it has not
+   * reached yet are still scanned, so a search never misses a chunk that is in the table.
    */
   async compact(): Promise<void> {
     await this.table.optimize({ cleanupOlderThan: new Date(Date.now() - 60_000) });
@@ -374,8 +375,9 @@ export class Store {
    * alone loses every chunk that never repeats its own subject — a table of settings, a list of
    * steps — and a lexical ranking that bad drags the fused one below dense search on its own.
    *
-   * A note another note's frontmatter supersedes is left out: a replaced fact that still reads as
-   * confident prose is worse than no hit at all. The file stays on disk and `readDoc` still opens it.
+   * A document another document's frontmatter supersedes is left out: a replaced fact that still
+   * reads as confident prose is worse than no hit at all. The file stays on disk and `readDocument`
+   * still opens it.
    *
    * @param pathPrefix limits both retrievers to files under this relative path.
    * @param tag limits both to documents with this tag or one nested under it (`project` takes in
@@ -385,8 +387,8 @@ export class Store {
     const [queryVector] = await this.embedder.embed([query], "query");
     if (!queryVector) return [];
     const pool = Math.max(limit * 4, 20);
-    // Superseded notes are filtered here rather than after fusion, so a replaced note cannot take
-    // up the pool a current one would have filled.
+    // Superseded documents are filtered here rather than after fusion, so a replaced document
+    // cannot take up the pool a current one would have filled.
     const superseded = await this.supersededPaths();
     const wantedTag = tag?.trim().replace(/^#+/, "").replace(/\/+$/, "").toLowerCase();
     const clauses = [

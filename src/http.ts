@@ -38,10 +38,10 @@ import { type FileState, supersededBy } from "./store.ts";
 /** An MCP message is a few kilobytes; anything near this is not one. */
 const MAX_BODY_BYTES = 1024 * 1024;
 /**
- * An upload's JSON body. A hand-written note is kilobytes and a long one well under a megabyte;
+ * An upload's JSON body. A hand-written document is kilobytes and a long one well under a megabyte;
  * JSON escaping can nearly double Markdown full of quotes and backslashes, and the request waits
- * while every chunk of the file is embedded, so a file much past this is not a note and would hold
- * the response for minutes on the CPU model.
+ * while every chunk of the file is embedded, so a file much past this is not a document and would
+ * hold the response for minutes on the CPU model.
  */
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
@@ -59,7 +59,7 @@ const CONTENT_TYPES: Record<string, string> = {
   ".json": "application/json",
 };
 
-/** What `/api/file` says a note's attachment is; anything else is a download. */
+/** What `/api/file` says a document's attachment is; anything else is a download. */
 const FILE_TYPES: Record<string, string> = {
   ...CONTENT_TYPES,
   ".md": "text/markdown; charset=utf-8",
@@ -97,8 +97,8 @@ const FILE_TYPES: Record<string, string> = {
  *   folder that does not exist and one that is human-only (MCP off) are the same 404, and bare
  *   `/mcp` is a 404 that says to pick a folder: there is no endpoint over every folder.
  * - `/api/folders` — list (`GET`) and create (`POST { name, title?, mcp? }`) folders;
- *   `/api/folders/<name>` — change a folder's settings or rename it (`PATCH { title?, mcp?, hook?, name? }`)
- *   and delete it with everything in it (`DELETE ?confirm=<name>`).
+ *   `/api/folders/<name>` — change a folder's settings or rename it (`PATCH { title?, mcp?, hook?,
+ *   name? }`) and delete it with everything in it (`DELETE ?confirm=<name>`).
  * - `PATCH /api/settings` — save server-wide settings (`{ embedder?, watch?, text_limit?, hook? }`,
  *   a `null` giving a value back to its variable) to `.ragdown-server.json` in the docs dir and
  *   apply them at once. A new embedder rebuilds the index. `GET /api/status` shows the result.
@@ -107,27 +107,27 @@ const FILE_TYPES: Record<string, string> = {
  * - `GET /api/docs[?folder=]` and `GET /api/doc?path=` — the indexed files and one file's text.
  * - `POST /api/doc` with `{ path, text, overwrite?, base_hash? }` and `DELETE /api/doc?path=` —
  *   upload, edit and remove a Markdown file inside a folder. Paths are held to what the indexer
- *   would index (`Scope.writeDoc`); an existing file is a 409 unless `overwrite` or `base_hash`,
- *   a missing one a 404. `base_hash` is the `hash` `GET /api/doc` gave: the editor's save, a 409
- *   with `code: "changed"` when the file has changed or gone since. Each answers once the index
- *   has synced, so the next `/api/docs` already reflects it.
- * - `POST /api/move` with `{ from, to }` — rename or move a note, or a subfolder, within its folder,
- *   rewriting the links that pointed at what moved (`Scope.move`).
+ *   would index (`Scope.writeDocument`); an existing file is a 409 unless `overwrite` or
+ *   `base_hash`, a missing one a 404. `base_hash` is the `hash` `GET /api/doc` gave: the editor's
+ *   save, a 409 with `code: "changed"` when the file has changed or gone since. Each answers once
+ *   the index has synced, so the next `/api/docs` already reflects it.
+ * - `POST /api/move` with `{ from, to }` — rename or move a document, or a subfolder, within its
+ *   folder, rewriting the links that pointed at what moved (`Scope.move`).
  * - `GET /api/search?folder=&q=[&tag=&top_k=]` — hybrid search within one folder, human-only ones
  *   included: the UI is for people.
- * - `GET /api/resolve?from=&link=` — a wikilink in the note `from`, resolved within its folder.
- * - `GET /api/backlinks?path=` — the notes in the same folder that link to `path`.
+ * - `GET /api/resolve?from=&link=` — a wikilink in the document `from`, resolved within its folder.
+ * - `GET /api/backlinks?path=` — the documents in the same folder that link to `path`.
  * - `GET /api/file?path=` — any file inside a folder, raw, for the UI's images and embeds.
  * - Anything else under `GET` — the web UI from `webDir`, when it has been built.
  *
- * Every `/api` path is relative to the docs root, folder first: `work/notes/a.md`. Writes to the
- * notes and folders are a 403 under `RAGDOWN_READ_ONLY`; a folder's settings are not notes, so
- * they can still be changed — otherwise a read-only server could never turn MCP on.
+ * Every `/api` path is relative to the docs root, folder first: `work/notes/a.md`. Writes to
+ * the documents and folders are a 403 under `RAGDOWN_READ_ONLY`; a folder's settings are not
+ * documents, so they can still be changed — otherwise a read-only server could never turn MCP on.
  *
  * Agents and hooks use `/mcp/<folder>` only; the `/api` routes exist for the UI and the health
  * check. Everything under `/api` but status, and `/mcp`, needs `Authorization: Bearer
- * $RAGDOWN_TOKEN` unless `SECURE_LOCAL_NET=true`. The UI's static files do not: they hold no notes.
- * Plain `node:http` rather than Express: a handful of routes do not need a framework.
+ * $RAGDOWN_TOKEN` unless `SECURE_LOCAL_NET=true`. The UI's static files do not: they hold no
+ * documents. Plain `node:http` rather than Express: a handful of routes do not need a framework.
  */
 export function createHttpServer(
   ready: Promise<Ragdown>,
@@ -149,8 +149,8 @@ export function createHttpServer(
 }
 
 /**
- * @throws when neither a token nor `SECURE_LOCAL_NET` is configured: an index of someone's notes
- *   must not be served to the network by accident.
+ * @throws when neither a token nor `SECURE_LOCAL_NET` is configured: an index of someone's
+ *   documents must not be served to the network by accident.
  */
 export function assertAuthConfigured(config: Config): void {
   if (!config.http.token && !config.http.secureLocalNet) {
@@ -439,7 +439,7 @@ async function handleApi(
         return;
       }
       await assertInFolder(config, body.path);
-      const written = await root.writeDoc(
+      const written = await root.writeDocument(
         body.path,
         body.text,
         body.overwrite === true,
@@ -450,7 +450,7 @@ async function handleApi(
     }
     const docPath = required("path");
     await assertInFolder(config, docPath);
-    json(res, 200, await root.deleteDoc(docPath));
+    json(res, 200, await root.deleteDocument(docPath));
     return;
   }
 
@@ -508,7 +508,7 @@ async function handleApi(
   }
 
   if (path === "/api/doc") {
-    json(res, 200, await root.readIndexedDoc(required("path")));
+    json(res, 200, await root.readIndexedDocument(required("path")));
     return;
   }
 
@@ -580,7 +580,7 @@ async function handleApi(
       "content-length": info.size,
       "cache-control": "no-cache",
       "x-content-type-options": "nosniff",
-      // A note's SVG or HTML is someone's file, not this app: opened directly, it runs nothing.
+      // A document's SVG or HTML is someone's file, not this app: opened directly, it runs nothing.
       "content-security-policy": "sandbox",
     });
     await pipeline(createReadStream(full), res).catch((error: NodeJS.ErrnoException) => {
@@ -595,7 +595,7 @@ async function handleApi(
 
 /**
  * The folder a root-relative path is in, which must exist, and the path must be inside it: the
- * docs root itself holds no notes in folders mode.
+ * docs root itself holds no documents in folders mode.
  *
  * @throws with `status: 400` otherwise.
  */

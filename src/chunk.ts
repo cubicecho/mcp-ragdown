@@ -38,7 +38,8 @@ interface Section {
  *
  * Every heading starts a section, and a section longer than `maxChars` is packed paragraph by
  * paragraph into several chunks. A heading with no text of its own produces nothing: its name
- * survives in the breadcrumb of the sections below it. A file with no text at all is one chunk. `#` lines inside fenced code are code.
+ * survives in the breadcrumb of the sections below it. A file with no text at all is one chunk. `#`
+ * lines inside fenced code are code.
  */
 export function chunkMarkdown(
   source: string,
@@ -118,11 +119,11 @@ export function breadcrumb(title: string, heading: string): string {
 }
 
 /**
- * The notes this one replaces, as paths relative to the docs root.
+ * The documents this one replaces, as paths relative to the docs root.
  *
- * A path in the frontmatter is relative to the note's own folder, the way a Markdown link is, so a
- * sibling note is just its file name. One that climbs out of the docs folder is dropped rather than
- * followed: the frontmatter is data from a file, not a path the server should trust.
+ * A path in the frontmatter is relative to the document's own folder, the way a Markdown link is,
+ * so a sibling document is just its file name. One that climbs out of the docs folder is dropped
+ * rather than followed: the frontmatter is data from a file, not a path the server should trust.
  */
 export function readSupersedes(source: string, relPath: string): string[] {
   const { supersedes } = readFrontmatter(source.replace(/\r\n?/g, "\n").split("\n"));
@@ -130,7 +131,8 @@ export function readSupersedes(source: string, relPath: string): string[] {
   const out: string[] = [];
   for (const entry of supersedes) {
     const relative = entry.replaceAll("\\", "/");
-    // Checked before the join, which would otherwise turn `/etc/passwd` into `notes/etc/passwd`.
+    // Checked before the join, which would otherwise turn `/etc/passwd` into
+    // `notes/etc/passwd`.
     if (posix.isAbsolute(relative)) continue;
     const path = posix.normalize(posix.join(dir === "." ? "" : dir, relative));
     if (path === ".." || path.startsWith("../")) continue;
@@ -141,13 +143,14 @@ export function readSupersedes(source: string, relPath: string): string[] {
 
 /**
  * The document's tags and aliases, as Obsidian reads them: frontmatter `tags` (a list, or a string
- * of comma- or space-separated tags, `#` optional) plus inline `#tags` in the body outside code, and
- * frontmatter `aliases` (a list, or one alias as a string). Tags are lowercased without the `#`.
+ * of comma- or space-separated tags, `#` optional) plus inline `#tags` in the body outside code,
+ * and frontmatter `aliases` (a list, or one alias as a string). Tags are lowercased without the
+ * `#`.
  *
  * Stored beside the chunks as metadata, never added to the embedded text: that was measured and
  * did not pay for its rebuild.
  */
-export function readDocMeta(source: string): { tags: string[]; aliases: string[] } {
+export function readDocumentMeta(source: string): { tags: string[]; aliases: string[] } {
   const lines = source.replace(/\r\n?/g, "\n").split("\n");
   const { front, bodyStart } = readFrontmatter(lines);
   const tags = new Set<string>();

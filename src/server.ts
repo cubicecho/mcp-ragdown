@@ -15,16 +15,17 @@ export const VERSION: string = (
 ).version;
 
 /**
- * The MCP surface, and the only way an agent or a hook reaches the notes. Tool names are `ragdown_*`,
- * after zeromem's `zeromem_*`: recall, read, list, backlinks, remember, edit, move, delete, stats, plus reindex and context (for hooks). Under `RAGDOWN_READ_ONLY` the write tools are not listed at all — an
- * agent should never see a tool it cannot call.
+ * The MCP surface, and the only way an agent or a hook reaches the documents. Tool names are
+ * `ragdown_*`, after zeromem's `zeromem_*`: recall, read, list, backlinks, remember, edit, move,
+ * delete, stats, plus reindex and context (for hooks). Under `RAGDOWN_READ_ONLY` the write tools
+ * are not listed at all — an agent should never see a tool it cannot call.
  *
  * @param ready resolves to the scope — the folder these tools treat as the root — once the model is
  *   loaded. Taking a promise lets the stdio
  *   transport connect first, so a client's handshake never waits on the model; a call made before
  *   then waits instead.
  * @param folder names the server after its folder (`ragdown-<name>`) and tells the model which
- *   notes these are, since one client may connect to several folders' servers at once.
+ *   documents these are, since one client may connect to several folders' servers at once.
  */
 export function createMcpServer(
   ready: Promise<Scope>,
@@ -147,7 +148,7 @@ export function createMcpServer(
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    (args) => run(ready, (rag) => rag.readDoc(args.path, args.start_line, args.end_line)),
+    (args) => run(ready, (rag) => rag.readDocument(args.path, args.start_line, args.end_line)),
   );
 
   server.registerTool(
@@ -188,7 +189,7 @@ export function createMcpServer(
     },
     (args) =>
       run(ready, (rag) =>
-        rag.listDocs({
+        rag.listDocuments({
           pathPrefix: args.path_prefix,
           tag: args.tag,
           sort: args.sort,
@@ -279,7 +280,7 @@ export function createMcpServer(
       },
       (args) =>
         run(ready, (rag) =>
-          rag.editDoc(args.path, args.text, {
+          rag.editDocument(args.path, args.text, {
             append: args.append,
             heading: args.heading,
             baseHash: args.base_hash,

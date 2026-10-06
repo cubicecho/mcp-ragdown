@@ -21,7 +21,7 @@ import { formatHit } from "./format.ts";
 import { type ContextOptions, resolveHook } from "./hook-settings.ts";
 import {
   findLinks,
-  type LinkNote,
+  type LinkDocument,
   type LinkRef,
   type ResolvedLink,
   resolveLink,
@@ -59,12 +59,12 @@ export class SessionMemory {
 }
 
 /**
- * The notes as one endpoint sees them, as if its directory were the root: a folder (`/mcp/work`),
- * a subfolder inside one (`/mcp/work/projects/foo`), the whole docs dir in single mode (`stdio`),
- * or — for the web UI only — every folder at once. Every path going in is relative to the scope and
- * every path coming out is made relative to it, so an agent on a scope cannot tell there is
- * anything above it. It is not a security boundary between endpoints that share a token; whether a
- * folder has an endpoint at all is decided in `http.ts`.
+ * The documents as one endpoint sees them, as if its directory were the root: a folder
+ * (`/mcp/work`), a subfolder inside one (`/mcp/work/projects/foo`), the whole docs dir in single
+ * mode (`stdio`), or — for the web UI only — every folder at once. Every path going in is relative
+ * to the scope and every path coming out is made relative to it, so an agent on a scope cannot tell
+ * there is anything above it. It is not a security boundary between endpoints that share a token;
+ * whether a folder has an endpoint at all is decided in `http.ts`.
  */
 export class Scope {
   readonly rag: Ragdown;
@@ -74,7 +74,8 @@ export class Scope {
   readonly root: string;
   /**
    * The folder the scope is in, relative to the docs root: its first segment in folders mode, and
-   * empty — the docs dir is the folder — in single mode or at the root. Wikilinks resolve within it.
+   * empty — the docs dir is the folder — in single mode or at the root. Wikilinks resolve within
+   * it.
    */
   readonly folder: string;
 
@@ -90,11 +91,11 @@ export class Scope {
   }
 
   /**
-   * Search the notes in this scope. Never waits for a sync: a partial answer (what is indexed so
-   * far) beats a hook that times out.
+   * Search the documents in this scope. Never waits for a sync: a partial answer (what is indexed
+   * so far) beats a hook that times out.
    *
    * @param pathPrefix limits the search to files under this folder, relative to the scope.
-   * @param tag limits it to notes with this tag or one nested under it.
+   * @param tag limits it to documents with this tag or one nested under it.
    */
   async recall(query: string, topK: number, pathPrefix?: string, tag?: string): Promise<Hit[]> {
     const folder = [this.dir, normalizeFolder(pathPrefix)].filter(Boolean).join("/");
@@ -105,7 +106,7 @@ export class Scope {
   /**
    * The context block a hook injects for a prompt (`ragdown_context`), or undefined when nothing is
    * similar enough. Chunks already returned for the same session in this scope are left out, so a
-   * long conversation about one topic pays for each note once.
+   * long conversation about one topic pays for each document once.
    */
   async context(
     prompt: string,
@@ -159,7 +160,7 @@ export class Scope {
    * A path that names no file is tried as a wikilink target (`Note`, `Note#Heading`, `sub/Note`);
    * a heading narrows the text to that section unless a line range is given.
    */
-  async readDoc(path: string, startLine?: number, endLine?: number) {
+  async readDocument(path: string, startLine?: number, endLine?: number) {
     let full = resolve(this.root, path);
     if (!isInside(this.root, full)) throw new Error(`path is outside the docs folder: ${path}`);
     let anchor: string | undefined;
@@ -200,8 +201,8 @@ export class Scope {
   }
 
   /**
-   * The notes in this scope whose frontmatter says they replace `rootPath`, relative to the scope.
-   * Search already skips a superseded note; this is for whoever opens one anyway.
+   * The documents in this scope whose frontmatter says they replace `rootPath`, relative to the
+   * scope. Search already skips a superseded document; this is for whoever opens one anyway.
    */
   private replacedBy(by: Map<string, string[]>, rootPath: string): string[] {
     return (by.get(rootPath) ?? [])
@@ -218,8 +219,8 @@ export class Scope {
    * Resolve a wikilink target within the scope's folder, Obsidian-style (`links.ts`). A target the
    * folder has but this scope does not (a subfolder endpoint linking above itself) is not found.
    *
-   * @param from the linking note, relative to the scope; decides ties and relative links.
-   * @returns the path relative to the scope: a note, or with `attachments`, any file.
+   * @param from the linking document, relative to the scope; decides ties and relative links.
+   * @returns the path relative to the scope: a document, or with `attachments`, any file.
    */
   async resolveLink(
     raw: string,
@@ -227,14 +228,14 @@ export class Scope {
     attachments = false,
   ): Promise<ResolvedLink | undefined> {
     const prefix = this.folder ? `${this.folder}/` : "";
-    const notes = await this.folderNotes();
+    const documents = await this.folderDocuments();
     const others = attachments
       ? await listAttachments(resolve(this.rag.config.docsDir, this.folder))
       : [];
     const fromInFolder = from
       ? [this.dir.slice(prefix.length), from].filter(Boolean).join("/").replace(/^\//, "")
       : undefined;
-    const link = resolveLink(raw, fromInFolder, notes, others);
+    const link = resolveLink(raw, fromInFolder, documents, others);
     if (!link) return undefined;
     const rootPath = `${prefix}${link.path}`;
     if (this.dir && !rootPath.startsWith(`${this.dir}/`)) return undefined;
@@ -242,9 +243,9 @@ export class Scope {
   }
 
   /**
-   * The notes in this scope that link to `path` — by wikilink, alias, or relative Markdown link — each
-   * with the lines the links are on. Read from disk, so current even mid-sync. A note's links to
-   * itself are left out.
+   * The documents in this scope that link to `path` — by wikilink, alias, or relative Markdown link
+   * — each with the lines the links are on. Read from disk, so current even mid-sync. A document's
+   * links to itself are left out.
    *
    * @throws with `status: 404` for a path the index does not know.
    */
@@ -256,7 +257,7 @@ export class Scope {
       throw new Refusal(404, `not an indexed document: ${path}`);
     }
     const target = rootPath.slice(prefix.length);
-    const notes = await this.folderNotes();
+    const documents = await this.folderDocuments();
     const sources = docs.filter(
       (doc) => doc.path !== rootPath && (!this.dir || doc.path.startsWith(`${this.dir}/`)),
     );
@@ -266,12 +267,12 @@ export class Scope {
       const text = await readFile(resolve(this.rag.config.docsDir, doc.path), "utf8").catch(
         () => undefined,
       );
-      // A cheap test first: most notes link to nothing at all.
+      // A cheap test first: most documents link to nothing at all.
       if (!text || (!text.includes("[[") && !text.includes("]("))) continue;
       const from = doc.path.slice(prefix.length);
       const lines = new Set<number>();
       for (const ref of findLinks(text)) {
-        if (resolveRef(ref, from, notes) === target) lines.add(ref.line);
+        if (resolveRef(ref, from, documents) === target) lines.add(ref.line);
       }
       if (lines.size === 0) continue;
       const all = text.split(/\r?\n/);
@@ -284,8 +285,8 @@ export class Scope {
     return { path: this.toScoped(rootPath), backlinks };
   }
 
-  /** Every note in the scope's folder — not only the scope — relative to the folder, for links. */
-  private async folderNotes(): Promise<LinkNote[]> {
+  /** Every document in the scope's folder — not only the scope — relative to the folder, for links. */
+  private async folderDocuments(): Promise<LinkDocument[]> {
     const prefix = this.folder ? `${this.folder}/` : "";
     return (await this.rag.documents())
       .filter((doc) => doc.path.startsWith(prefix))
@@ -293,8 +294,8 @@ export class Scope {
   }
 
   /**
-   * A file inside the scope for the web UI to download — a note or an attachment. Refused like a
-   * write (`resolvePath`): nothing under a dot-folder, and no symlink anywhere on the path.
+   * A file inside the scope for the web UI to download — a document or an attachment. Refused like
+   * a write (`resolvePath`): nothing under a dot-folder, and no symlink anywhere on the path.
    *
    * @throws with `status: 400` for such a path and `404` for no such file.
    */
@@ -307,25 +308,25 @@ export class Scope {
   }
 
   /**
-   * Read a file for the web UI: like `readDoc`, but only a file the index holds, so a browser
+   * Read a file for the web UI: like `readDocument`, but only a file the index holds, so a browser
    * cannot read whatever else happens to sit in the docs folder.
    *
    * @throws with `status: 404` for a path the index does not know.
    */
-  async readIndexedDoc(path: string) {
+  async readIndexedDocument(path: string) {
     const full = resolve(this.root, path);
     const rootPath = toPosix(relative(this.rag.config.docsDir, full));
     const doc = (await this.rag.documents()).find((d) => d.path === rootPath);
     if (!doc) {
       throw new Refusal(404, `not an indexed document: ${path}`);
     }
-    return { ...(await this.readDoc(path)), tags: doc.tags, aliases: doc.aliases };
+    return { ...(await this.readDocument(path)), tags: doc.tags, aliases: doc.aliases };
   }
 
   /**
-   * Write a new note and index it before returning. At a folder's root it goes under
+   * Write a new document and index it before returning. At a folder's root it goes under
    * `RAGDOWN_NOTES_DIR`; in a subfolder, in the subfolder itself, which is already where that
-   * project's notes live.
+   * project's documents live.
    *
    * @param name file name without extension; defaults to the date and a slug of the title. An
    *   existing file is never overwritten: a numeric suffix is added instead.
@@ -343,7 +344,8 @@ export class Scope {
     const base = name ?? `${date}-${slug(title)}`;
 
     // Checked before anything is written: a dangling `supersedes` would silently hide nothing, and
-    // the agent that got the path wrong should hear about it rather than believe it replaced a note.
+    // the agent that got the path wrong should hear about it rather than believe it replaced a
+    // document.
     const replaced = await Promise.all(
       (options.supersedes ?? []).map(async (path) => {
         const target = resolve(this.root, path);
@@ -368,7 +370,7 @@ export class Scope {
         `title: ${JSON.stringify(title)}`,
         `date: ${date}`,
         ...(tags.length > 0 ? [`tags: [${tags.map((t) => JSON.stringify(t)).join(", ")}]`] : []),
-        // Relative to this note's own folder, which is how the indexer reads them back.
+        // Relative to this document's own folder, which is how the indexer reads them back.
         ...(replaced.length > 0
           ? [
               `supersedes: [${replaced
@@ -376,8 +378,8 @@ export class Scope {
                 .join(", ")}]`,
             ]
           : []),
-        // Provenance: a note an agent wrote is not a note the user wrote, and whoever reads it
-        // later — person or model — should be able to tell which one they are holding.
+        // Provenance: a document an agent wrote is not a document the user wrote, and whoever reads
+        // it later — person or model — should be able to tell which one they are holding.
         "created_by: ragdown_remember",
         ...(options.sessionId ? [`session: ${JSON.stringify(options.sessionId)}`] : []),
         "---",
@@ -413,7 +415,7 @@ export class Scope {
    *   `409` for an existing file without `overwrite`, a folder where the file would go, or a file
    *   that is no longer `baseHash` (with `code: "changed"`).
    */
-  async writeDoc(path: string, text: string, overwrite = false, baseHash?: string) {
+  async writeDocument(path: string, text: string, overwrite = false, baseHash?: string) {
     const { full, relPath } = await this.resolvePath(path, { create: true, markdownOnly: true });
     const existing = await lstat(full).catch(() => undefined);
     if (existing && !existing.isFile()) {
@@ -450,16 +452,17 @@ export class Scope {
   }
 
   /**
-   * An agent's edit (`ragdown_edit`): replace a note's text, or append to it — at the end, or at the
-   * end of the section under `heading`. Written through `writeDoc`, so it is atomic and indexed
-   * before returning.
+   * An agent's edit (`ragdown_edit`): replace a document's text, or append to it — at the end, or
+   * at the end of the section under `heading`. Written through `writeDocument`, so it is atomic and
+   * indexed before returning.
    *
-   * @param baseHash the `hash` `readDoc` gave. Replacing an existing note requires it, so an agent
-   *   never overwrites a version it has not read; an append checks it when given. Either way the
-   *   write fails with `code: "changed"` if the file changed after the version edited was read.
-   * @throws with `status: 404` to append to a missing note or under a missing heading.
+   * @param baseHash the `hash` `readDocument` gave. Replacing an existing document requires it, so
+   *   an agent never overwrites a version it has not read; an append checks it when given. Either
+   *   way the write fails with `code: "changed"` if the file changed after the version edited was
+   *   read.
+   * @throws with `status: 404` to append to a missing document or under a missing heading.
    */
-  async editDoc(
+  async editDocument(
     path: string,
     text: string,
     options: { append?: boolean; heading?: string; baseHash?: string } = {},
@@ -478,7 +481,7 @@ export class Scope {
           `${relPath} exists: pass the hash ragdown_read_doc returned as base_hash to replace it`,
         );
       }
-      return this.writeDoc(relPath, text, false, options.baseHash);
+      return this.writeDocument(relPath, text, false, options.baseHash);
     }
     if (!current) throw new Refusal(404, `no such note: ${path}`);
     const hash = contentHash(current);
@@ -508,17 +511,17 @@ export class Scope {
       ...lines.slice(end),
     ];
     // Hashed from what was read, so a write since then is a conflict rather than lost.
-    return this.writeDoc(relPath, next.join("\n"), false, hash);
+    return this.writeDocument(relPath, next.join("\n"), false, hash);
   }
 
   /**
-   * The notes in this scope, for an agent to browse (`ragdown_list`) rather than search.
+   * The documents in this scope, for an agent to browse (`ragdown_list`) rather than search.
    *
-   * @param pathPrefix only notes under this folder, relative to the scope.
-   * @param tag only notes with this tag or one nested under it, as `recall` filters.
+   * @param pathPrefix only documents under this folder, relative to the scope.
+   * @param tag only documents with this tag or one nested under it, as `recall` filters.
    * @param sort `path`, or `recent` for the most recently changed first.
    */
-  async listDocs(
+  async listDocuments(
     options: { pathPrefix?: string; tag?: string; sort?: "path" | "recent"; limit?: number } = {},
   ) {
     const folder = [this.dir, normalizeFolder(options.pathPrefix)].filter(Boolean).join("/");
@@ -545,11 +548,11 @@ export class Scope {
   }
 
   /**
-   * Rename or move a note, or a subfolder with everything in it, within its folder, and rewrite
+   * Rename or move a document, or a subfolder with everything in it, within its folder, and rewrite
    * every link in the folder that pointed at what moved — wikilinks, aliases aside, and relative
-   * Markdown links — so none of them breaks. The moved notes' own links are rewritten too where the
-   * move would break them. Any link that resolved before resolves to the same note after; one that
-   * already resolved to nothing is left alone.
+   * Markdown links — so none of them breaks. The moved documents' own links are rewritten too where
+   * the move would break them. Any link that resolved before resolves to the same document after;
+   * one that already resolved to nothing is left alone.
    *
    * A rewritten wikilink is the shortest target that still resolves where it should: the name when
    * that is unambiguous, else as much of the path as it takes. Headings and shown text are kept.
@@ -592,21 +595,21 @@ export class Scope {
         ? `${newPath}${path.slice(oldPath.length)}`
         : path;
     };
-    const before = await this.folderNotes();
-    if (!isFolder && !before.some((note) => note.path === oldPath)) {
+    const before = await this.folderDocuments();
+    if (!isFolder && !before.some((document) => document.path === oldPath)) {
       before.push({ path: oldPath, aliases: [] });
     }
-    const after = before.map((note) => ({ ...note, path: moved(note.path) }));
+    const after = before.map((document) => ({ ...document, path: moved(document.path) }));
     const attachments = await listAttachments(resolve(docsDir, this.folder));
     const attachmentsAfter = attachments.map(moved);
 
-    // Every note's new text, read and rewritten before anything is written.
+    // Every document's new text, read and rewritten before anything is written.
     const rewrites = new Map<string, { original: string; text: string }>();
-    for (const note of before) {
-      const full = resolve(docsDir, `${prefix}${note.path}`);
+    for (const document of before) {
+      const full = resolve(docsDir, `${prefix}${document.path}`);
       const original = await readFile(full, "utf8").catch(() => undefined);
       if (original === undefined) continue;
-      const from = note.path;
+      const from = document.path;
       const at = moved(from);
       const edits: { start: number; end: number; text: string }[] = [];
       for (const ref of findLinks(original)) {
@@ -629,17 +632,17 @@ export class Scope {
 
     await mkdir(dirname(dest.full), { recursive: true });
     if (isFolder) {
-      // One rename carries the notes, the attachments and whatever else is in there.
+      // One rename carries the documents, the attachments and whatever else is in there.
       await rename(source.full, dest.full);
     } else {
-      const note = rewrites.get(oldPath);
-      if (!note) throw new Refusal(404, `no such note: ${from}`);
+      const document = rewrites.get(oldPath);
+      if (!document) throw new Refusal(404, `no such note: ${from}`);
       if (occupied) {
         await rename(source.full, dest.full);
-        if (note.text !== note.original) await writeFile(dest.full, note.text);
+        if (document.text !== document.original) await writeFile(dest.full, document.text);
       } else {
         try {
-          await writeFile(dest.full, note.text, { flag: "wx" });
+          await writeFile(dest.full, document.text, { flag: "wx" });
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
           throw new Refusal(409, `already exists: ${to}`);
@@ -652,7 +655,8 @@ export class Scope {
     const updated: string[] = [];
     for (const [path, { original, text }] of rewrites) {
       const full = resolve(docsDir, `${prefix}${moved(path)}`);
-      // Changed since it was read, by an editor or an agent: theirs wins, and this link is not fixed.
+      // Changed since it was read, by an editor or an agent: theirs wins, and this link is not
+      // fixed.
       if ((await readFile(full, "utf8").catch(() => undefined)) !== original) continue;
       await writeAtomic(full, text);
       updated.push(moved(path));
@@ -671,7 +675,7 @@ export class Scope {
    *
    * @throws with `status: 400` for a path the indexer would not index, and `404` for no such file.
    */
-  async deleteDoc(path: string) {
+  async deleteDocument(path: string) {
     const { full, relPath } = await this.resolvePath(path, { create: false, markdownOnly: true });
     if (!(await lstat(full).catch(() => undefined))?.isFile()) {
       throw new Refusal(404, `no such document: ${path}`);
@@ -681,16 +685,17 @@ export class Scope {
   }
 
   /**
-   * An agent's delete (`ragdown_delete`): a note as `deleteDoc` does, or a subfolder. Nothing is
-   * kept — there is no trash — so a subfolder that holds anything goes only with `recursive`, and
-   * then with its notes, its attachments and every file the index skips.
+   * An agent's delete (`ragdown_delete`): a document as `deleteDocument` does, or a subfolder.
+   * Nothing is kept — there is no trash — so a subfolder that holds anything goes only with
+   * `recursive`, and then with its documents, its attachments and every file the index skips.
    *
    * @throws with `status: 400` for a bad path, `404` for nothing there, and `409` for a subfolder
    *   that is not empty without `recursive`.
    */
   async remove(path: string, recursive = false) {
     const { full, relPath } = await this.resolvePath(path, { create: false, markdownOnly: false });
-    if (!(await lstat(full).catch(() => undefined))?.isDirectory()) return this.deleteDoc(path);
+    if (!(await lstat(full).catch(() => undefined))?.isDirectory())
+      return this.deleteDocument(path);
     const held = (await readdir(full)).length;
     if (held > 0 && !recursive) {
       throw new Refusal(
@@ -797,7 +802,8 @@ export async function openScope(rag: Ragdown, dir: string): Promise<Scope | unde
   let current = docsDir;
   for (const segment of segments) {
     current = join(current, segment);
-    // lstat, not stat: the indexer does not follow symlinks, so a symlinked folder holds no notes.
+    // lstat, not stat: the indexer does not follow symlinks, so a symlinked folder holds no
+    // documents.
     const info = await lstat(current).catch(() => undefined);
     if (!info?.isDirectory()) return undefined;
   }
@@ -807,7 +813,7 @@ export async function openScope(rag: Ragdown, dir: string): Promise<Scope | unde
 /**
  * The lines of the section under a heading, 1-based and inclusive: from the heading to the line
  * before the next heading at its level or above. `A#B` names `B` under `A`; only the last part is
- * matched. Undefined when no heading matches, and the caller reads the whole note.
+ * matched. Undefined when no heading matches, and the caller reads the whole document.
  */
 function headingRange(lines: string[], anchor: string): { start: number; end: number } | undefined {
   const wanted = (anchor.split("#").at(-1) ?? "").trim().toLowerCase();
@@ -839,7 +845,7 @@ function headingRange(lines: string[], anchor: string): { start: number; end: nu
 }
 
 /**
- * What to write in place of a link's target so it points at `want` from the note at `from`. A
+ * What to write in place of a link's target so it points at `want` from the document at `from`. A
  * Markdown link gets the relative path; a wikilink, the shortest trailing part of the path that
  * resolves there, keeping `.md` if the link had it.
  */
@@ -847,7 +853,7 @@ function linkTarget(
   ref: LinkRef,
   want: string,
   from: string,
-  notes: LinkNote[],
+  documents: LinkDocument[],
   attachments: string[],
 ): string {
   if (ref.kind === "markdown") {
@@ -855,20 +861,20 @@ function linkTarget(
       .replaceAll("(", "%28")
       .replaceAll(")", "%29");
   }
-  const note = MARKDOWN.test(want);
-  const keepExtension = note && MARKDOWN.test(ref.target);
-  const bare = note && !keepExtension ? want.replace(MARKDOWN, "") : want;
+  const document = MARKDOWN.test(want);
+  const keepExtension = document && MARKDOWN.test(ref.target);
+  const bare = document && !keepExtension ? want.replace(MARKDOWN, "") : want;
   const segments = bare.split("/");
   for (let k = 1; k <= segments.length; k++) {
     const candidate = segments.slice(-k).join("/");
-    if (resolveLink(candidate, from, notes, attachments)?.path === want) return candidate;
+    if (resolveLink(candidate, from, documents, attachments)?.path === want) return candidate;
   }
   return bare;
 }
 
 /**
- * Every file under `root` a wikilink may embed that is not a note: images, PDFs and the like, by
- * `/`-separated relative path. Skips what the indexer skips.
+ * Every file under `root` a wikilink may embed that is not a document: images, PDFs and the like,
+ * by `/`-separated relative path. Skips what the indexer skips.
  */
 async function listAttachments(root: string): Promise<string[]> {
   const out: string[] = [];
@@ -897,7 +903,7 @@ function normalizeFolder(prefix: string | undefined): string {
   return folder;
 }
 
-/** `superseded_by` on a note that something replaces, and nothing on one that nothing does. */
+/** `superseded_by` on a document that something replaces, and nothing on one that nothing does. */
 function withSupersededBy(paths: string[]): { superseded_by?: string[] } {
   return paths.length > 0 ? { superseded_by: paths } : {};
 }

@@ -67,11 +67,11 @@ export class Ragdown {
   }
 
   /**
-   * Search the notes. Never waits for a sync: the first index of a large folder takes minutes, and
-   * a partial answer (what is indexed so far) beats a hook that times out.
+   * Search the documents. Never waits for a sync: the first index of a large folder takes minutes,
+   * and a partial answer (what is indexed so far) beats a hook that times out.
    *
    * @param pathPrefix limits the search to paths starting with this, relative to the docs folder.
-   * @param tag limits it to notes with this tag or one nested under it.
+   * @param tag limits it to documents with this tag or one nested under it.
    */
   async recall(query: string, topK: number, pathPrefix?: string, tag?: string): Promise<Hit[]> {
     return this.store.search(query, topK, pathPrefix, tag);

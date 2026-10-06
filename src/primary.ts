@@ -114,7 +114,8 @@ function listen(server: Server, path: string): Promise<void> {
     server.once("error", reject);
     server.listen(path, () => {
       server.off("error", reject);
-      // The socket answers with the contents of the notes; in a shared /tmp that is nobody else's.
+      // The socket answers with the contents of the documents; in a shared /tmp that is nobody
+      // else's.
       chmod(path, 0o600).then(resolve, reject);
     });
   });

@@ -4,7 +4,7 @@ import type { Hit } from "./store.ts";
 /**
  * One block per hit, for pasting into a prompt. A hit longer than `maxChars` is cut, and the cut
  * always names the call that returns the rest: a model handed an unmarked fragment concludes the
- * notes are incomplete and goes looking elsewhere.
+ * documents are incomplete and goes looking elsewhere.
  */
 export function formatHits(hits: Hit[], maxChars: number): string {
   if (hits.length === 0) return "No matching notes.";

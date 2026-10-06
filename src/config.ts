@@ -62,7 +62,8 @@ export interface Config {
 type Env = Record<string, string | undefined>;
 
 /**
- * Read and validate every `RAGDOWN_*` variable. The only place in the repo that reads `process.env`.
+ * Read and validate every `RAGDOWN_*` variable. The only place in the repo that reads
+ * `process.env`.
  *
  * @throws when `RAGDOWN_DOCS_DIR` is missing or not a directory, or a number is malformed.
  */
@@ -89,8 +90,9 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
     .slice(0, 16);
   const dataDir = resolve(expandHome(env.RAGDOWN_DATA_DIR ?? join(cacheRoot, key)));
   // Beside the index, so every server on the same folder finds the same socket from the docs path
-  // alone, whatever else differs between their environments. A unix socket path is capped near 104 bytes,
-  // though, so a long data dir moves it to the temp dir under a name derived from the data dir.
+  // alone, whatever else differs between their environments. A unix socket path is capped near 104
+  // bytes, though, so a long data dir moves it to the temp dir under a name derived from the data
+  // dir.
   let socketPath = join(dataDir, "primary.sock");
   if (Buffer.byteLength(socketPath) > 100) {
     const socketKey = createHash("sha256").update(dataDir).digest("hex").slice(0, 16);
@@ -102,7 +104,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
     throw new Error(`RAGDOWN_NOTES_DIR must be a path inside the folder: ${notesDir}`);
   }
   if (notesDir !== "." && notesDir.split("/").some((segment) => !isIndexedName(segment))) {
-    // The indexer skips those, so a note written there would never be found.
+    // The indexer skips those, so a document written there would never be found.
     throw new Error(`RAGDOWN_NOTES_DIR names a folder the index skips: ${notesDir}`);
   }
 
