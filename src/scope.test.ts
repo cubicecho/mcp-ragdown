@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { Ragdown } from "./engine.ts";
 import { openScope, Scope } from "./scope.ts";
+import { applySettings } from "./settings.ts";
 import { tempSetup } from "./testing.ts";
 
 const closers: (() => Promise<void>)[] = [];
@@ -177,6 +178,35 @@ describe("Scope", () => {
 
     // An invalid override is skipped, and the environment's default applies again.
     await t.write("work/.ragdown.json", JSON.stringify({ hook: { min_score: "high" } }));
+    expect(await work.context(prompt)).toBeDefined();
+  });
+
+  it("puts a saved server setting over the environment's and under the folder's", async () => {
+    const t = await tempSetup({}, "folders");
+    closers.push(t.cleanup);
+    await t.write(
+      "work/backups.md",
+      "# Backups\n\n## Restore\n\nRun pg_restore twice on postgres.",
+    );
+    const rag = await Ragdown.start(t.config);
+    closers.push(() => rag.close());
+    await rag.sync(false);
+    const work = new Scope(rag, "work");
+    const prompt = "how do I restore postgres?";
+    expect(await work.context(prompt)).toBeDefined();
+
+    // No similarity reaches 2: the saved floor wins over the environment's 0.2.
+    applySettings(t.config, { hook: { min_score: 2 } });
+    expect(await work.context(prompt)).toBeUndefined();
+
+    await t.write("work/.ragdown.json", JSON.stringify({ hook: { min_score: 0 } }));
+    expect(await work.context(prompt)).toBeDefined();
+    await t.write("work/.ragdown.json", JSON.stringify({ hook: { min_score: 3 } }));
+    expect(await work.context(prompt, undefined, { minScore: 0 })).toBeDefined();
+
+    // Taken away again, the environment's applies.
+    await t.write("work/.ragdown.json", "{}");
+    applySettings(t.config, {});
     expect(await work.context(prompt)).toBeDefined();
   });
 
