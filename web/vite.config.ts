@@ -12,7 +12,7 @@ export default defineConfig({
     },
   },
   build: {
-    // `src/http.ts` serves this folder; see `WEB_DIR` there.
+    // `src/serving/web-ui.ts` serves this folder; see `WEB_DIR` there.
     outDir: "dist",
     // One page for a local tool: splitting would add requests, not save any.
     chunkSizeWarningLimit: 1000,

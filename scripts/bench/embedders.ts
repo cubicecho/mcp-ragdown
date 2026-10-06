@@ -3,9 +3,9 @@
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
-import { type Chunk, chunkMarkdown, embeddingText } from "../../src/chunk.ts";
-import type { Embedder } from "../../src/embedder.ts";
-import { Store } from "../../src/store.ts";
+import { type Chunk, chunkMarkdown, embeddingText } from "../../src/documents/chunk.ts";
+import type { Embedder } from "../../src/indexing/embedder.ts";
+import { Store } from "../../src/indexing/store.ts";
 import { docs, questions, renderDoc } from "./gen.ts";
 
 const here = import.meta.dirname;

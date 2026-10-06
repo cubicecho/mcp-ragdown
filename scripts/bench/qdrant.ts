@@ -17,7 +17,7 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as lancedb from "@lancedb/lancedb";
-import { Store } from "../../src/store.ts";
+import { Store } from "../../src/indexing/store.ts";
 import { corpus, FOLDERS, jitter, recall, scaledVectors, timed, truth } from "./scale.ts";
 
 const here = import.meta.dirname;

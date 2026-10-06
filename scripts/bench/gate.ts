@@ -5,9 +5,9 @@
 // even though it cleared 0.80. The question is whether trimming those costs any real answers.
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
-import { chunkMarkdown } from "../../src/chunk.ts";
-import { createEmbedder } from "../../src/embedder.ts";
-import { Store } from "../../src/store.ts";
+import { chunkMarkdown } from "../../src/documents/chunk.ts";
+import { createEmbedder } from "../../src/indexing/embedder.ts";
+import { Store } from "../../src/indexing/store.ts";
 import { docs, headingPath, questions, renderDoc } from "./gen.ts";
 
 const here = import.meta.dirname;
