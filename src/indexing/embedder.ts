@@ -3,6 +3,7 @@ import { availableParallelism } from "node:os";
 import { Agent } from "undici";
 import type { Config } from "../shared/config.ts";
 import { defaults } from "../shared/defaults.ts";
+import { isRecord } from "../shared/json.ts";
 
 /** What turns text into vectors: a local model, an OpenAI-compatible endpoint, or the test hash. */
 export interface Embedder {
@@ -248,11 +249,26 @@ class OpenAiEmbedder implements Embedder {
         `embedding endpoint ${url} answered ${response.status}: ${await response.text()}`,
       );
     }
-    const body = (await response.json()) as { data: { index: number; embedding: number[] }[] };
-    return body.data
+    const body: unknown = await response.json();
+    const data = isRecord(body) ? body.data : undefined;
+    if (!Array.isArray(data) || data.length !== input.length || !data.every(isEmbeddingItem)) {
+      throw new Error(
+        `embedding endpoint ${url} answered 200 without one { index, embedding } per input in "data". Check that RAGDOWN_EMBEDDING_URL is an OpenAI-compatible /embeddings API.`,
+      );
+    }
+    return data
       .sort((a, b) => a.index - b.index)
       .map((item) => normalize(Float32Array.from(item.embedding)));
   }
+}
+
+function isEmbeddingItem(value: unknown): value is { index: number; embedding: number[] } {
+  return (
+    isRecord(value) &&
+    typeof value.index === "number" &&
+    Array.isArray(value.embedding) &&
+    value.embedding.every((n) => typeof n === "number")
+  );
 }
 
 /**

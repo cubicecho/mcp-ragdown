@@ -2,6 +2,7 @@ import { chmod, mkdir, unlink } from "node:fs/promises";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
 import { errorMessage, hasCode } from "../shared/errors.ts";
+import { isRecord } from "../shared/json.ts";
 
 /**
  * One process per index is the primary: it writes the index and watches the folder. Every other
@@ -75,11 +76,18 @@ export function request(
     socket.on("end", () => {
       clearTimeout(timer);
       try {
-        const reply = JSON.parse(buffer) as { ok: boolean; result?: unknown; error?: string };
-        if (reply.ok) {
+        const reply: unknown = JSON.parse(buffer);
+        if (!isRecord(reply)) {
+          throw new Error("it is not a JSON object");
+        }
+        if (reply.ok === true) {
           resolve(reply.result);
         } else {
-          reject(new Error(reply.error ?? "the primary reported an error"));
+          reject(
+            new Error(
+              typeof reply.error === "string" ? reply.error : "the primary reported an error",
+            ),
+          );
         }
       } catch (error) {
         reject(new Error(`unreadable reply from the primary: ${errorMessage(error)}`));
@@ -110,7 +118,11 @@ function serve(socket: Socket, handler: Handler): void {
     void (async () => {
       let reply: unknown;
       try {
-        reply = { ok: true, result: await handler(JSON.parse(line) as Record<string, unknown>) };
+        const message: unknown = JSON.parse(line);
+        if (!isRecord(message)) {
+          throw new Error("a request to the primary must be one JSON object on a line");
+        }
+        reply = { ok: true, result: await handler(message) };
       } catch (error) {
         reply = { ok: false, error: errorMessage(error) };
       }

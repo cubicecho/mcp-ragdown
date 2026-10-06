@@ -11,6 +11,7 @@ import { isSkippedEntry, MARKDOWN, toPosix } from "../documents/document-paths.t
 import { contentHash } from "../shared/content-hash.ts";
 import { defaults } from "../shared/defaults.ts";
 import { errorMessage } from "../shared/errors.ts";
+import { isRecord } from "../shared/json.ts";
 import type { Embedder } from "./embedder.ts";
 import type { FileUpdate, Store } from "./store.ts";
 
@@ -22,6 +23,16 @@ export interface SyncReport {
   unchanged: number;
   chunks: number;
   ms: number;
+}
+
+/** Whether a value that crossed a process boundary is a whole `SyncReport`. */
+export function isSyncReport(value: unknown): value is SyncReport {
+  return (
+    isRecord(value) &&
+    ["added", "updated", "removed", "unchanged", "chunks", "ms"].every(
+      (key) => typeof value[key] === "number",
+    )
+  );
 }
 
 /**

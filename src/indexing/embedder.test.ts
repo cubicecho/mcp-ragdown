@@ -66,6 +66,24 @@ describe("createEmbedder", () => {
     }
   }, 10_000);
 
+  it("says what is wrong when an endpoint answers 200 with something else", async () => {
+    const server = createServer((req, res) => {
+      req.resume();
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ object: "list", data: [{ index: 0 }] }));
+    });
+    await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+    try {
+      const embeddingUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
+      await expect(createEmbedder({ ...config("openai:test"), embeddingUrl })).rejects.toThrow(
+        /without one \{ index, embedding \} per input/,
+      );
+    } finally {
+      server.closeAllConnections();
+      await new Promise((done) => server.close(done));
+    }
+  });
+
   it("names the models it accepts when given one it does not have", async () => {
     await expect(createEmbedder(config("bge-large"))).rejects.toThrow(
       /granite-small, bge-small, embeddinggemma, hash or openai:<model>/,

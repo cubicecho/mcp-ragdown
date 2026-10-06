@@ -1,7 +1,7 @@
 import type { Server } from "node:net";
 import { SessionMemory } from "../hook/session-memory.ts";
 import { createEmbedder, type Embedder, scoreScale } from "../indexing/embedder.ts";
-import { Indexer, type SyncReport } from "../indexing/indexer.ts";
+import { Indexer, isSyncReport, type SyncReport } from "../indexing/indexer.ts";
 import { type DocumentInfo, type FileState, type Hit, Store } from "../indexing/store.ts";
 import type { Config } from "../shared/config.ts";
 import { defaults } from "../shared/defaults.ts";
@@ -97,11 +97,15 @@ export class Ragdown {
     if (this.indexer) {
       return full ? this.indexer.rebuild() : this.indexer.sync();
     }
-    return (await request(
+    const report = await request(
       this.config.socketPath,
       { op: "sync", full },
       defaults.syncRequestTimeoutMs,
-    )) as SyncReport;
+    );
+    if (!isSyncReport(report)) {
+      throw new Error("the primary answered a sync with something that is not a sync report");
+    }
+    return report;
   }
 
   async stats(includeFiles: boolean) {

@@ -5,6 +5,7 @@ import { Field, FixedSizeList, Float32, Float64, Int32, Schema, Utf8 } from "apa
 import { CHUNKER_VERSION, type Chunk, embeddingText } from "../documents/chunk.ts";
 import { defaults } from "../shared/defaults.ts";
 import { errorMessage } from "../shared/errors.ts";
+import { isRecord } from "../shared/json.ts";
 import { writeAtomic } from "../shared/write-atomic.ts";
 import type { Embedder } from "./embedder.ts";
 
@@ -551,11 +552,22 @@ function sqlString(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
+function isMeta(value: unknown): value is Meta {
+  return (
+    isRecord(value) &&
+    typeof value.embedder === "string" &&
+    typeof value.dim === "number" &&
+    typeof value.chunker_version === "number" &&
+    typeof value.index_version === "number"
+  );
+}
+
 async function readMeta(path: string): Promise<Meta | undefined> {
   try {
-    return JSON.parse(await readFile(path, "utf8")) as Meta;
+    const meta: unknown = JSON.parse(await readFile(path, "utf8"));
+    return isMeta(meta) ? meta : undefined;
   } catch {
-    // Missing or unreadable are the same answer: this index cannot be trusted as it is.
+    // Missing, unreadable and misshapen are the same answer: this index cannot be trusted as it is.
     return undefined;
   }
 }
