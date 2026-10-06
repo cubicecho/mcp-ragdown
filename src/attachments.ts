@@ -10,7 +10,7 @@ import { isSkippedEntry, MARKDOWN, toPosix } from "./document-paths.ts";
 export async function listAttachments(root: string): Promise<string[]> {
   const out: string[] = [];
   const walk = async (dir: string): Promise<void> => {
-    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [] as Dirent[]);
+    const entries = await readdir(dir, { withFileTypes: true }).catch((): Dirent[] => []);
     for (const entry of entries) {
       if (isSkippedEntry(entry.name)) {
         continue;

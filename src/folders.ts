@@ -2,7 +2,7 @@ import type { Dirent } from "node:fs";
 import { lstat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isIndexedName, MARKDOWN } from "./document-paths.ts";
-import { errorMessage } from "./errors.ts";
+import { errorMessage, hasCode } from "./errors.ts";
 import {
   type HookChanges,
   type HookOverrides,
@@ -74,8 +74,8 @@ async function readRaw(dir: string): Promise<Record<string, unknown>> {
   }
   try {
     const parsed: unknown = JSON.parse(text);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+    if (isRecord(parsed)) {
+      return parsed;
     }
     throw new Error("not a JSON object");
   } catch (error) {
@@ -93,7 +93,7 @@ async function readRaw(dir: string): Promise<Record<string, unknown>> {
  * Symlinks are not folders, as the indexer does not follow them.
  */
 export async function listFolders(docsDir: string): Promise<Folder[]> {
-  const entries = await readdir(docsDir, { withFileTypes: true }).catch(() => [] as Dirent[]);
+  const entries = await readdir(docsDir, { withFileTypes: true }).catch((): Dirent[] => []);
   const folders = await Promise.all(
     entries
       .filter((entry) => entry.isDirectory() && isIndexedName(entry.name))
@@ -119,7 +119,7 @@ export async function getFolder(docsDir: string, name: string): Promise<Folder |
 
 /** Markdown directly in the docs dir, outside every folder: in folders mode, never indexed. */
 export async function looseFiles(docsDir: string): Promise<string[]> {
-  const entries = await readdir(docsDir, { withFileTypes: true }).catch(() => [] as Dirent[]);
+  const entries = await readdir(docsDir, { withFileTypes: true }).catch((): Dirent[] => []);
   return entries
     .filter((entry) => entry.isFile() && isIndexedName(entry.name) && MARKDOWN.test(entry.name))
     .map((entry) => entry.name)
@@ -154,7 +154,7 @@ export async function createFolder(
   try {
     await mkdir(dir);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+    if (!hasCode(error, "EEXIST")) {
       throw error;
     }
     throw new Refusal(409, `already exists: ${name}`);

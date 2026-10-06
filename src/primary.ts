@@ -1,7 +1,7 @@
 import { chmod, mkdir, unlink } from "node:fs/promises";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { dirname } from "node:path";
-import { errorMessage } from "./errors.ts";
+import { errorMessage, hasCode } from "./errors.ts";
 
 /**
  * One process per index is the primary: it writes the index and watches the folder. Every other
@@ -32,7 +32,7 @@ export async function claimSocket(path: string, handler: Handler): Promise<Serve
     await listen(server, path);
     return server;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") {
+    if (!hasCode(error, "EADDRINUSE")) {
       throw error;
     }
   }
@@ -45,7 +45,7 @@ export async function claimSocket(path: string, handler: Handler): Promise<Serve
     return server;
   } catch (error) {
     // Lost the race for the stale socket to another process, which is now the primary.
-    if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {
+    if (hasCode(error, "EADDRINUSE")) {
       return undefined;
     }
     throw error;

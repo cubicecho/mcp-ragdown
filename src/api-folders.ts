@@ -11,7 +11,14 @@ import {
   updateFolder,
 } from "./folders.ts";
 import { parseHookChanges } from "./hook-settings.ts";
-import { type ApiRequest, allow, assertWritable, json, readJson, required } from "./http-io.ts";
+import {
+  type ApiRequest,
+  allow,
+  assertWritable,
+  json,
+  readJsonObject,
+  required,
+} from "./http-io.ts";
 import { Refusal } from "./refusal.ts";
 import type { FileState } from "./store.ts";
 
@@ -30,8 +37,8 @@ export async function handleFolders(request: ApiRequest): Promise<void> {
       return;
     }
     assertWritable(config);
-    const body = (await readJson(req)) as Record<string, unknown>;
-    if (typeof body?.name !== "string") {
+    const body = await readJsonObject(req);
+    if (typeof body.name !== "string") {
       json(res, 400, { error: "name is required" });
       return;
     }
@@ -60,12 +67,12 @@ export async function handleFolders(request: ApiRequest): Promise<void> {
       json(res, 200, { name, sync: await rag.sync(false) });
       return;
     }
-    const body = (await readJson(req)) as Record<string, unknown>;
-    if (body?.name !== undefined && typeof body.name !== "string") {
+    const body = await readJsonObject(req);
+    const rename = body.name;
+    if (rename !== undefined && typeof rename !== "string") {
       json(res, 400, { error: "name must be a string" });
       return;
     }
-    const rename = body?.name as string | undefined;
     if (rename !== undefined && rename !== name) {
       assertWritable(config);
     }

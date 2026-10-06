@@ -2,6 +2,7 @@ import { lstat, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promi
 import { dirname, posix, relative, resolve } from "node:path";
 import { listAttachments } from "./attachments.ts";
 import { isInside, MARKDOWN, toPosix } from "./document-paths.ts";
+import { hasCode } from "./errors.ts";
 import { findLinks, type LinkDocument, type LinkRef, resolveLink, resolveRef } from "./links.ts";
 import { Refusal } from "./refusal.ts";
 import { resolvePath } from "./resolve-path.ts";
@@ -130,7 +131,7 @@ export async function moveInFolder({
       try {
         await writeFile(dest.full, document.text, { flag: "wx" });
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        if (!hasCode(error, "EEXIST")) {
           throw error;
         }
         throw new Refusal(409, `already exists: ${to}`);

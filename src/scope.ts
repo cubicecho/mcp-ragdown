@@ -14,6 +14,7 @@ import { listAttachments } from "./attachments.ts";
 import { contentHash } from "./content-hash.ts";
 import { isIndexedName, isInside, MARKDOWN, toPosix } from "./document-paths.ts";
 import type { Ragdown } from "./engine.ts";
+import { hasCode } from "./errors.ts";
 import { readSettings } from "./folders.ts";
 import { headingRange } from "./headings.ts";
 import { hookContext } from "./hook-context.ts";
@@ -362,7 +363,7 @@ export class Scope {
       try {
         await writeFile(full, text, { flag: "wx" });
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        if (!hasCode(error, "EEXIST")) {
           throw error;
         }
         throw new Refusal(409, `already exists: ${path}`);

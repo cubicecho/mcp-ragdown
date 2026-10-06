@@ -1,6 +1,7 @@
 import { lstat, mkdir, realpath } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { isIndexedName, isInside, MARKDOWN } from "./document-paths.ts";
+import { hasCode } from "./errors.ts";
 import { Refusal } from "./refusal.ts";
 
 /**
@@ -43,8 +44,8 @@ export async function resolvePath(
     current = join(current, segment);
     let info = await lstat(current).catch(() => undefined);
     if (!info && create) {
-      await mkdir(current).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "EEXIST") {
+      await mkdir(current).catch((error: unknown) => {
+        if (!hasCode(error, "EEXIST")) {
           throw error;
         }
       });

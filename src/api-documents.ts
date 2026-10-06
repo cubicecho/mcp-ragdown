@@ -4,8 +4,16 @@ import { extname } from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { Config } from "./config.ts";
 import { defaults } from "./defaults.ts";
+import { hasCode } from "./errors.ts";
 import { getFolder } from "./folders.ts";
-import { type ApiRequest, allow, assertWritable, json, readJson, required } from "./http-io.ts";
+import {
+  type ApiRequest,
+  allow,
+  assertWritable,
+  json,
+  readJsonObject,
+  required,
+} from "./http-io.ts";
 import { Refusal } from "./refusal.ts";
 import { Scope } from "./scope.ts";
 import { supersededBy } from "./store.ts";
@@ -46,8 +54,8 @@ export async function handleDocuments(request: ApiRequest): Promise<void> {
   if (path === "/api/doc" && (method === "POST" || method === "DELETE")) {
     assertWritable(config);
     if (method === "POST") {
-      const body = (await readJson(req, defaults.maxUploadBytes)) as Record<string, unknown>;
-      if (typeof body?.path !== "string" || typeof body.text !== "string") {
+      const body = await readJsonObject(req, defaults.maxUploadBytes);
+      if (typeof body.path !== "string" || typeof body.text !== "string") {
         json(res, 400, { error: "path and text are required strings" });
         return;
       }
@@ -70,8 +78,8 @@ export async function handleDocuments(request: ApiRequest): Promise<void> {
   if (path === "/api/move") {
     allow(request, "POST");
     assertWritable(config);
-    const body = (await readJson(req, defaults.maxUploadBytes)) as Record<string, unknown>;
-    if (typeof body?.from !== "string" || typeof body.to !== "string") {
+    const body = await readJsonObject(req, defaults.maxUploadBytes);
+    if (typeof body.from !== "string" || typeof body.to !== "string") {
       json(res, 400, { error: "from and to are required strings" });
       return;
     }
@@ -199,9 +207,9 @@ export async function handleDocuments(request: ApiRequest): Promise<void> {
       // A document's SVG or HTML is someone's file, not this app: opened directly, it runs nothing.
       "content-security-policy": "sandbox",
     });
-    await pipeline(createReadStream(full), res).catch((error: NodeJS.ErrnoException) => {
+    await pipeline(createReadStream(full), res).catch((error: unknown) => {
       // The client hung up, often right after the last byte and before `finish`: nothing to answer.
-      if (error.code !== "ERR_STREAM_PREMATURE_CLOSE") {
+      if (!hasCode(error, "ERR_STREAM_PREMATURE_CLOSE")) {
         throw error;
       }
     });

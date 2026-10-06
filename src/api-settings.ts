@@ -2,7 +2,7 @@ import type { Config } from "./config.ts";
 import { createEmbedder, LOCAL_EMBEDDERS, scoreScale } from "./embedder.ts";
 import type { Ragdown } from "./engine.ts";
 import { errorMessage } from "./errors.ts";
-import { type ApiRequest, allow, assertWritable, json, readJson } from "./http-io.ts";
+import { type ApiRequest, allow, assertWritable, json, readJsonObject } from "./http-io.ts";
 import { Refusal } from "./refusal.ts";
 import {
   applyChanges,
@@ -90,7 +90,7 @@ export async function handleSettings(request: ApiRequest): Promise<void> {
   const { rag, config, req, res } = request;
   allow(request, "PATCH");
   assertWritable(config);
-  const changes = parseChanges((await readJson(req)) as Record<string, unknown>);
+  const changes = parseChanges(await readJsonObject(req));
   const change = settingsChange.then(() => changeSettings(rag, config, changes));
   settingsChange = change.catch(() => undefined);
   await change;

@@ -10,6 +10,7 @@ import {
   parseHookChanges,
   resolveHook,
 } from "./hook-settings.ts";
+import { isRecord } from "./json.ts";
 import { Refusal } from "./refusal.ts";
 import { writeAtomic } from "./write-atomic.ts";
 
@@ -54,10 +55,10 @@ export async function readServerSettings(docsDir: string): Promise<ServerSetting
   }
   try {
     const raw: unknown = JSON.parse(text);
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    if (!isRecord(raw)) {
       throw new Error("not a JSON object");
     }
-    return applyChanges({}, parseChanges(raw as Record<string, unknown>));
+    return applyChanges({}, parseChanges(raw));
   } catch (error) {
     console.error(`[ragdown] ignoring ${path}, using the environment: ${errorMessage(error)}`);
     return {};

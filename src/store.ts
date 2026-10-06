@@ -210,12 +210,12 @@ export class Store {
 
   /** Every indexed file and what it looked like when it was indexed. Scans only four columns. */
   async files(): Promise<Map<string, FileState>> {
-    const rows = await this.table
+    const rows: Pick<Row, "path" | "file_hash" | "mtime_ms" | "size">[] = await this.table
       .query()
       .select(["path", "file_hash", "mtime_ms", "size"])
       .toArray();
     const files = new Map<string, FileState>();
-    for (const row of rows as Pick<Row, "path" | "file_hash" | "mtime_ms" | "size">[]) {
+    for (const row of rows) {
       const state = files.get(row.path);
       if (state) {
         state.chunks++;
@@ -233,15 +233,15 @@ export class Store {
 
   /** Every indexed file with its title, for listing rather than diffing. */
   async documents(): Promise<DocumentInfo[]> {
-    const rows = await this.table
+    const rows: Pick<
+      Row,
+      "path" | "title" | "mtime_ms" | "size" | "tags" | "aliases" | "supersedes"
+    >[] = await this.table
       .query()
       .select(["path", "title", "mtime_ms", "size", "tags", "aliases", "supersedes"])
       .toArray();
     const docs = new Map<string, DocumentInfo>();
-    for (const row of rows as Pick<
-      Row,
-      "path" | "title" | "mtime_ms" | "size" | "tags" | "aliases" | "supersedes"
-    >[]) {
+    for (const row of rows) {
       const doc = docs.get(row.path);
       if (doc) {
         doc.chunks++;
@@ -313,11 +313,11 @@ export class Store {
     if (this.superseded) {
       return this.superseded;
     }
-    const rows = (await this.table
+    const rows: Pick<Row, "supersedes">[] = await this.table
       .query()
       .where("supersedes <> ''")
       .select(["supersedes"])
-      .toArray()) as Pick<Row, "supersedes">[];
+      .toArray();
     const paths = new Set<string>();
     for (const row of rows) {
       for (const path of row.supersedes.split("\n")) {

@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Config } from "./config.ts";
 import { defaults } from "./defaults.ts";
 import type { Ragdown } from "./engine.ts";
+import { isRecord } from "./json.ts";
 import { Refusal } from "./refusal.ts";
 
 /** One authorized `/api` request, as each resource's handler is given it. */
@@ -69,6 +70,18 @@ export async function readJson(
   } catch {
     throw new Refusal(400, "Body is not valid JSON");
   }
+}
+
+/**
+ * A request's JSON body where a route takes an object. Anything else — an array, a string, `null`
+ * — reads as an object with no keys, so the route answers as it does for a missing field.
+ */
+export async function readJsonObject(
+  req: IncomingMessage,
+  limit: number = defaults.maxBodyBytes,
+): Promise<Record<string, unknown>> {
+  const body = await readJson(req, limit);
+  return isRecord(body) ? body : {};
 }
 
 export function json(res: ServerResponse, status: number, body: unknown): void {

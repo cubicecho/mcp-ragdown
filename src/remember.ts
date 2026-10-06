@@ -1,6 +1,7 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { isInside, toPosix } from "./document-paths.ts";
+import { hasCode } from "./errors.ts";
 
 /** What `writeRemembered` needs to write one new document. */
 export interface RememberInput {
@@ -83,7 +84,7 @@ export async function writeRemembered({
       await writeFile(full, `${front}${content.trimEnd()}\n`, { flag: "wx" });
       break;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      if (!hasCode(error, "EEXIST")) {
         throw error;
       }
     }
