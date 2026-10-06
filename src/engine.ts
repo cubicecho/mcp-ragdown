@@ -5,7 +5,7 @@ import { errorMessage } from "./errors.ts";
 import { Indexer, type SyncReport } from "./indexer.ts";
 import { claimSocket, request } from "./primary.ts";
 import { Refusal } from "./refusal.ts";
-import { SessionMemory } from "./scope.ts";
+import { SessionMemory } from "./session-memory.ts";
 import { type DocumentInfo, type FileState, type Hit, Store } from "./store.ts";
 
 /** How often a reader checks whether the primary has gone and it should take over. */
