@@ -64,7 +64,7 @@ export async function hookContext({
   return [
     `<ragdown-context source="${source}">`,
     "Excerpts from the user's Markdown documents that look related to this prompt, found by search, not chosen by the user.",
-    "They may be irrelevant or out of date. Use ragdown_read_doc for the whole file before relying on a fragment.",
+    "They may be irrelevant or out of date: each says when its file last changed. Use ragdown_read_doc for the whole file before relying on a fragment.",
     "",
     blocks.join("\n\n"),
     "</ragdown-context>",

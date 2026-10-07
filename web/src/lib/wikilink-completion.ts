@@ -7,13 +7,13 @@ import {
 import type { Extension } from "@codemirror/state";
 
 /**
- * What `[[` offers: each note by the shortest name that finds it, as a wikilink resolves — the
- * file name when no other note shares it, else as much of the path as tells them apart.
+ * What `[[` offers: each document by the shortest name that finds it, as a wikilink resolves — the
+ * file name when no other document shares it, else as much of the path as tells them apart.
  *
- * @param notes paths relative to the folder, with `.md`.
+ * @param documents paths relative to the folder, with `.md`.
  */
-export function wikilinkOptions(notes: readonly string[]): Completion[] {
-  const bare = notes.map((path) => path.replace(/\.md$/i, ""));
+export function wikilinkOptions(documents: readonly string[]): Completion[] {
+  const bare = documents.map((path) => path.replace(/\.md$/i, ""));
   return bare.map((path, index) => {
     const parts = path.split("/");
     let label = path;
@@ -52,11 +52,11 @@ function wikilinkSource(options: readonly Completion[]) {
 }
 
 /**
- * The one thing the app adds to cubeui's `MarkdownCodeEditor`: `[[` completes to a note of the
+ * The one thing the app adds to cubeui's `MarkdownCodeEditor`: `[[` completes to a document of the
  * folder.
  *
- * @param notes paths relative to the folder, with `.md`.
+ * @param documents paths relative to the folder, with `.md`.
  */
-export function wikilinkCompletion(notes: readonly string[]): Extension {
-  return autocompletion({ override: [wikilinkSource(wikilinkOptions(notes))], icons: false });
+export function wikilinkCompletion(documents: readonly string[]): Extension {
+  return autocompletion({ override: [wikilinkSource(wikilinkOptions(documents))], icons: false });
 }

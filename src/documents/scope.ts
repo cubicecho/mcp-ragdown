@@ -13,13 +13,14 @@ import { join, posix, relative, resolve } from "node:path";
 import { readSettings } from "../folders/folder-settings.ts";
 import { hookContext } from "../hook/hook-context.ts";
 import { type ContextOptions, resolveHook } from "../hook/hook-settings.ts";
-import { type Hit, supersededBy } from "../indexing/store.ts";
+import { type Hit, supersededBy, type WrittenBy } from "../indexing/store.ts";
 import type { Ragdown } from "../serving/engine.ts";
 import { contentHash } from "../shared/content-hash.ts";
 import { hasCode } from "../shared/errors.ts";
 import { Refusal } from "../shared/refusal.ts";
 import { writeAtomic } from "../shared/write-atomic.ts";
 import { listAttachments } from "./attachments.ts";
+import { readDocumentMeta } from "./chunk.ts";
 import { isIndexedName, isInside, MARKDOWN, toPosix } from "./document-paths.ts";
 import { headingRange } from "./headings.ts";
 import {
@@ -30,6 +31,7 @@ import {
   resolveRef,
 } from "./links.ts";
 import { moveInFolder } from "./move.ts";
+import { stampProvenance } from "./provenance.ts";
 import { writeRemembered } from "./remember.ts";
 import { resolvePath } from "./resolve-path.ts";
 
@@ -71,10 +73,23 @@ export class Scope {
    *
    * @param pathPrefix - limits the search to files under this folder, relative to the scope.
    * @param tag - limits it to documents with this tag or one nested under it.
+   * @param writtenBy - limits it to documents an agent wrote, or to the ones the user did.
    */
-  async recall(query: string, topK: number, pathPrefix?: string, tag?: string): Promise<Hit[]> {
+  async recall(
+    query: string,
+    topK: number,
+    pathPrefix?: string,
+    tag?: string,
+    writtenBy?: WrittenBy,
+  ): Promise<Hit[]> {
     const folder = [this.dir, normalizeFolder(pathPrefix)].filter(Boolean).join("/");
-    const hits = await this.rag.recall(query, topK, folder ? `${folder}/` : undefined, tag);
+    const hits = await this.rag.recall(
+      query,
+      topK,
+      folder ? `${folder}/` : undefined,
+      tag,
+      writtenBy,
+    );
     return hits.map((hit) => ({ ...hit, path: this.toScoped(hit.path) }));
   }
 
@@ -98,9 +113,23 @@ export class Scope {
       settings: resolveHook(options, own, this.config.hook),
       textLimit: this.config.textLimit,
       seenBy: () =>
-        sessionId ? this.rag.sessions.seen(`${this.dir}\0${sessionId}`) : new Set<string>(),
+        sessionId ? this.rag.sessions.seen(this.sessionKey(sessionId)) : new Set<string>(),
       recall: (query, topK) => this.recall(query, topK),
     });
+  }
+
+  /**
+   * Forget which chunks a session was given in this scope. For a client that has just dropped them
+   * from its context — a compaction keeps the session id and loses the text — so that `context`
+   * returns them again when they are next related.
+   */
+  forgetSession(sessionId: string): void {
+    this.rag.sessions.forget(this.sessionKey(sessionId));
+  }
+
+  /** A session's key in the shared session memory: each scope remembers its own. */
+  private sessionKey(sessionId: string): string {
+    return `${this.dir}\0${sessionId}`;
   }
 
   /**
@@ -388,12 +417,18 @@ export class Scope {
    *   so an agent never overwrites a version it has not read; an append checks it when given.
    *   Either way the write fails with `code: "changed"` if the file changed after the version
    *   edited was read.
+   * @param sessionId - recorded in the frontmatter of a document this creates.
+   *
+   * A document this creates gets `created_by: ragdown_edit` in its frontmatter, as `remember`
+   * records its own, and replacing a document that had a `created_by` keeps it: whole-file text
+   * from an agent rarely repeats frontmatter it did not write. A document the user wrote stays
+   * theirs however an agent edits it.
    * @throws with `status: 404` to append to a missing document or under a missing heading.
    */
   async editDocument(
     path: string,
     text: string,
-    options: { append?: boolean; heading?: string; baseHash?: string } = {},
+    options: { append?: boolean; heading?: string; baseHash?: string; sessionId?: string } = {},
   ) {
     if (options.heading !== undefined && !options.append) {
       throw new Refusal(400, "heading is for append: true");
@@ -412,7 +447,16 @@ export class Scope {
           `${relPath} exists: pass the hash ragdown_read_doc returned as base_hash to replace it`,
         );
       }
-      return this.writeDocument(relPath, text, false, options.baseHash);
+      const before = current ? readDocumentMeta(current.toString("utf8")) : undefined;
+      const provenance = before
+        ? before.createdBy && { createdBy: before.createdBy, session: before.session }
+        : { createdBy: "ragdown_edit", session: options.sessionId };
+      return this.writeDocument(
+        relPath,
+        provenance ? stampProvenance(text, provenance) : text,
+        false,
+        options.baseHash,
+      );
     }
     if (!current) {
       throw new Refusal(404, `no such document: ${path}`);
@@ -455,9 +499,18 @@ export class Scope {
    * @param pathPrefix - only documents under this folder, relative to the scope.
    * @param tag - only documents with this tag or one nested under it, as `recall` filters.
    * @param sort - `path`, or `recent` for the most recently changed first.
+   * @param writtenBy - only documents an agent wrote, or only the ones the user did.
+   * @param sessionId - only documents whose frontmatter records this session.
    */
   async listDocuments(
-    options: { pathPrefix?: string; tag?: string; sort?: "path" | "recent"; limit?: number } = {},
+    options: {
+      pathPrefix?: string;
+      tag?: string;
+      sort?: "path" | "recent";
+      limit?: number;
+      writtenBy?: WrittenBy;
+      sessionId?: string;
+    } = {},
   ) {
     const folder = [this.dir, normalizeFolder(options.pathPrefix)].filter(Boolean).join("/");
     const tag = options.tag?.trim().replace(/^#+/, "").replace(/\/+$/, "").toLowerCase();
@@ -466,19 +519,24 @@ export class Scope {
     const docs = all.filter(
       (doc) =>
         (!folder || doc.path.startsWith(`${folder}/`)) &&
-        (!tag || doc.tags.some((t) => t === tag || t.startsWith(`${tag}/`))),
+        (!tag || doc.tags.some((t) => t === tag || t.startsWith(`${tag}/`))) &&
+        (!options.writtenBy || (options.writtenBy === "agent") === (doc.createdBy !== "")) &&
+        (!options.sessionId || doc.session === options.sessionId),
     );
     if (options.sort === "recent") {
       docs.sort((a, b) => b.mtimeMs - a.mtimeMs);
     }
     return {
       total: docs.length,
-      notes: docs.slice(0, options.limit ?? docs.length).map((doc) => ({
+      documents: docs.slice(0, options.limit ?? docs.length).map((doc) => ({
         path: this.toScoped(doc.path),
         title: doc.title,
+        ...(doc.description ? { description: doc.description } : {}),
         ...(doc.tags.length > 0 ? { tags: doc.tags } : {}),
         ...(doc.aliases.length > 0 ? { aliases: doc.aliases } : {}),
         modified: new Date(doc.mtimeMs).toISOString(),
+        ...(doc.createdBy ? { created_by: doc.createdBy } : {}),
+        ...(doc.session ? { session: doc.session } : {}),
         ...withSupersededBy(this.replacedBy(by, doc.path)),
       })),
     };

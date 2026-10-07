@@ -57,7 +57,7 @@ export const useDoc = (path: string | undefined) =>
     refetchInterval: 15_000,
   });
 
-/** Polled with the doc, since any note in the folder may start or stop linking to it. */
+/** Polled with the doc, since any document in the folder may start or stop linking to it. */
 export const useBacklinks = (path: string) =>
   useQuery({
     queryKey: ["backlinks", path],

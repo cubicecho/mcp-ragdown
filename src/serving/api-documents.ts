@@ -126,6 +126,9 @@ export async function handleDocuments(request: ApiRequest): Promise<void> {
         chunks: doc.chunks,
         tags: doc.tags,
         aliases: doc.aliases,
+        description: doc.description,
+        created_by: doc.createdBy,
+        session: doc.session,
         superseded_by: replaced.get(doc.path) ?? [],
       })),
     });
@@ -164,6 +167,8 @@ export async function handleDocuments(request: ApiRequest): Promise<void> {
         similarity: Number(hit.similarity.toFixed(4)),
         text: hit.text,
         tags: hit.tags,
+        mtime_ms: hit.mtimeMs,
+        created_by: hit.createdBy,
       })),
     });
     return;

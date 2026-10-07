@@ -106,7 +106,7 @@ describe("readSupersedes", () => {
     ]);
   });
 
-  it("resolves paths against the note's own folder, like a Markdown link", () => {
+  it("resolves paths against the document's own folder, like a Markdown link", () => {
     expect(readSupersedes(front("supersedes: ../ops/old.md"), "notes/new.md")).toEqual([
       "ops/old.md",
     ]);
@@ -157,7 +157,52 @@ describe("readDocumentMeta", () => {
     });
   });
 
-  it("finds nothing in a plain note", () => {
+  it("reads who the frontmatter says wrote the document, and in which session", () => {
+    const source = [
+      "---",
+      "created_by: ragdown_remember",
+      'session: "min-agent:7"',
+      "---",
+      "created_by: not frontmatter",
+    ].join("\n");
+    expect(readDocumentMeta(source)).toEqual({
+      tags: [],
+      aliases: [],
+      createdBy: "ragdown_remember",
+      session: "min-agent:7",
+    });
+    expect(readDocumentMeta("---\ncreated_by:\nsession: ''\n---\nx")).toEqual({
+      tags: [],
+      aliases: [],
+    });
+  });
+
+  it("reads the frontmatter's description, on one line or as a block", () => {
+    expect(readDocumentMeta('---\ndescription: "How backups are restored"\n---\nx')).toEqual({
+      tags: [],
+      aliases: [],
+      description: "How backups are restored",
+    });
+    const block = [
+      "---",
+      "description: >-",
+      "  How backups",
+      "  are restored.",
+      "tags: ops",
+      "---",
+    ];
+    expect(readDocumentMeta(block.join("\n"))).toEqual({
+      tags: ["ops"],
+      aliases: [],
+      description: "How backups are restored.",
+    });
+    expect(readDocumentMeta("---\ndescription: |\ntags: ops\n---\nx")).toEqual({
+      tags: ["ops"],
+      aliases: [],
+    });
+  });
+
+  it("finds nothing in a plain document", () => {
     expect(readDocumentMeta("# Title\n\nText.")).toEqual({ tags: [], aliases: [] });
   });
 });

@@ -85,7 +85,7 @@ export function EditServerSettings({
                 <Alert
                   variant="warning"
                   title="Saving rebuilds the whole index"
-                  description="Every note is embedded again with the new model, which is downloaded first if it is not on the server. Search answers from what is indexed so far until it is done."
+                  description="Every document is embedded again with the new model, which is downloaded first if it is not on the server. Search answers from what is indexed so far until it is done."
                 />
               )
             }

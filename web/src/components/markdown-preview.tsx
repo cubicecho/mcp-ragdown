@@ -31,11 +31,11 @@ const decode = (url: string, scheme: string) => decodeURIComponent(url.slice(sch
 const PLUGINS = [remarkWikilinks];
 
 /**
- * A note as a styled preview: cubeui's `Markdown` draws the elements, and the links and images are
+ * A document as a styled preview: cubeui's `Markdown` draws the elements, and the links and images are
  * this app's. Raw HTML is not rendered.
  *
  * `[[wikilinks]]` are asked of the server, which resolves them the way Obsidian does, within the
- * note's folder; a link to nothing is drawn as broken. A relative link to an indexed file opens it
+ * document's folder; a link to nothing is drawn as broken. A relative link to an indexed file opens it
  * here. Images — `![[image.png]]` and relative `![](img.png)` — are fetched with the token and
  * shown from blob URLs, since an `<img src>` cannot carry the header.
  */
@@ -52,7 +52,7 @@ export function MarkdownPreview({
   known: ReadonlySet<string>;
   className?: string;
 }) {
-  // Held steady while the note is the same one: react-markdown mounts what it is handed as
+  // Held steady while the document is the same one: react-markdown mounts what it is handed as
   // component types, so a new map each render would remount every link and image.
   const components = useMemo<Components>(
     () => ({
@@ -100,7 +100,7 @@ export function MarkdownPreview({
   );
 }
 
-/** The route of a root-relative note, with the heading a `#Heading` link aims at. */
+/** The route of a root-relative document, with the heading a `#Heading` link aims at. */
 function docTarget(path: string, anchor?: string) {
   return {
     to: "/f/$folder" as const,
@@ -118,7 +118,7 @@ const is404 = (error: unknown) => error instanceof ApiError && error.status === 
 
 /**
  * A `[[wikilink]]`. Resolved as it renders, so a broken one is drawn as broken before anyone
- * clicks it; a resolved note is a real link, and an attachment opens from a blob.
+ * clicks it; a resolved document is a real link, and an attachment opens from a blob.
  */
 function WikiLink({ from, target, label }: { from: string; target: string; label: ReactNode }) {
   const resolved = useResolve(from, target);
@@ -235,7 +235,7 @@ function useOpenAttachment() {
   };
 }
 
-/** `![[target]]`: an image is drawn, a note or another file is a link to it. */
+/** `![[target]]`: an image is drawn, a document or another file is a link to it. */
 function Embed({ from, target, alt }: { from: string; target: string; alt: string | undefined }) {
   const resolved = useResolve(from, target);
   if (resolved.isError) {

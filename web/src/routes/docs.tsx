@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { FilePlus } from "@/components/app-icons";
 import { Backlinks } from "@/components/backlinks";
-import { DeleteDoc, NewNote, RenameDoc, UploadDocs } from "@/components/doc-actions";
+import { DeleteDoc, NewDocument, RenameDoc, UploadDocs } from "@/components/doc-actions";
 import { DocEditor } from "@/components/doc-editor";
 import { FileTree } from "@/components/file-tree";
 import { McpOffHint } from "@/components/folder-actions";
@@ -43,7 +43,7 @@ import { cn } from "@/lib/utils";
 
 const route = getRouteApi("/f/$folder");
 
-/** `notes/ideas/a.md` → `notes/ideas`: where a new note goes beside the open one. */
+/** `notes/ideas/a.md` → `notes/ideas`: where a new document goes beside the open one. */
 const dirOf = (path: string | undefined) =>
   path ? withinFolder(path).split("/").slice(0, -1).join("/") : "";
 
@@ -127,12 +127,22 @@ function useDebounced<T>(value: T, ms: number): T {
 
 type Mode = "filter" | "search";
 
-/** A note as the file tree lists it: its path within the folder, and the note. */
-type NoteEntry = TreeEntry & { doc: DocSummary };
+/** Frontmatter the preview's header draws itself, so it is not also listed as a plain field. */
+const SHOWN_FIELDS: ReadonlySet<string> = new Set([
+  "tags",
+  "title",
+  "aliases",
+  "description",
+  "created_by",
+  "session",
+]);
+
+/** A document as the file tree lists it: its path within the folder, and the document. */
+type DocEntry = TreeEntry & { doc: DocSummary };
 
 /**
  * The folder's files. Filter narrows the list by title, path, tag and alias as you type, on this
- * side; search asks the index, so it finds what a note says rather than what it is called.
+ * side; search asks the index, so it finds what a document says rather than what it is called.
  */
 function DocList({
   folder,
@@ -158,7 +168,7 @@ function DocList({
   const toast = useToast();
 
   /**
-   * A row dropped onto a folder of the tree: the note or subfolder keeps its name and lands in
+   * A row dropped onto a folder of the tree: the document or subfolder keeps its name and lands in
    * `into`. Rename is the same move from the keyboard. Never rejects, as the tree leaves a
    * failure to its caller to report.
    */
@@ -172,10 +182,10 @@ function DocList({
       });
       const links = moved.updated.length;
       toast(
-        `Moved ${name} to ${into || title}${links > 0 ? `, and updated links in ${formatCount(links, "note")}` : ""}`,
+        `Moved ${name} to ${into || title}${links > 0 ? `, and updated links in ${formatCount(links, "document")}` : ""}`,
         "positive",
       );
-      // The open note went with it, alone or inside a moved subfolder: follow it there.
+      // The open document went with it, alone or inside a moved subfolder: follow it there.
       const open = selected ? withinFolder(selected) : undefined;
       if (open === from || open?.startsWith(`${from}/`)) {
         void navigate({
@@ -199,13 +209,13 @@ function DocList({
     const matching = (docs.data ?? []).filter((doc) => {
       if (tag && !hasTag(doc.tags, tag)) return false;
       const haystack =
-        `${doc.title} ${withinFolder(doc.path)} ${doc.aliases.join(" ")} ${doc.tags.join(" ")}`.toLowerCase();
+        `${doc.title} ${withinFolder(doc.path)} ${doc.aliases.join(" ")} ${doc.tags.join(" ")} ${doc.description}`.toLowerCase();
       return words.every((word) => haystack.includes(word));
     });
     return sort === "recent" ? matching.sort((a, b) => b.mtime_ms - a.mtime_ms) : matching;
   }, [docs.data, text, tag, mode, sort]);
   const entries = useMemo(
-    () => rows.map((doc): NoteEntry => ({ path: withinFolder(doc.path), type: "file", doc })),
+    () => rows.map((doc): DocEntry => ({ path: withinFolder(doc.path), type: "file", doc })),
     [rows],
   );
   const chunks = docs.data?.reduce((sum, doc) => sum + doc.chunks, 0) ?? 0;
@@ -224,7 +234,7 @@ function DocList({
           actionSlot={
             writable ? (
               <div className="flex shrink-0 items-center gap-1">
-                <NewNote folder={folder} title={title} dir={dirOf(selected)} />
+                <NewDocument folder={folder} title={title} dir={dirOf(selected)} />
                 <UploadDocs folder={folder} title={title} />
               </div>
             ) : undefined
@@ -259,7 +269,9 @@ function DocList({
               <SearchInput
                 label={mode === "search" ? `Search ${title}` : "Filter documents"}
                 placeholder={
-                  mode === "search" ? "Search what the notes say" : "Filter by title, path or tag"
+                  mode === "search"
+                    ? "Search what the documents say"
+                    : "Filter by title, path or tag"
                 }
                 value={text}
                 onChangeText={setText}
@@ -325,7 +337,7 @@ function DocList({
               </ItemGroup>
             ) : (
               <FileTree
-                label="Notes"
+                label="Documents"
                 entries={entries}
                 selected={selected ? withinFolder(selected) : undefined}
                 onMove={writable ? moveInto : undefined}
@@ -334,13 +346,22 @@ function DocList({
                     to="/f/$folder"
                     params={{ folder }}
                     search={(prev) => ({ ...prev, doc: node.path })}
-                    title={node.entry?.doc.title}
+                    title={node.entry?.doc.description || node.entry?.doc.title}
                   />
                 )}
-                meta={(node) => (node.entry?.doc.superseded_by.length ? <Superseded /> : null)}
+                meta={(node) =>
+                  node.entry ? (
+                    <>
+                      {node.entry.doc.created_by ? (
+                        <ByAgent tool={node.entry.doc.created_by} />
+                      ) : null}
+                      {node.entry.doc.superseded_by.length > 0 ? <Superseded /> : null}
+                    </>
+                  ) : null
+                }
                 actionSlot={(node) =>
                   writable && node.type === "dir" ? (
-                    <NewNote
+                    <NewDocument
                       folder={folder}
                       title={title}
                       dir={node.path}
@@ -348,7 +369,7 @@ function DocList({
                         <ActionButton
                           variant="ghost"
                           size="icon-xs"
-                          label={`New note in ${node.path}`}
+                          label={`New document in ${node.path}`}
                           iconSlot={<FilePlus />}
                         />
                       }
@@ -447,7 +468,7 @@ function SortMenu({ folder, active }: { folder: string; active: "recent" | undef
   );
 }
 
-/** Sections the index found, best first; each opens its note at the heading it came from. */
+/** Sections the index found, best first; each opens its document at the heading it came from. */
 function SearchResults({
   folder,
   search,
@@ -501,6 +522,10 @@ function HitRow({ folder, hit, active }: { folder: string; hit: SearchHit; activ
             <ItemDescription className="truncate text-xs">{hit.heading}</ItemDescription>
           ) : null}
           <ItemDescription className="line-clamp-2 text-xs">{hit.text}</ItemDescription>
+          <ItemDescription className="flex items-center gap-1.5 text-xs">
+            changed {formatAgo(hit.mtime_ms)}
+            {hit.created_by ? <ByAgent tool={hit.created_by} /> : null}
+          </ItemDescription>
         </ItemContent>
       </Link>
     </Item>
@@ -511,6 +536,19 @@ function Superseded() {
   return (
     <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
       superseded
+    </Badge>
+  );
+}
+
+/** Marks a document whose frontmatter says a tool wrote it: a claim in the file, not proof. */
+function ByAgent({ tool }: { tool: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className="shrink-0 font-normal text-muted-foreground"
+      title={`Written by an agent with ${tool}`}
+    >
+      agent
     </Badge>
   );
 }
@@ -535,12 +573,16 @@ function DocRow({ folder, doc, active }: { folder: string; doc: DocSummary; acti
         <ItemContent className="min-w-0 gap-0.5">
           <ItemTitle className="w-full">
             <span className="truncate">{doc.title}</span>
+            {doc.created_by ? <ByAgent tool={doc.created_by} /> : null}
             {doc.superseded_by.length > 0 ? <Superseded /> : null}
           </ItemTitle>
           <ItemDescription className="truncate text-xs">
             <span className="text-muted-foreground/70">{dir}</span>
             {file}
           </ItemDescription>
+          {doc.description ? (
+            <ItemDescription className="line-clamp-2 text-xs">{doc.description}</ItemDescription>
+          ) : null}
         </ItemContent>
       </Link>
     </Item>
@@ -569,11 +611,11 @@ function NothingSelected({
       }
       actionSlot={
         writable ? (
-          <NewNote
+          <NewDocument
             folder={folder}
             title={title}
             triggerSlot={
-              <Button variant="outline" size="sm" iconSlot={<Plus />} content="New note" />
+              <Button variant="outline" size="sm" iconSlot={<Plus />} content="New document" />
             }
           />
         ) : undefined
@@ -621,7 +663,7 @@ function DocPreview({
   const { edit } = route.useSearch();
   const navigate = useNavigate();
 
-  // `?edit` (from New note) opens the editor once the note has loaded, then leaves the URL.
+  // `?edit` (from New document) opens the editor once the document has loaded, then leaves the URL.
   useEffect(() => {
     if (!edit || !doc.data || !writable) return;
     setEditing(true);
@@ -640,14 +682,22 @@ function DocPreview({
   };
   const tags = doc.data?.tags ?? summary?.tags ?? frontmatter("tags");
   const aliases = doc.data?.aliases ?? summary?.aliases ?? frontmatter("aliases");
-  const otherFields = parsed.fields.filter(
-    ([key]) => key !== "tags" && key !== "title" && key !== "aliases",
-  );
+  // The index's reading, and the open file's own frontmatter until the index has caught up.
+  const scalar = (key: string) => parsed.fields.find(([name]) => name === key)?.[1] ?? "";
+  const description = summary?.description || scalar("description");
+  const createdBy = summary?.created_by || scalar("created_by");
+  const session = summary?.session || scalar("session");
+  const otherFields = parsed.fields.filter(([key]) => !SHOWN_FIELDS.has(key));
   const replacedBy = (doc.data?.superseded_by ?? summary?.superseded_by ?? []).map(
     (each) => docs?.find((d) => d.path === each) ?? { path: each, title: withinFolder(each) },
   );
   const hasBadges =
-    tags.length > 0 || aliases.length > 0 || otherFields.length > 0 || replacedBy.length > 0;
+    tags.length > 0 ||
+    aliases.length > 0 ||
+    otherFields.length > 0 ||
+    replacedBy.length > 0 ||
+    description !== "" ||
+    createdBy !== "";
   const title = summary?.title ?? path.split("/").pop() ?? path;
 
   if (editing && doc.data) {
@@ -706,7 +756,7 @@ function DocPreview({
             hasBadges ? (
               <div className="flex flex-wrap items-center gap-1.5">
                 {replacedBy.length > 0 ? (
-                  // Search already leaves this note out; this is for whoever opened it anyway.
+                  // Search already leaves this document out; this is for whoever opened it anyway.
                   <p className="w-full text-muted-foreground text-sm">
                     <Badge variant="outline" className="mr-1.5 font-normal">
                       superseded
@@ -725,6 +775,23 @@ function DocPreview({
                         </Link>
                       </span>
                     ))}
+                  </p>
+                ) : null}
+                {description ? (
+                  <p className="w-full text-muted-foreground text-sm">{description}</p>
+                ) : null}
+                {createdBy ? (
+                  <p className="w-full text-muted-foreground text-sm">
+                    <Badge variant="outline" className="mr-1.5 font-normal">
+                      agent
+                    </Badge>
+                    written with <span className="font-mono text-xs">{createdBy}</span>
+                    {session ? (
+                      <>
+                        {" "}
+                        in session <span className="font-mono text-xs">{session}</span>
+                      </>
+                    ) : null}
                   </p>
                 ) : null}
                 {aliases.length > 0 ? (
@@ -777,7 +844,7 @@ function DocPreview({
   );
 }
 
-/** The note's file as it is on disk, front matter and all, saved under its own name. */
+/** The document's file as it is on disk, front matter and all, saved under its own name. */
 function DownloadDoc({ path }: { path: string }) {
   const [busy, setBusy] = useState(false);
   const toast = useToast();

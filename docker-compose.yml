@@ -7,7 +7,7 @@ services:
       # host:container — change the left side only.
       - '3300:3000'
     volumes:
-      # The folders to index. Writable so agents can save notes with ragdown_remember;
+      # The folders to index. Writable so agents can save documents with ragdown_remember;
       # append `:ro` and set RAGDOWN_READ_ONLY=true to forbid that.
       - ${DOCS:-./docs}:/docs
       # The index. Without it every restart re-embeds the whole folder.

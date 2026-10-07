@@ -50,8 +50,8 @@ export function HomePage() {
       title="No folders yet"
       description={
         <>
-          Notes live in top-level folders of the docs directory, each with its own search and its
-          own MCP address.
+          Documents live in top-level folders of the docs directory, each with its own search and
+          its own MCP address.
           {loose > 0
             ? ` The ${formatCount(loose, "Markdown file")} directly in the docs directory ${loose === 1 ? "is" : "are"} not indexed until moved into one.`
             : null}

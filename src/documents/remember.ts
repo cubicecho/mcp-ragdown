@@ -99,6 +99,6 @@ function slug(title: string): string {
       .normalize("NFKD")
       .replace(/[^\p{L}\p{N}]+/gu, "-")
       .replace(/^-+|-+$/g, "")
-      .slice(0, 60) || "note"
+      .slice(0, 60) || "document"
   );
 }

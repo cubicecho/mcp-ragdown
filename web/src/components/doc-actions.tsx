@@ -226,14 +226,14 @@ export function UploadDocs({ folder, title }: { folder: string; title: string })
 }
 
 /**
- * A note's file name from its title: the title itself, as Obsidian does, less the characters a
+ * A document's file name from its title: the title itself, as Obsidian does, less the characters a
  * file system or a wikilink cannot hold.
  */
 const fileName = (title: string) =>
   `${title.replace(/[\\/:*?"<>|#^[\]]+/g, "-").replace(/^[.\s-]+|\s+$/g, "")}.md`;
 
 /**
- * Where a new note's title and subfolder put it. Typed with an extension, the title is the file
+ * Where a new document's title and subfolder put it. Typed with an extension, the title is the file
  * name: `Kafka.md` is `Kafka.md`, not `Kafka.md.md`.
  */
 function target({ title, subfolder }: { title: string; subfolder: string }) {
@@ -245,11 +245,11 @@ function target({ title, subfolder }: { title: string; subfolder: string }) {
 const isExisting = (error: unknown) => error instanceof ApiError && error.status === 409;
 
 /**
- * Start a new note in a folder, optionally in a subfolder of it (created if missing), and open it
- * in the editor. `dir` is where it goes unless changed: the open note's subfolder, so a new note
+ * Start a new document in a folder, optionally in a subfolder of it (created if missing), and open it
+ * in the editor. `dir` is where it goes unless changed: the open document's subfolder, so a new document
  * lands beside the one being read.
  */
-export function NewNote({
+export function NewDocument({
   folder,
   title: folderTitle,
   dir = "",
@@ -275,7 +275,7 @@ export function NewNote({
         form.setFieldMeta(
           "title",
           serverError(
-            isExisting(error) ? "A note with that name is already there." : errorMessage(error),
+            isExisting(error) ? "A document with that name is already there." : errorMessage(error),
           ),
         );
       }
@@ -306,10 +306,10 @@ export function NewNote({
       onOpenChange={reset}
       triggerSlot={
         triggerSlot ?? (
-          <ActionButton label="New note" variant="outline" size="icon-sm" iconSlot={<Plus />} />
+          <ActionButton label="New document" variant="outline" size="icon-sm" iconSlot={<Plus />} />
         )
       }
-      title="New note"
+      title="New document"
       description={`A Markdown file in ${folderTitle}, opened in the editor once it is created.`}
       hasUnsavedChanges={() => form.state.values.title !== ""}
       contentSlot={
@@ -345,7 +345,7 @@ export function NewNote({
                 validators={{
                   onChange: ({ value }) =>
                     target({ title: value, subfolder: "" }).name === ".md"
-                      ? "A note needs a title."
+                      ? "A document needs a title."
                       : undefined,
                 }}
                 listeners={{ onChange: clearServer }}
@@ -387,14 +387,14 @@ export function NewNote({
   );
 }
 
-/** What was typed as a path within the folder: tidied, and a note even without its extension. */
+/** What was typed as a path within the folder: tidied, and a document even without its extension. */
 function movedTo(typed: string): string {
   const path = joinPath("", typed.trim());
   return !path || MARKDOWN.test(path) ? path : `${path}.md`;
 }
 
 /**
- * Rename or move the previewed note (root-relative `path`) within its folder. The server rewrites
+ * Rename or move the previewed document (root-relative `path`) within its folder. The server rewrites
  * every link in the folder that pointed at it, so nothing that linked here breaks.
  */
 export function RenameDoc({ path }: { path: string }) {
@@ -413,7 +413,7 @@ export function RenameDoc({ path }: { path: string }) {
         setOpen(false);
         const links = moved.updated.length;
         toast(
-          links > 0 ? `Moved, and updated links in ${formatCount(links, "note")}` : "Moved",
+          links > 0 ? `Moved, and updated links in ${formatCount(links, "document")}` : "Moved",
           "positive",
         );
         void navigate({
@@ -450,7 +450,7 @@ export function RenameDoc({ path }: { path: string }) {
         />
       }
       title="Rename or move"
-      description="Links to this note from anywhere in the folder are rewritten to follow it."
+      description="Links to this document from anywhere in the folder are rewritten to follow it."
       hasUnsavedChanges={() => movedTo(form.state.values.to) !== current}
       contentSlot={
         <form
@@ -481,7 +481,7 @@ export function RenameDoc({ path }: { path: string }) {
                 validators={{
                   onChange: ({ value: typed }) => {
                     const to = movedTo(typed);
-                    if (!to) return "A note needs a path.";
+                    if (!to) return "A document needs a path.";
                     if (to === current) return "That is where it is now.";
                     return undefined;
                   },

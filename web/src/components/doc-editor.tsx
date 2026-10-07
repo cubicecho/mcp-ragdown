@@ -16,12 +16,12 @@ import { splitFrontmatter } from "@/lib/markdown";
 import { useSaveDoc, useUploadDoc } from "@/lib/queries";
 
 /** CodeMirror is most of the editor's weight: it loads the first time someone presses Edit. */
-const NoteEditor = lazy(() => import("@/components/note-editor"));
+const WikilinkEditor = lazy(() => import("@/components/wikilink-editor"));
 
 type View = "write" | "preview";
 
 /**
- * Edit one note's Markdown in place. Saves are made against the version that was opened (its
+ * Edit one document's Markdown in place. Saves are made against the version that was opened (its
  * `hash`), so a change made on disk meanwhile — in Obsidian, by an agent, by `git pull` — is a
  * conflict to decide, never something a save quietly throws away. Unsaved changes hold back
  * leaving, whether by a link, Close, or closing the tab.
@@ -96,7 +96,7 @@ export function DocEditor({
   };
 
   const body = useMemo(() => splitFrontmatter(draft).body, [draft]);
-  const notes = useMemo(
+  const documents = useMemo(
     () => [...known].filter((each) => each !== path).map((each) => withinFolder(each)),
     [known, path],
   );
@@ -175,13 +175,13 @@ export function DocEditor({
                   </div>
                 }
               >
-                <NoteEditor
+                <WikilinkEditor
                   value={draft}
                   onValueChange={setDraft}
                   onSave={onSave}
                   label={`Markdown of ${withinFolder(path)}`}
                   placeholder="Write Markdown…"
-                  notes={notes}
+                  documents={documents}
                   autoFocus
                   className="min-h-[60vh]"
                 />
@@ -194,7 +194,7 @@ export function DocEditor({
         }
       />
       <LeaveDialog
-        description="Your edits to this note have not been saved, and leaving throws them away."
+        description="Your edits to this document have not been saved, and leaving throws them away."
         open={blocker.status === "blocked" || confirmClose}
         onStay={() => {
           setConfirmClose(false);

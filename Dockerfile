@@ -56,7 +56,7 @@ COPY src ./src
 COPY --from=web /app/web/dist ./web/dist
 
 ENV NODE_ENV=production
-# Mount the Markdown folder here. Read-write if agents should be able to save notes
+# Mount the Markdown folder here. Read-write if agents should be able to save documents
 # with ragdown_remember; add :ro and RAGDOWN_READ_ONLY=true otherwise.
 ENV RAGDOWN_DOCS_DIR=/docs
 # The LanceDB index. Derived data, but a volume saves re-embedding every file on
@@ -69,7 +69,7 @@ RUN mkdir -p /docs /data && chown node:node /docs /data
 
 VOLUME /data
 
-# Run unprivileged; /data is the only place written to besides notes in /docs.
+# Run unprivileged; /data is the only place written to besides documents in /docs.
 USER node
 
 EXPOSE 3000

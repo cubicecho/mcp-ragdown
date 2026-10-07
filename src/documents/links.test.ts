@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { findLinks, parseLink, resolveLink, resolveRef } from "./links.ts";
 
-const notes = [
+const documents = [
   { path: "Home.md", aliases: [] },
   { path: "projects/alpha/Plan.md", aliases: ["Alpha plan"] },
   { path: "projects/beta/Plan.md", aliases: [] },
@@ -20,7 +20,7 @@ describe("parseLink", () => {
 });
 
 describe("resolveLink", () => {
-  const resolve = (link: string, from?: string) => resolveLink(link, from, notes, attachments);
+  const resolve = (link: string, from?: string) => resolveLink(link, from, documents, attachments);
 
   it("takes an exact path, with or without the extension, before a name", () => {
     expect(resolve("projects/beta/Plan")).toEqual({ path: "projects/beta/Plan.md" });
@@ -28,7 +28,7 @@ describe("resolveLink", () => {
     expect(resolve("Plan", "projects/beta/Other.md")).toEqual({ path: "projects/beta/Plan.md" });
   });
 
-  it("breaks name ties by the linking note's folder, then the shortest path", () => {
+  it("breaks name ties by the linking document's folder, then the shortest path", () => {
     expect(resolve("plan", "projects/alpha/x.md")).toEqual({ path: "projects/alpha/Plan.md" });
     expect(resolve("Plan", "Home.md")).toEqual({ path: "projects/beta/Plan.md" });
     expect(resolve("alpha/Plan", "Home.md")).toEqual({ path: "projects/alpha/Plan.md" });
@@ -39,7 +39,7 @@ describe("resolveLink", () => {
     expect(resolve("Alpha plan")).toEqual({ path: "projects/alpha/Plan.md" });
   });
 
-  it("resolves attachments and same-note headings, and nothing else", () => {
+  it("resolves attachments and same-document headings, and nothing else", () => {
     expect(resolve("diagram.png", "projects/alpha/Plan.md")).toEqual({
       path: "projects/alpha/diagram.png",
     });
@@ -72,12 +72,12 @@ describe("findLinks", () => {
     }
   });
 
-  it("resolves a Markdown link only as a path relative to its note", () => {
+  it("resolves a Markdown link only as a path relative to its document", () => {
     const [ref] = findLinks("[k](../notes/Kafka.md)");
-    expect(ref && resolveRef(ref, "projects/x.md", notes)).toBe("notes/Kafka.md");
+    expect(ref && resolveRef(ref, "projects/x.md", documents)).toBe("notes/Kafka.md");
     const [byName] = findLinks("[k](Kafka.md)");
-    expect(byName && resolveRef(byName, "projects/x.md", notes)).toBeUndefined();
+    expect(byName && resolveRef(byName, "projects/x.md", documents)).toBeUndefined();
     const [wiki] = findLinks("[[Streams]]");
-    expect(wiki && resolveRef(wiki, "Home.md", notes)).toBe("notes/Kafka.md");
+    expect(wiki && resolveRef(wiki, "Home.md", documents)).toBe("notes/Kafka.md");
   });
 });
