@@ -308,6 +308,65 @@ describe("MCP server", () => {
     expect(recent.notes.map((n: { path: string }) => n.path)).toEqual(["notes/b.md", "notes/a.md"]);
   });
 
+  it("tells an agent's documents from the user's, when searching and listing", async () => {
+    const t = await connect();
+    await t.call("ragdown_remember", {
+      title: "Restore drill",
+      content: "The pg_restore drill runs on Fridays.",
+      name: "drill",
+      session_id: "s1",
+    });
+    await t.call("ragdown_remember", {
+      title: "Restore window",
+      content: "pg_restore needs a one hour window.",
+      name: "window",
+    });
+    const recall = async (args: Record<string, unknown>) =>
+      JSON.parse(
+        (await t.call("ragdown_recall", { query: "pg_restore", format: "json", ...args })).text,
+      ).hits as { path: string; created_by?: string }[];
+    // A hit is a section, so a document with two matching ones is there twice.
+    const paths = async (args: Record<string, unknown>) =>
+      [...new Set((await recall(args)).map((hit) => hit.path))].sort();
+
+    expect(await paths({})).toEqual(["notes/drill.md", "notes/window.md", "ops/backups.md"]);
+    expect(await paths({ written_by: "agent" })).toEqual(["notes/drill.md", "notes/window.md"]);
+    expect(await paths({ written_by: "user" })).toEqual(["ops/backups.md"]);
+    // A document with no created_by reads exactly as it did before there was one.
+    const [mine] = await recall({ written_by: "user" });
+    expect(mine).not.toHaveProperty("created_by");
+    expect((await recall({ written_by: "agent" }))[0]?.created_by).toBe("ragdown_remember");
+
+    const text = (await t.call("ragdown_recall", { query: "pg_restore drill Fridays", top_k: 1 }))
+      .text;
+    expect(text).toMatch(/notes\/drill\.md:.*, written by an agent with ragdown_remember\)/);
+    expect(
+      (await t.call("ragdown_recall", { query: "pg_restore", written_by: "user" })).text,
+    ).not.toContain("written by");
+    const context = await t.call("ragdown_context", {
+      prompt: "when is the pg_restore drill run?",
+    });
+    expect(context.text).toContain("written by an agent with ragdown_remember");
+
+    const list = async (args: Record<string, unknown>) =>
+      JSON.parse((await t.call("ragdown_list", args)).text).notes as Record<string, unknown>[];
+    expect((await list({ written_by: "agent" })).map((doc) => doc.path)).toEqual([
+      "notes/drill.md",
+      "notes/window.md",
+    ]);
+    expect(await list({ written_by: "user" })).toEqual([
+      { path: "ops/backups.md", title: "Backups", modified: expect.any(String) },
+    ]);
+    expect(await list({ session_id: "s1" })).toEqual([
+      expect.objectContaining({
+        path: "notes/drill.md",
+        created_by: "ragdown_remember",
+        session: "s1",
+      }),
+    ]);
+    expect(await list({ session_id: "nobody" })).toEqual([]);
+  });
+
   it("lists the notes that link to a note, by wikilink, alias and relative link", async () => {
     const t = await connect();
     await t.write("ops/restore.md", "---\naliases: [DR]\n---\n# Restore\n");

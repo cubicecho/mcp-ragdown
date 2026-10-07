@@ -17,7 +17,7 @@ const META_FILE_MODE = 0o600;
  * rebuilt rather than queried with columns it does not have. Separate from `CHUNKER_VERSION`: the
  * chunks may be unchanged and still be stored differently.
  */
-const INDEX_VERSION = 3;
+const INDEX_VERSION = 4;
 
 /** What the index remembers about a file, to decide on the next sync whether it changed. */
 export interface FileState {
@@ -38,7 +38,14 @@ export interface DocumentInfo {
   aliases: string[];
   /** Root-relative paths this document's frontmatter says it replaces. */
   supersedes: string[];
+  /** The frontmatter's `created_by`: the tool that wrote it. Empty for a document the user wrote. */
+  createdBy: string;
+  /** The frontmatter's `session`: the conversation it was written in. Empty when not recorded. */
+  session: string;
 }
+
+/** Who a document says wrote it: an `agent` when its frontmatter has `created_by`, else the `user`. */
+export type WrittenBy = "agent" | "user";
 
 /** A document read, chunked and embedded, ready to replace what the index holds for its path. */
 export interface FileUpdate {
@@ -54,6 +61,9 @@ export interface FileUpdate {
   tags?: string[];
   /** Frontmatter aliases: other names the document answers to in a wikilink; none when omitted. */
   aliases?: string[];
+  /** Frontmatter `created_by` and `session` (`readDocumentMeta`); empty when omitted. */
+  createdBy?: string;
+  session?: string;
 }
 
 /** One chunk a search returned. */
@@ -73,6 +83,8 @@ export interface Hit {
   sources: ("dense" | "lexical")[];
   /** The document's tags. */
   tags: string[];
+  /** The document's frontmatter `created_by`; empty for a document the user wrote. */
+  createdBy: string;
 }
 
 interface Meta {
@@ -90,6 +102,7 @@ const HIT_COLUMNS = [
   "heading",
   "text",
   "tags",
+  "created_by",
   "line_start",
   "line_end",
 ] as const;
@@ -122,6 +135,9 @@ interface Row {
   tags: string;
   /** The document's aliases, newline-separated. */
   aliases: string;
+  /** The file's `created_by` and `session` frontmatter; the same on every row of a file. */
+  created_by: string;
+  session: string;
   line_start: number;
   line_end: number;
   /** Written as a number array; read back as an Arrow vector. */
@@ -239,10 +255,28 @@ export class Store {
   async documents(): Promise<DocumentInfo[]> {
     const rows: Pick<
       Row,
-      "path" | "title" | "mtime_ms" | "size" | "tags" | "aliases" | "supersedes"
+      | "path"
+      | "title"
+      | "mtime_ms"
+      | "size"
+      | "tags"
+      | "aliases"
+      | "supersedes"
+      | "created_by"
+      | "session"
     >[] = await this.table
       .query()
-      .select(["path", "title", "mtime_ms", "size", "tags", "aliases", "supersedes"])
+      .select([
+        "path",
+        "title",
+        "mtime_ms",
+        "size",
+        "tags",
+        "aliases",
+        "supersedes",
+        "created_by",
+        "session",
+      ])
       .toArray();
     const docs = new Map<string, DocumentInfo>();
     for (const row of rows) {
@@ -259,6 +293,8 @@ export class Store {
           tags: splitTags(row.tags),
           aliases: row.aliases ? row.aliases.split("\n") : [],
           supersedes: row.supersedes ? row.supersedes.split("\n") : [],
+          createdBy: row.created_by,
+          session: row.session,
         });
       }
     }
@@ -297,6 +333,8 @@ export class Store {
         supersedes: u.supersedes.join("\n"),
         tags: u.tags?.length ? ` ${u.tags.join(" ")} ` : "",
         aliases: u.aliases?.join("\n") ?? "",
+        created_by: u.createdBy ?? "",
+        session: u.session ?? "",
         line_start: chunk.lineStart,
         line_end: chunk.lineEnd,
         vector: Array.from(u.vectors[i] ?? []),
@@ -392,8 +430,15 @@ export class Store {
    * @param pathPrefix - limits both retrievers to files under this relative path.
    * @param tag - limits both to documents with this tag or one nested under it (`project` takes in
    *   `project/alpha`).
+   * @param writtenBy - limits both to documents an agent wrote, or to the ones the user did.
    */
-  async search(query: string, limit: number, pathPrefix?: string, tag?: string): Promise<Hit[]> {
+  async search(
+    query: string,
+    limit: number,
+    pathPrefix?: string,
+    tag?: string,
+    writtenBy?: WrittenBy,
+  ): Promise<Hit[]> {
     const [queryVector] = await this.embedder.embed([query], "query");
     if (!queryVector) {
       return [];
@@ -411,6 +456,7 @@ export class Store {
             `(strpos(tags, ${sqlString(` ${wantedTag} `)}) > 0 OR strpos(tags, ${sqlString(` ${wantedTag}/`)}) > 0)`,
           ]
         : []),
+      ...(writtenBy ? [`created_by ${writtenBy === "agent" ? "<>" : "="} ''`] : []),
       ...(superseded.size > 0
         ? [`path NOT IN (${[...superseded].map(sqlString).join(", ")})`]
         : []),
@@ -491,6 +537,7 @@ function toHit(row: ScoredRow, score: number, sources: Hit["sources"]): Hit {
     similarity: row.similarity,
     sources,
     tags: splitTags(row.tags),
+    createdBy: row.created_by,
   };
 }
 
@@ -541,6 +588,8 @@ function schema(dim: number): Schema {
     new Field("supersedes", new Utf8(), false),
     new Field("tags", new Utf8(), false),
     new Field("aliases", new Utf8(), false),
+    new Field("created_by", new Utf8(), false),
+    new Field("session", new Utf8(), false),
     new Field("line_start", new Int32(), false),
     new Field("line_end", new Int32(), false),
     new Field("vector", new FixedSizeList(dim, new Field("item", new Float32(), true)), false),

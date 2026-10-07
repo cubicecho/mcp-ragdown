@@ -147,6 +147,14 @@ export function readSupersedes(source: string, relPath: string): string[] {
   return out;
 }
 
+/** What a document's frontmatter and inline tags say about it, beside its text. */
+export interface DocumentMeta {
+  tags: string[];
+  aliases: string[];
+  createdBy?: string;
+  session?: string;
+}
+
 /**
  * The document's tags and aliases, as Obsidian reads them: frontmatter `tags` (a list, or a string
  * of comma- or space-separated tags, `#` optional) plus inline `#tags` in the body outside code,
@@ -155,8 +163,11 @@ export function readSupersedes(source: string, relPath: string): string[] {
  *
  * Stored beside the chunks as metadata, never added to the embedded text: that was measured and
  * did not pay for its rebuild.
+ *
+ * `createdBy` and `session` are the frontmatter's `created_by` and `session`, which the write tools
+ * record: who a document says wrote it, not proof of it. Absent when the frontmatter has neither.
  */
-export function readDocumentMeta(source: string): { tags: string[]; aliases: string[] } {
+export function readDocumentMeta(source: string): DocumentMeta {
   const lines = source.replace(/\r\n?/g, "\n").split("\n");
   const { front, bodyStart } = readFrontmatter(lines);
   const tags = new Set<string>();
@@ -194,7 +205,26 @@ export function readDocumentMeta(source: string): { tags: string[]; aliases: str
   }
 
   const aliases = [...new Set(readList(front, "aliases").filter(Boolean))];
-  return { tags: [...tags].sort(), aliases };
+  const createdBy = readScalar(front, "created_by");
+  const session = readScalar(front, "session");
+  return {
+    tags: [...tags].sort(),
+    aliases,
+    ...(createdBy ? { createdBy } : {}),
+    ...(session ? { session } : {}),
+  };
+}
+
+/** A top-level frontmatter key holding one value, unquoted; undefined when missing or empty. */
+function readScalar(front: string[], key: string): string | undefined {
+  const pattern = new RegExp(`^${key}:\\s*(.+?)\\s*$`);
+  for (const line of front) {
+    const match = pattern.exec(line);
+    if (match?.[1]) {
+      return unquote(match[1]) || undefined;
+    }
+  }
+  return undefined;
 }
 
 function readFrontmatter(lines: string[]): {

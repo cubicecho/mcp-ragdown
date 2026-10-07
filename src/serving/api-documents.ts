@@ -126,6 +126,8 @@ export async function handleDocuments(request: ApiRequest): Promise<void> {
         chunks: doc.chunks,
         tags: doc.tags,
         aliases: doc.aliases,
+        created_by: doc.createdBy,
+        session: doc.session,
         superseded_by: replaced.get(doc.path) ?? [],
       })),
     });

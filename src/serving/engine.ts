@@ -2,7 +2,13 @@ import type { Server } from "node:net";
 import { SessionMemory } from "../hook/session-memory.ts";
 import { createEmbedder, type Embedder, scoreScale } from "../indexing/embedder.ts";
 import { Indexer, isSyncReport, type SyncReport } from "../indexing/indexer.ts";
-import { type DocumentInfo, type FileState, type Hit, Store } from "../indexing/store.ts";
+import {
+  type DocumentInfo,
+  type FileState,
+  type Hit,
+  Store,
+  type WrittenBy,
+} from "../indexing/store.ts";
 import type { Config } from "../shared/config.ts";
 import { defaults } from "../shared/defaults.ts";
 import { errorMessage } from "../shared/errors.ts";
@@ -77,9 +83,16 @@ export class Ragdown {
    *
    * @param pathPrefix - limits the search to paths starting with this, relative to the docs folder.
    * @param tag - limits it to documents with this tag or one nested under it.
+   * @param writtenBy - limits it to documents an agent wrote, or to the ones the user did.
    */
-  async recall(query: string, topK: number, pathPrefix?: string, tag?: string): Promise<Hit[]> {
-    return this.store.search(query, topK, pathPrefix, tag);
+  async recall(
+    query: string,
+    topK: number,
+    pathPrefix?: string,
+    tag?: string,
+    writtenBy?: WrittenBy,
+  ): Promise<Hit[]> {
+    return this.store.search(query, topK, pathPrefix, tag, writtenBy);
   }
 
   /** The files the index knows about, with their titles, sorted by path. */

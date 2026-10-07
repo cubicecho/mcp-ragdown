@@ -157,6 +157,26 @@ describe("readDocumentMeta", () => {
     });
   });
 
+  it("reads who the frontmatter says wrote the document, and in which session", () => {
+    const source = [
+      "---",
+      "created_by: ragdown_remember",
+      'session: "min-agent:7"',
+      "---",
+      "created_by: not frontmatter",
+    ].join("\n");
+    expect(readDocumentMeta(source)).toEqual({
+      tags: [],
+      aliases: [],
+      createdBy: "ragdown_remember",
+      session: "min-agent:7",
+    });
+    expect(readDocumentMeta("---\ncreated_by:\nsession: ''\n---\nx")).toEqual({
+      tags: [],
+      aliases: [],
+    });
+  });
+
   it("finds nothing in a plain note", () => {
     expect(readDocumentMeta("# Title\n\nText.")).toEqual({ tags: [], aliases: [] });
   });

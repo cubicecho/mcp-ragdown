@@ -13,7 +13,7 @@ import { join, posix, relative, resolve } from "node:path";
 import { readSettings } from "../folders/folder-settings.ts";
 import { hookContext } from "../hook/hook-context.ts";
 import { type ContextOptions, resolveHook } from "../hook/hook-settings.ts";
-import { type Hit, supersededBy } from "../indexing/store.ts";
+import { type Hit, supersededBy, type WrittenBy } from "../indexing/store.ts";
 import type { Ragdown } from "../serving/engine.ts";
 import { contentHash } from "../shared/content-hash.ts";
 import { hasCode } from "../shared/errors.ts";
@@ -71,10 +71,23 @@ export class Scope {
    *
    * @param pathPrefix - limits the search to files under this folder, relative to the scope.
    * @param tag - limits it to documents with this tag or one nested under it.
+   * @param writtenBy - limits it to documents an agent wrote, or to the ones the user did.
    */
-  async recall(query: string, topK: number, pathPrefix?: string, tag?: string): Promise<Hit[]> {
+  async recall(
+    query: string,
+    topK: number,
+    pathPrefix?: string,
+    tag?: string,
+    writtenBy?: WrittenBy,
+  ): Promise<Hit[]> {
     const folder = [this.dir, normalizeFolder(pathPrefix)].filter(Boolean).join("/");
-    const hits = await this.rag.recall(query, topK, folder ? `${folder}/` : undefined, tag);
+    const hits = await this.rag.recall(
+      query,
+      topK,
+      folder ? `${folder}/` : undefined,
+      tag,
+      writtenBy,
+    );
     return hits.map((hit) => ({ ...hit, path: this.toScoped(hit.path) }));
   }
 
@@ -455,9 +468,18 @@ export class Scope {
    * @param pathPrefix - only documents under this folder, relative to the scope.
    * @param tag - only documents with this tag or one nested under it, as `recall` filters.
    * @param sort - `path`, or `recent` for the most recently changed first.
+   * @param writtenBy - only documents an agent wrote, or only the ones the user did.
+   * @param sessionId - only documents whose frontmatter records this session.
    */
   async listDocuments(
-    options: { pathPrefix?: string; tag?: string; sort?: "path" | "recent"; limit?: number } = {},
+    options: {
+      pathPrefix?: string;
+      tag?: string;
+      sort?: "path" | "recent";
+      limit?: number;
+      writtenBy?: WrittenBy;
+      sessionId?: string;
+    } = {},
   ) {
     const folder = [this.dir, normalizeFolder(options.pathPrefix)].filter(Boolean).join("/");
     const tag = options.tag?.trim().replace(/^#+/, "").replace(/\/+$/, "").toLowerCase();
@@ -466,7 +488,9 @@ export class Scope {
     const docs = all.filter(
       (doc) =>
         (!folder || doc.path.startsWith(`${folder}/`)) &&
-        (!tag || doc.tags.some((t) => t === tag || t.startsWith(`${tag}/`))),
+        (!tag || doc.tags.some((t) => t === tag || t.startsWith(`${tag}/`))) &&
+        (!options.writtenBy || (options.writtenBy === "agent") === (doc.createdBy !== "")) &&
+        (!options.sessionId || doc.session === options.sessionId),
     );
     if (options.sort === "recent") {
       docs.sort((a, b) => b.mtimeMs - a.mtimeMs);
@@ -479,6 +503,8 @@ export class Scope {
         ...(doc.tags.length > 0 ? { tags: doc.tags } : {}),
         ...(doc.aliases.length > 0 ? { aliases: doc.aliases } : {}),
         modified: new Date(doc.mtimeMs).toISOString(),
+        ...(doc.createdBy ? { created_by: doc.createdBy } : {}),
+        ...(doc.session ? { session: doc.session } : {}),
         ...withSupersededBy(this.replacedBy(by, doc.path)),
       })),
     };

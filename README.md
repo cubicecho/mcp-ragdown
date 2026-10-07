@@ -204,10 +204,10 @@ middle. A hook that fails or takes longer than min-agent's 3 seconds only loses 
 | Tool | What it does |
 | --- | --- |
 | `ragdown_context` | For hooks: the sections related to a `prompt` as a `<ragdown-context>` block, or empty text. Filters by similarity, skips short prompts and slash commands, and never repeats a section for the same `session_id`. Takes `top_k`, `min_score`, `min_ratio` and `max_chars` to override the folder's `hook` settings and the `RAGDOWN_HOOK_*` defaults. |
-| `ragdown_recall` | Hybrid search. Returns path, line range, heading breadcrumb, tags and similarity for each hit. Takes `top_k`, `path_prefix`, `tag`, `format: text\|json` and `max_chars`. |
+| `ragdown_recall` | Hybrid search. Returns path, line range, heading breadcrumb, tags and similarity for each hit, and says when an agent wrote the document. Takes `top_k`, `path_prefix`, `tag`, `written_by: agent\|user`, `format: text\|json` and `max_chars`. |
 | `ragdown_read_doc` | Reads a file, or a line range of one, straight from disk. Never clipped. Also takes a wikilink target (`Note#Heading`); see [Obsidian](#obsidian). Returns the whole file's `hash`, for `ragdown_edit`, and `superseded_by` when another document replaces it. |
 | `ragdown_backlinks` | The documents that link to a `path` — by wikilink, alias or relative Markdown link — with the lines the links are on. Links in code are not links. |
-| `ragdown_list` | Browses rather than searches: each document's path, title, tags, last change, and `superseded_by` if it has been replaced. Takes `path_prefix`, `tag`, `sort: path\|recent` and `limit`. |
+| `ragdown_list` | Browses rather than searches: each document's path, title, tags, last change, `created_by` and `session` if an agent wrote it, and `superseded_by` if it has been replaced. Takes `path_prefix`, `tag`, `written_by: agent\|user`, `session_id`, `sort: path\|recent` and `limit`. |
 | `ragdown_stats` | Folder, index size, embedder, role (primary or reader), whether a sync is running, and the last sync. |
 | `ragdown_remember` | Writes a new document (with frontmatter) under `RAGDOWN_NOTES_DIR` and indexes it before returning. Never overwrites a file. `supersedes` lists the documents this one replaces, which search then skips; `session_id` is recorded as provenance. |
 | `ragdown_edit` | Changes a document at a `path`, or creates one. `text` replaces the whole file, which for an existing document needs `base_hash` — the `hash` `ragdown_read_doc` gave — so an agent never overwrites a version it has not read. `append: true` adds `text` at the end instead, or with `heading` at the end of that section. A file that changed since `base_hash` is not written. |
@@ -269,7 +269,7 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 | `DELETE /api/folders/<name>?confirm=<name>` | bearer | Delete a folder and everything in it. 400 unless `confirm` repeats the name. |
 | `PATCH /api/settings` | bearer | JSON `{ embedder?, watch?, text_limit?, hook? }`: save server settings over their variables and apply them at once. `null` gives a value back to its variable. 400 for a value that is not valid or an embedder that cannot load, 409 when this process is not the one that owns the index. Answers with the new `settings`. |
 | `DELETE /api/loose?name=` | bearer | Delete one of the `loose_files`: a Markdown file directly in the docs directory. 404 for any other name. |
-| `GET /api/docs?folder=` | bearer | The indexed files, of one folder or all: `path`, `folder`, `title`, `tags`, `aliases`, `superseded_by`, `mtime_ms`, `size`, `chunks`. |
+| `GET /api/docs?folder=` | bearer | The indexed files, of one folder or all: `path`, `folder`, `title`, `tags`, `aliases`, `created_by`, `session`, `superseded_by`, `mtime_ms`, `size`, `chunks`. |
 | `GET /api/doc?path=` | bearer | One indexed file's text, read from disk, with its tags, aliases and `hash` (SHA-256 of the bytes on disk). 404 for a file the index does not hold. |
 | `POST /api/doc` | bearer | Upload a file: JSON `{ path, text, overwrite? }`, body up to 4 MiB. Only `.md`, `.markdown` or `.mdx` inside an existing folder, somewhere the indexer reads (no `..`, dot-folders, `node_modules` or symlinked folders); subfolders are created. 201 when created, 200 when overwritten, 409 for an existing file without `overwrite: true`. An edit sends `base_hash`, the `hash` it was opened at, in place of `overwrite`: 409 with `code: "changed"` if the file has changed or gone since. Saved over a CRLF file, the text keeps CRLF. The answer carries the new `hash`. |
 | `DELETE /api/doc?path=` | bearer | Delete a Markdown file. 404 when it is not there. |
@@ -398,6 +398,13 @@ the docs folder is ignored: frontmatter is data from a file, not a path the serv
 names no document, so an agent that gets it wrong hears about it instead of believing it replaced
 something. It also records `created_by: ragdown_remember` and the `session_id`, so a later reader —
 person or model — can tell an agent's document from one the user wrote.
+
+**Who wrote a document.** `created_by` and `session` are indexed with the document. Every search hit
+from a document with `created_by` says an agent wrote it, in `ragdown_recall` and in the block
+`ragdown_context` injects, so text an agent saved earlier does not come back looking like the user's
+own. `written_by: agent` or `user` limits `ragdown_recall` and `ragdown_list` to one or the other,
+and `ragdown_list`'s `session_id` finds what one conversation wrote. Both fields are frontmatter:
+what a file says about itself, which anyone who can edit the file can change, not proof.
 
 **The index is derived data.** `meta.json` records the embedder and chunker version, and a
 mismatch drops and rebuilds the index instead of migrating it. Syncs are diffs:

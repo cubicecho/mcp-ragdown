@@ -13,11 +13,15 @@ export function formatHits(hits: Hit[], maxChars: number): string {
   return hits.map((hit, i) => `[${i + 1}] ${formatHit(hit, maxChars)}`).join("\n\n");
 }
 
-/** One hit as text: where it is, its tags and similarity, then its text cut to `maxChars`. */
+/**
+ * One hit as text: where it is, its tags and similarity, then its text cut to `maxChars`. A document
+ * an agent wrote says so, since a reader should weigh it differently from one the user wrote.
+ */
 export function formatHit(hit: Hit, maxChars: number): string {
   const where = breadcrumb(hit.title, hit.heading);
   const tags = hit.tags.length > 0 ? ` [${hit.tags.map((tag) => `#${tag}`).join(" ")}]` : "";
-  const header = `${hit.path}:${hit.lineStart}-${hit.lineEnd} — ${where}${tags} (similarity ${hit.similarity.toFixed(2)})`;
+  const author = hit.createdBy ? `, written by an agent with ${hit.createdBy}` : "";
+  const header = `${hit.path}:${hit.lineStart}-${hit.lineEnd} — ${where}${tags} (similarity ${hit.similarity.toFixed(2)}${author})`;
   return `${header}\n${clip(hit, maxChars)}`;
 }
 
@@ -33,6 +37,7 @@ export function hitJson(hit: Hit) {
     score: Number(hit.score.toFixed(5)),
     sources: hit.sources,
     tags: hit.tags,
+    ...(hit.createdBy ? { created_by: hit.createdBy } : {}),
     text: hit.text,
   };
 }

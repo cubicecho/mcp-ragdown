@@ -7,6 +7,17 @@ import { formatHits, hitJson } from "../indexing/format.ts";
 import { defaults } from "../shared/defaults.ts";
 import { errorMessage } from "../shared/errors.ts";
 
+/**
+ * The `written_by` filter of the search and list tools. A document is an agent's when its
+ * frontmatter has `created_by`, which the write tools record; that is a claim in a file, not proof.
+ */
+const writtenBy = z
+  .enum(["agent", "user"])
+  .optional()
+  .describe(
+    "Only documents an agent wrote ('agent': frontmatter has created_by) or only the user's own ('user')",
+  );
+
 /** The name the MCP server and `/api/status` give for themselves. */
 export const SERVER_NAME = "ragdown";
 /** The package's own version: semantic-release bumps `package.json`, which ships beside `src`. */
@@ -49,7 +60,7 @@ export function createMcpServer(
     {
       title: "Search documents",
       description:
-        "Hybrid (semantic + keyword) search over the user's Markdown documents. Returns the most relevant sections with file path, line range, heading breadcrumb and cosine similarity (above ~0.8 is usually on topic). Use it before answering anything the documents may cover; follow up with ragdown_read_doc for the surrounding text.",
+        "Hybrid (semantic + keyword) search over the user's Markdown documents. Returns the most relevant sections with file path, line range, heading breadcrumb and cosine similarity (above ~0.8 is usually on topic). A section of a document an agent wrote says so. Use it before answering anything the documents may cover; follow up with ragdown_read_doc for the surrounding text.",
       inputSchema: {
         query: z.string().min(1).describe("What to look for, as a question or keywords"),
         top_k: z.number().int().min(1).max(defaults.maxTopK).default(8),
@@ -65,6 +76,7 @@ export function createMcpServer(
           .describe(
             "Only search documents with this tag (frontmatter tags or inline #tags); 'project' also matches 'project/alpha'",
           ),
+        written_by: writtenBy,
         format: z.enum(["text", "json"]).default("text"),
         max_chars: z
           .number()
@@ -77,7 +89,13 @@ export function createMcpServer(
     },
     (args) =>
       run(ready, async (rag) => {
-        const hits = await rag.recall(args.query, args.top_k, args.path_prefix, args.tag);
+        const hits = await rag.recall(
+          args.query,
+          args.top_k,
+          args.path_prefix,
+          args.tag,
+          args.written_by,
+        );
         return args.format === "json"
           ? { hits: hits.map(hitJson) }
           : formatHits(hits, args.max_chars ?? rag.config.textLimit);
@@ -178,7 +196,7 @@ export function createMcpServer(
     {
       title: "List documents",
       description:
-        "Browse the documents rather than search them: every document's path, title, tags and last change, optionally under a subfolder or with a tag. sort: 'recent' puts the most recently changed first.",
+        "Browse the documents rather than search them: every document's path, title, tags and last change, and for one an agent wrote, created_by and its session. Optionally under a subfolder, with a tag, by who wrote it, or from one session. sort: 'recent' puts the most recently changed first.",
       inputSchema: {
         path_prefix: z
           .string()
@@ -190,6 +208,11 @@ export function createMcpServer(
           .string()
           .optional()
           .describe("Only documents with this tag; 'project' also matches 'project/alpha'"),
+        written_by: writtenBy,
+        session_id: z
+          .string()
+          .optional()
+          .describe("Only documents written in this conversation, as ragdown_remember recorded it"),
         sort: z.enum(["path", "recent"]).default("path"),
         limit: z.number().int().min(1).max(1000).default(100),
       },
@@ -200,6 +223,8 @@ export function createMcpServer(
         rag.listDocuments({
           pathPrefix: args.path_prefix,
           tag: args.tag,
+          writtenBy: args.written_by,
+          sessionId: args.session_id || undefined,
           sort: args.sort,
           limit: args.limit,
         }),
