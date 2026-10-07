@@ -174,6 +174,20 @@ html[data-palette="monokai"] {
   --sidebar-ring: oklch(0.7012 0.1812 298.062);
 }
 
+/*
+ * Scrollbars in the palette: a thin thumb of the foreground at 30%, on no track. In
+ * `@layer base` because an app's utilities are layered and an unlayered rule would beat every
+ * one of them — `[scrollbar-width:none]` included, whatever its specificity. The colour is on
+ * `*` too, though it inherits: read at each element, `--foreground` is the one in force there,
+ * so a `.dark` on a subtree turns its scrollbars with its text.
+ */
+@layer base {
+  * {
+    scrollbar-color: color-mix(in oklab, var(--foreground) 30%, transparent) transparent;
+    scrollbar-width: thin;
+  }
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

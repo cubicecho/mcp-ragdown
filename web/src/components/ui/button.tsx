@@ -2,23 +2,36 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
 import * as React from "react";
 import { IconClassContext } from "@/components/ui/icons-base";
-import { cn } from "@/lib/utils";
+import { Spinner } from "@/components/ui/spinner";
+import { cn, type SlotNode } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex flex-row items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex flex-row items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        default:
+          "bg-neutral text-neutral-foreground hover:bg-neutral/90 focus-visible:bg-neutral/90",
+        destructive:
+          "bg-negative text-negative-foreground hover:bg-negative/90 focus-visible:bg-negative/90",
         /** A destructive action that is not the emphasis of its row. */
         "destructive-outline":
-          "border border-destructive/40 bg-transparent text-destructive hover:bg-destructive/10",
+          "border border-negative/40 bg-transparent text-negative hover:bg-negative/10 focus-visible:bg-negative/10",
+        /** The action that keeps the work: save, confirm, create. */
+        positive:
+          "bg-positive text-positive-foreground hover:bg-positive/90 focus-visible:bg-positive/90",
+        "positive-outline":
+          "border border-positive/40 bg-transparent text-positive hover:bg-positive/10 focus-visible:bg-positive/10",
+        /** The action that adds something: add, new, create. */
+        info: "bg-info text-info-foreground hover:bg-info/90 focus-visible:bg-info/90",
+        "info-outline":
+          "border border-info/40 bg-transparent text-info hover:bg-info/10 focus-visible:bg-info/10",
         outline:
-          "border border-input bg-background text-foreground hover:bg-accent hover:text-accent-foreground",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "text-muted-foreground hover:bg-accent hover:text-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+          "border border-foreground/15 bg-background text-foreground hover:bg-hover focus-visible:bg-hover",
+        secondary: "bg-foreground/10 text-foreground hover:bg-hover focus-visible:bg-hover",
+        ghost:
+          "text-foreground/60 hover:bg-hover hover:text-foreground focus-visible:bg-hover focus-visible:text-foreground",
+        link: "text-info underline-offset-4 hover:underline focus-visible:underline",
       },
       size: {
         default: "h-10 px-4 py-2",
@@ -62,35 +75,62 @@ const buttonTextVariants = cva("font-medium", {
       "icon-lg": "text-sm",
     },
     variant: {
-      default: "text-primary-foreground",
-      destructive: "text-destructive-foreground",
-      "destructive-outline": "text-destructive",
+      default: "text-neutral-foreground",
+      destructive: "text-negative-foreground",
+      "destructive-outline": "text-negative",
+      positive: "text-positive-foreground",
+      "positive-outline": "text-positive",
+      info: "text-info-foreground",
+      "info-outline": "text-info",
       outline: "text-foreground",
-      secondary: "text-secondary-foreground",
-      ghost: "text-muted-foreground",
-      link: "text-primary underline",
+      secondary: "text-foreground",
+      ghost: "text-foreground/60",
+      link: "text-info underline",
     },
   },
   defaultVariants: { variant: "default", size: "default" },
 });
 
-export type ButtonProps = Omit<React.ComponentPropsWithoutRef<"button">, "children" | "className"> &
+export type ButtonProps = Omit<
+  React.ComponentPropsWithoutRef<"button">,
+  // `content` is also an HTML attribute (RDFa's), a string, which the compiled half would
+  // otherwise intersect with the label's type.
+  "children" | "className" | "content"
+> &
   VariantProps<typeof buttonVariants> & {
     // Re-declared rather than inherited: nativewind types it as
     // `className?: string`, which under `exactOptionalPropertyTypes` rejects the
     // conditional `cond ? 'x' : undefined` that call sites pass.
     className?: string | undefined;
     /**
-     * Render the single child with the button's look and behaviour instead of a
-     * `Pressable` around it.
-     *
-     * radix's `Slot` on both platforms, for the reason `ui/form.tsx` gives: it only
-     * clones its child with merged props, so there is no DOM in it and it works under
-     * React Native unchanged. Upstream shadcn components that wrap this Button — the
-     * `alert-dialog` action and cancel buttons — are written against it.
+     * The label. A string is drawn in the variant's ink; anything else is rendered as it is —
+     * a select's trigger passes the chosen value's own `<Text>`.
      */
-    asChild?: boolean | undefined;
-    children?: React.ReactNode;
+    content?: React.ReactNode;
+    /**
+     * Before the label, or alone in an `icon*` size — where the button needs an `aria-label`,
+     * which `ActionButton` makes a required prop.
+     */
+    iconSlot?: SlotNode;
+    /** The far end, after the label: a trigger's chevron, a count. */
+    trailingSlot?: SlotNode;
+    /**
+     * The link this button is, as an element with no children: `<a href="/docs" />`, a router's
+     * `<Link to="/docs" />`. It gets the button's look and press, and the icon and label are put
+     * inside it.
+     *
+     * On the web the element is drawn *as* the button — radix's `Slot`, which only clones it with
+     * the props merged in. On device a link is expo-router's, which takes the button the other
+     * way round: it is given `asChild` and wraps the `Pressable`.
+     */
+    linkSlot?: React.ReactElement | undefined;
+    /**
+     * Pressed, and the work is still running: disabled, `aria-busy`, and a spinner where the
+     * icon is — or before the label when there is none.
+     */
+    loading?: boolean | undefined;
+    /** The label while `loading`: "Saving…". Without one the label stays as it was. */
+    loadingLabel?: string | undefined;
   };
 
 /**
@@ -114,7 +154,9 @@ function pressThenClick<Press extends ((event: never) => void) | null | undefine
   onPress: Press,
   onClick: MergedClick["onClick"],
 ): Press {
-  if (!onClick) return onPress;
+  if (!onClick) {
+    return onPress;
+  }
   const both = (event: never) => {
     onPress?.(event);
     onClick(event);
@@ -123,7 +165,25 @@ function pressThenClick<Press extends ((event: never) => void) | null | undefine
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, disabled, asChild, children, onClick: onPress, ...props }, ref) => {
+  (
+    {
+      className,
+      variant,
+      size,
+      disabled: isDisabled,
+      loading = false,
+      loadingLabel,
+      iconSlot,
+      content,
+      trailingSlot,
+      linkSlot,
+      onClick: onPress,
+      ...props
+    },
+    ref,
+  ) => {
+    // A button that is still working cannot be pressed again.
+    const disabled = isDisabled || loading;
     const styling = cn(
       buttonVariants({ variant, size, className }),
       // `disabled:` has no pseudo-class to hang off a Pressable on either
@@ -136,56 +196,66 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     // inheritance and this is where the colour comes from.
     const labelClass = buttonTextVariants({ variant, size });
 
-    // Two returns rather than one variable element: `Slot.Root` is typed for the DOM
-    // and `Pressable` for a `View`, and a union of the two types nothing usefully —
-    // every prop below would have to satisfy both. Written out, each branch is checked
-    // against the element it actually renders.
-    if (asChild) {
-      return (
-        // The provider goes *outside* the `Slot`, and the caller's element is the Slot's
-        // one child. Inside, the provider was the child: `Slot` merged the classes and
-        // the press onto it, it dropped them, and the caller's `<a>` or radix `Action`
-        // rendered unstyled (#156). No string wrapping here either — an `asChild` child
-        // is an element by definition, and wrapping it would hand `Slot` the wrong one.
-        <IconClassContext.Provider value={labelClass}>
-          {/* `Slot.Root` is declared over `HTMLAttributes<HTMLElement>` because radix ships
-              for the DOM, but it renders nothing itself — it clones its child with these
-              props merged in. The element that receives them is the caller's, so the DOM
-              typing describes neither side, and the cast is the honest way to say so. */}
-          <Slot.Root
-            className={styling}
-            {...({
-              ...props,
-              onClick: onPress,
-              disabled,
-            } as unknown as React.HTMLAttributes<HTMLElement>)}
-            ref={ref as unknown as React.Ref<HTMLElement>}
-          >
-            {children}
-          </Slot.Root>
-        </IconClassContext.Provider>
+    const label = loading && loadingLabel !== undefined ? loadingLabel : content;
+    const leading = loading ? (
+      // Hidden: `aria-busy` is what says the button is working, and a spinner with a name of
+      // its own would be read into the button's — "Loading Save".
+      <div aria-hidden className="cube-rn-view">
+        <Spinner />
+      </div>
+    ) : (
+      iconSlot
+    );
+    const labelled =
+      typeof label === "string" || typeof label === "number" ? (
+        <span className={cn("cube-rn-text", labelClass)}>{label}</span>
+      ) : (
+        label
       );
-    }
+    const busy = loading ? { "aria-busy": true } : {};
 
-    return (
+    const button = (
       <button
         type="button"
         ref={ref as React.Ref<HTMLButtonElement>}
         disabled={disabled}
         className={cn("cube-rn-view cube-rn-pressable", styling)}
+        {...(busy as React.ComponentPropsWithoutRef<"button">)}
         {...(props as React.ComponentPropsWithoutRef<"button">)}
         onClick={pressThenClick(onPress, (props as MergedClick).onClick)}
       >
         <IconClassContext.Provider value={labelClass}>
-          {React.Children.map(children, (child) =>
-            typeof child === "string" || typeof child === "number" ? (
-              <span className={cn("cube-rn-text", labelClass)}>{child}</span>
-            ) : (
-              child
-            ),
-          )}
+          {leading}
+          {labelled}
+          {trailingSlot}
         </IconClassContext.Provider>
       </button>
+    );
+    if (!linkSlot) {
+      return button;
+    }
+    return (
+      // The provider goes *outside* the `Slot`, and the caller's element is the Slot's
+      // one child. Inside, the provider was the child: `Slot` merged the classes and
+      // the press onto it, it dropped them, and the caller's `<a>` rendered unstyled (#156).
+      <IconClassContext.Provider value={labelClass}>
+        {/* `Slot.Root` is declared over `HTMLAttributes<HTMLElement>` because radix ships
+            for the DOM, but it renders nothing itself — it clones its child with these
+            props merged in. The element that receives them is the caller's, so the DOM
+            typing describes neither side, and the cast is the honest way to say so. */}
+        <Slot.Root
+          className={styling}
+          {...({
+            ...props,
+            ...busy,
+            onClick: onPress,
+            disabled,
+          } as unknown as React.HTMLAttributes<HTMLElement>)}
+          ref={ref as unknown as React.Ref<HTMLElement>}
+        >
+          {React.cloneElement(linkSlot, undefined, leading, labelled, trailingSlot)}
+        </Slot.Root>
+      </IconClassContext.Provider>
     );
   },
 );

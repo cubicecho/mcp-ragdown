@@ -1,10 +1,9 @@
-import type { ReactNode } from "react";
 import { CardLayout, type CardLayoutProps } from "@/components/card-layout";
-import { cn } from "@/lib/utils";
+import { cn, type SlotNode } from "@/lib/utils";
 
 export type CenteredLayoutProps = Omit<CardLayoutProps, "className"> & {
   /** The body of the card: the form, the message. */
-  content?: ReactNode | undefined;
+  contentSlot?: SlotNode | undefined;
   /**
    * The root — the full-height box the card is centred in. A background, or a different padding.
    * On device it styles the scroll view's content container, which is the box that fills the
@@ -27,9 +26,9 @@ const CARD = "w-full max-w-sm";
 /**
  * A single card, centred both ways on a page of its own.
  *
- * Takes every slot `CardLayout` takes — `title`, `description`, `icon`, `action`, `content`,
- * `footer`, `footerActions` and the rest — and hands them to it unchanged. `className` is the page
- * around the card; `cardClassName` is the card.
+ * Takes every slot `CardLayout` takes — `title`, `description`, `iconSlot`, `actionSlot`,
+ * `contentSlot`, `footerSlot`, `footerActionsSlot` and the rest — and hands them to it unchanged.
+ * `className` is the page around the card; `cardClassName` is the card.
  */
 export function CenteredLayout({ className, cardClassName, ...card }: CenteredLayoutProps) {
   const body = <CardLayout {...card} className={cn(CARD, cardClassName)} />;

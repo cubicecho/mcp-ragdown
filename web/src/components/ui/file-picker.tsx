@@ -56,7 +56,9 @@ async function walk(entries: FileSystemEntry[]): Promise<Found[]> {
         const batch = await new Promise<FileSystemEntry[]>((resolve, reject) =>
           reader.readEntries(resolve, reject),
         );
-        if (batch.length === 0) break;
+        if (batch.length === 0) {
+          break;
+        }
         found.push(...(await walk(batch)));
       }
     }
@@ -79,10 +81,16 @@ function useFilePick({ onPick, onPickMany, accept, multiple, read, directory }: 
     const allowed = found.filter(({ file }) => acceptsFile(accept, file));
     // A folder is every file in it; `multiple` is about picking files.
     const files = multiple || directory ? allowed : allowed.slice(0, 1);
-    if (files.length === 0) return;
+    if (files.length === 0) {
+      return;
+    }
     const picked = await Promise.all(
       files.map(async ({ file, path }): Promise<PickedFile> => {
-        const base = { name: file.name, path, type: file.type };
+        const base = { name: file.name, path, type: file.type, size: file.size };
+        // The file itself, unread: the browser streams it from disk when it is sent.
+        if (read === "none") {
+          return { ...base, text: "", blob: file };
+        }
         // One or the other: decoding a `.zip` to hand back a string nobody
         // reads would cost its whole size again.
         return read === "bytes"
@@ -90,8 +98,13 @@ function useFilePick({ onPick, onPickMany, accept, multiple, read, directory }: 
           : { ...base, text: await file.text() };
       }),
     );
-    if (onPickMany) onPickMany(picked);
-    else for (const file of picked) onPick?.(file.text, file.name);
+    if (onPickMany) {
+      onPickMany(picked);
+    } else {
+      for (const file of picked) {
+        onPick?.(file.text, file.name);
+      }
+    }
   }
 
   const trigger = {
@@ -146,13 +159,13 @@ export function FilePicker({ label, hint, ...options }: FilePickerProps) {
         className={cn(
           "flex w-full flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-12 text-center transition-colors",
           dragging
-            ? "border-primary bg-primary/5"
-            : "border-muted-foreground/25 hover:border-muted-foreground/50",
+            ? "border-active bg-active/40"
+            : "border-foreground/15 hover:border-foreground/60",
         )}
       >
-        <Upload className="h-8 w-8 text-muted-foreground" />
+        <Upload className="h-8 w-8 text-foreground/60" />
         <span className="cube-rn-text font-medium text-sm">{label}</span>
-        {hint ? <span className="cube-rn-text text-xs text-muted-foreground">{hint}</span> : null}
+        {hint ? <span className="cube-rn-text text-xs text-foreground/60">{hint}</span> : null}
       </button>
       {input}
     </>
@@ -161,7 +174,7 @@ export function FilePicker({ label, hint, ...options }: FilePickerProps) {
 
 export function FilePickerButton({
   label,
-  icon = <Upload />,
+  iconSlot = <Upload />,
   variant,
   size,
   className,
@@ -170,11 +183,11 @@ export function FilePickerButton({
   const { trigger, input, dragging } = useFilePick(options);
   // At an icon size the square has no room for words, so `label` is the name alone.
   const iconOnly = typeof size === "string" && size.startsWith("icon");
-  let content: ReactNode = icon;
+  let content: ReactNode = iconSlot;
   if (!iconOnly) {
     content = (
       <>
-        {icon}
+        {iconSlot}
         <span className={cn("cube-rn-text", buttonTextVariants({ variant, size }))}>{label}</span>
       </>
     );
@@ -189,7 +202,7 @@ export function FilePickerButton({
         aria-label={label}
         className={cn(
           buttonVariants({ variant, size }),
-          dragging && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+          dragging && "ring-2 ring-active ring-offset-2 ring-offset-background",
           className,
         )}
       >

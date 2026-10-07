@@ -77,9 +77,9 @@ export type SelectSeparatorProps = {
 };
 
 export const SELECT_TRIGGER_CLASS =
-  "border-input bg-background h-10 w-full flex-row items-center justify-between rounded-md border px-3 py-2";
+  "border-foreground/15 bg-background h-10 w-full flex-row items-center justify-between rounded-md border px-3 py-2";
 export const SELECT_TRIGGER_TEXT_CLASS = "text-foreground text-sm";
 export const SELECT_ITEM_CLASS = "w-full flex-row items-center rounded-sm py-1.5 pl-8 pr-2";
-export const SELECT_ITEM_TEXT_CLASS = "text-sm text-popover-foreground";
-export const SELECT_LABEL_CLASS = "px-2 py-1.5 text-muted-foreground text-xs";
-export const SELECT_SEPARATOR_CLASS = "-mx-1 my-1 h-px bg-border";
+export const SELECT_ITEM_TEXT_CLASS = "text-sm text-foreground";
+export const SELECT_LABEL_CLASS = "px-2 py-1.5 text-foreground/60 text-xs";
+export const SELECT_SEPARATOR_CLASS = "-mx-1 my-1 h-px bg-foreground/10";

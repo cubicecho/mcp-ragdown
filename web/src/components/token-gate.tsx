@@ -35,14 +35,14 @@ export function TokenGate({ children }: { children: ReactNode }) {
     >
       <CenteredLayout
         className="min-h-full"
-        icon={<KeyRound aria-hidden />}
+        iconSlot={<KeyRound aria-hidden />}
         title="Token required"
         description={
           <>
             This server was started with <Code>RAGDOWN_TOKEN</Code>. Enter it to read the index.
           </>
         }
-        content={
+        contentSlot={
           <PasswordField
             form={form}
             name="token"
@@ -57,13 +57,11 @@ export function TokenGate({ children }: { children: ReactNode }) {
             }}
           />
         }
-        footerActions={
+        footerActionsSlot={
           <form.AppForm>
             <form.Subscribe selector={(state) => !state.values.token.trim()}>
               {(empty) => (
-                <form.SubmitButton pendingLabel="Unlocking…" disabled={empty}>
-                  Unlock
-                </form.SubmitButton>
+                <form.SubmitButton pendingLabel="Unlocking…" disabled={empty} content="Unlock" />
               )}
             </form.Subscribe>
           </form.AppForm>

@@ -41,10 +41,10 @@ export function Badge({
       data-slot="badge"
       data-variant={variant}
       className={cn(
-        "inline-flex w-fit overflow-hidden whitespace-nowrap transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [&>svg]:pointer-events-none [&>svg]:size-3",
+        "inline-flex w-fit overflow-hidden whitespace-nowrap transition-colors focus-visible:outline-none [&>svg]:pointer-events-none [&>svg]:size-3",
         badgeContainerVariants({ variant, shape }),
         shape === "pill" && (backgroundColor ? badgeTextFallback : badgeTextVariants({ variant })),
-        variant === "link" && "[a&]:hover:underline",
+        variant === "link" && "[a&]:hover:underline [a&]:focus-visible:underline",
         className,
       )}
       style={{
@@ -73,14 +73,16 @@ export function Badge({
             <button
               type="button"
               aria-label={removeLabel ?? badgeRemoveLabel(children, label)}
-              className="-my-1 -mr-1.5 -ml-1 inline-flex cursor-pointer items-center justify-center rounded-full p-1 text-inherit outline-none hover:opacity-75 focus-visible:ring-2 focus-visible:ring-current focus-visible:ring-inset"
+              className="-my-1 -mr-1.5 -ml-1 inline-flex cursor-pointer items-center justify-center rounded-full p-1 text-inherit outline-none hover:opacity-75 focus-visible:opacity-75"
               onClick={(event) => {
                 event.stopPropagation();
                 onRemove();
               }}
               // The keys that press it, stopped too, so a badge's own `onKeyDown` does not act on them.
               onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+                if (event.key === "Enter" || event.key === " ") {
+                  event.stopPropagation();
+                }
               }}
             >
               <X className={badgeIconClass} aria-hidden />

@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 type ThemePickerProps = {
   /**
    * `card` (the default): three tiles, icon over caption, for a settings page. `compact`: one
-   * full-width row of icon-only segments, the caption as the name and (on the web) the tooltip.
+   * row of icon-only segments, the caption as the name and (on the web) the tooltip.
    */
   variant?: "card" | "compact" | undefined;
   /** The checked choice, for a controlled picker. Left out, the picker is bound to the hook. */
@@ -66,7 +66,9 @@ function ThemeOptions({
       variant={compact ? "segmented" : "card"}
       value={value}
       onValueChange={(next) => {
-        if (isThemePreference(next)) onValueChange?.(next);
+        if (isThemePreference(next)) {
+          onValueChange?.(next);
+        }
       }}
       disabled={disabled}
       id={id}
@@ -82,13 +84,13 @@ function ThemeOptions({
             key={option}
             value={option}
             aria-label={label}
-            icon={
+            iconSlot={
               <Icon
                 aria-hidden
                 className={cn(
                   "h-4 w-4",
                   // Named, because a native icon has no `currentColor` to inherit from the segment.
-                  value === option ? "text-selection-foreground" : "text-muted-foreground",
+                  value === option ? "text-active-foreground" : "text-foreground/60",
                 )}
               />
             }
@@ -99,7 +101,7 @@ function ThemeOptions({
             value={option}
             label={label}
             hint={hint}
-            icon={<Icon className="h-5 w-5" />}
+            iconSlot={<Icon className="h-5 w-5" />}
           />
         ),
       )}
@@ -144,7 +146,9 @@ function PaletteSection({
         variant={compact ? "segmented" : "card"}
         value={palette}
         onValueChange={(next) => {
-          if (isPalettePreference(next)) onPaletteChange?.(next);
+          if (isPalettePreference(next)) {
+            onPaletteChange?.(next);
+          }
         }}
         disabled={props.disabled}
         aria-label="Palette"
@@ -179,7 +183,9 @@ function BoundPaletteSection({ onPaletteChange, ...props }: PaletteSectionProps)
 
 function ThemePicker(props: ThemePickerProps) {
   const { palettes } = props;
-  if (!palettes) return <ThemeChoice {...props} />;
+  if (!palettes) {
+    return <ThemeChoice {...props} />;
+  }
   return props.palette === undefined ? (
     <BoundPaletteSection {...props} palettes={palettes} />
   ) : (

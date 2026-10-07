@@ -36,7 +36,7 @@ function Checkbox({
       aria-label={ariaLabel ?? accessibilityLabel}
       className={cn(
         CHECKBOX_CLASS,
-        "peer flex border-input bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive data-[state=checked]:border-selection data-[state=checked]:bg-selection data-[state=checked]:text-selection-foreground data-[state=indeterminate]:border-selection data-[state=indeterminate]:bg-selection data-[state=indeterminate]:text-selection-foreground",
+        "peer flex border-foreground/15 bg-background focus-visible:outline-none data-[state=unchecked]:focus-visible:bg-hover data-[state=checked]:focus-visible:bg-active/90 data-[state=indeterminate]:focus-visible:bg-active/90 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-negative data-[state=checked]:border-active data-[state=checked]:bg-active data-[state=checked]:text-active-foreground data-[state=indeterminate]:border-active data-[state=indeterminate]:bg-active data-[state=indeterminate]:text-active-foreground",
         className,
       )}
     >

@@ -18,7 +18,7 @@ export function Backlinks({ folder, path }: { folder: string; path: string }) {
       className="mt-10 border-border border-t pt-6"
       title="Linked from"
       description={`${linking.length} ${linking.length === 1 ? "document links" : "documents link"} here`}
-      content={
+      contentSlot={
         <ItemGroup className="-mx-3 gap-1">
           {linking.map((doc) => (
             <Item key={doc.path} asChild size="sm" className="px-3 py-2">

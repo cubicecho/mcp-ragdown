@@ -15,7 +15,7 @@ export const { fieldContext, formContext, useFieldContext, useFormContext } =
   createFormHookContexts();
 
 /** Everything `FormField` draws, minus the two parts a bound field works out for itself. */
-export type FieldProps = Omit<ComponentProps<typeof FormField>, "control" | "error">;
+export type FieldProps = Omit<ComponentProps<typeof FormField>, "controlSlot" | "error">;
 
 /**
  * The keys above, as values, so a call site can spread control props and field props into one
@@ -62,8 +62,12 @@ export function splitProps<T>(props: FieldProps & T): [FieldProps, T] {
 }
 
 function messageOf(error: unknown): string | undefined {
-  if (error == null) return undefined;
-  if (typeof error === "string") return error;
+  if (error == null) {
+    return undefined;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
   if (typeof error === "object" && "message" in error) {
     return String((error as { message: unknown }).message);
   }
@@ -85,7 +89,9 @@ export function useFieldError(): string | undefined {
   const isTouched = useStore(field.store, (state) => state.meta.isTouched);
   const attempts = useStore(field.form.store, (state) => state.submissionAttempts);
 
-  if (!isTouched && attempts === 0) return undefined;
+  if (isTouched === false && attempts === 0) {
+    return undefined;
+  }
   return messageOf(errors[0]);
 }
 
@@ -105,7 +111,7 @@ function BoundInputField(props: InputFieldProps) {
     <FormField
       {...fieldProps}
       error={error}
-      control={
+      controlSlot={
         <Input
           {...input}
           value={field.state.value ?? ""}
@@ -126,7 +132,9 @@ function BoundInputField(props: InputFieldProps) {
  */
 function parseNumber(text: string): number | null {
   const trimmed = text.trim();
-  if (trimmed === "") return null;
+  if (trimmed === "") {
+    return null;
+  }
   const parsed = Number(trimmed);
   return Number.isNaN(parsed) ? null : parsed;
 }
@@ -171,7 +179,7 @@ function BoundNumberField(props: NumberFieldProps) {
     <FormField
       {...fieldProps}
       error={error}
-      control={
+      controlSlot={
         <Input
           // `inputMode` is what gets a phone keypad; `type` is what gets the spinners and the
           // browser's own numeric parsing. They are not the same knob and both are wanted.
@@ -228,7 +236,7 @@ function BoundTextareaField(props: TextareaFieldProps) {
       loadingClassName={TEXTAREA_BOX[textarea.rows ?? 0] ?? "h-16"}
       {...fieldProps}
       error={error}
-      control={
+      controlSlot={
         <Textarea
           {...textarea}
           value={field.state.value ?? ""}
@@ -244,6 +252,9 @@ type SelectFieldProps = FieldProps & {
   options: readonly SelectEntry[];
   placeholder?: string | undefined;
   triggerClassName?: string | undefined;
+  /** A search box above the list, for the long one. `OptionSelect`'s own prop, passed through. */
+  searchable?: boolean | undefined;
+  searchPlaceholder?: string | undefined;
   /**
    * Told when the menu opens, so a field whose list is fetched can ask for it then. Named here
    * as well as on the control because a form is where most fetched lists are, and a field that
@@ -264,6 +275,8 @@ function BoundSelectField({
   options,
   placeholder,
   triggerClassName,
+  searchable,
+  searchPlaceholder,
   onOpenChange,
   ...rest
 }: SelectFieldProps) {
@@ -274,7 +287,7 @@ function BoundSelectField({
     <FormField
       {...rest}
       error={error}
-      control={(wired) => (
+      controlSlot={(wired) => (
         <OptionSelect
           {...wired}
           options={options}
@@ -282,6 +295,8 @@ function BoundSelectField({
           onValueChange={field.handleChange}
           onBlur={field.handleBlur}
           placeholder={placeholder}
+          searchable={searchable}
+          searchPlaceholder={searchPlaceholder}
           onOpenChange={onOpenChange}
           className={triggerClassName}
         />
@@ -307,7 +322,7 @@ function BoundCheckboxField(props: CheckboxFieldProps) {
       orientation="horizontal"
       {...fieldProps}
       error={error}
-      control={
+      controlSlot={
         <Checkbox
           {...checkbox}
           checked={field.state.value ?? false}
@@ -336,7 +351,7 @@ function BoundSwitchField(props: SwitchFieldProps) {
       loadingClassName="h-5 w-8 rounded-full"
       {...fieldProps}
       error={error}
-      control={
+      controlSlot={
         <Switch
           {...control}
           checked={field.state.value ?? false}
@@ -348,10 +363,12 @@ function BoundSwitchField(props: SwitchFieldProps) {
   );
 }
 
-type SubmitButtonProps = Omit<ComponentProps<typeof Button>, "type" | "children"> & {
-  children?: ReactNode | undefined;
+type SubmitButtonProps = Omit<
+  ComponentProps<typeof Button>,
+  "type" | "loading" | "loadingLabel"
+> & {
   /** What it says mid-flight. The label is replaced, not appended to. */
-  pendingLabel?: ReactNode | undefined;
+  pendingLabel?: string | undefined;
 };
 
 /**
@@ -367,11 +384,17 @@ type SubmitButtonProps = Omit<ComponentProps<typeof Button>, "type" | "children"
  * without a way to say them the whole component gets dropped for a hand-written
  * `<Button type="submit">` that re-derives `canSubmit` and `isSubmitting`, which is the
  * duplication this exists to remove.
+ *
+ * Inside a `<form>`, or naming one with `form="…"`, it is a submit control and the form's own
+ * `onSubmit` runs. With no form to submit — a dialog's `footerActionsSlot`, a card's footer —
+ * a `type="submit"` button does nothing at all, so there it calls `form.handleSubmit()` itself,
+ * as the native `SubmitButton` always does.
  */
 export function SubmitButton({
-  children = "Save",
+  content = "Save",
   pendingLabel = "Saving…",
   disabled,
+  onClick,
   ...props
 }: SubmitButtonProps) {
   const form = useFormContext();
@@ -381,9 +404,21 @@ export function SubmitButton({
   // Ahead of the spread as well as OR-ed, so that neither a caller nor a future prop can put a
   // `disabled={false}` back over the store's answer.
   return (
-    <Button type="submit" {...props} disabled={disabled || !canSubmit || isSubmitting}>
-      {isSubmitting ? pendingLabel : children}
-    </Button>
+    <Button
+      type="submit"
+      {...props}
+      onClick={(event) => {
+        onClick?.(event);
+        // `button.form` is the form that owns it, by ancestry or by the `form` attribute.
+        if (!event.defaultPrevented && !event.currentTarget.form) {
+          form.handleSubmit();
+        }
+      }}
+      disabled={disabled || canSubmit === false}
+      loading={isSubmitting}
+      loadingLabel={pendingLabel}
+      content={content}
+    />
   );
 }
 

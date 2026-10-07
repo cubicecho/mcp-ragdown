@@ -35,7 +35,12 @@ function Separator({
             "aria-orientation": orientation === "vertical" ? "vertical" : undefined,
           } as const))}
       data-orientation={orientation}
-      className={cn("cube-rn-view", "shrink-0 bg-border", ORIENTATIONS[orientation], className)}
+      className={cn(
+        "cube-rn-view",
+        "shrink-0 bg-foreground/10",
+        ORIENTATIONS[orientation],
+        className,
+      )}
       {...(props as React.ComponentPropsWithoutRef<"div">)}
     />
   );

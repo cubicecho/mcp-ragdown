@@ -105,7 +105,7 @@ function FieldDescription({ className, ...props }: TextProps) {
   return (
     <span
       data-slot="field-description"
-      className={cn("cube-rn-text", "text-muted-foreground text-sm", className)}
+      className={cn("cube-rn-text", "text-foreground/60 text-sm", className)}
       {...(props as React.ComponentPropsWithoutRef<"span">)}
     />
   );
@@ -128,7 +128,7 @@ function FieldError({
   errors,
   ...props
 }: TextProps & { errors?: readonly FieldErrorEntry[] | undefined }) {
-  const classes = cn("text-destructive text-sm font-medium", className);
+  const classes = cn("text-negative text-sm font-medium", className);
   const messages = [
     ...new Set(
       (errors ?? [])
@@ -149,7 +149,9 @@ function FieldError({
       </span>
     );
   }
-  if (messages.length === 0) return null;
+  if (messages.length === 0) {
+    return null;
+  }
   return (
     <div role="alert" data-slot="field-error" id={props.id} className="cube-rn-view gap-1">
       <ul className="cube-rn-view gap-1">
@@ -206,10 +208,10 @@ function FieldSeparator({ className, children, ...props }: ViewProps) {
       className={cn("cube-rn-view", "relative h-5 w-full justify-center", className)}
       {...(props as React.ComponentPropsWithoutRef<"div">)}
     >
-      <div className="cube-rn-view absolute inset-x-0 top-1/2 h-px bg-border" />
+      <div className="cube-rn-view absolute inset-x-0 top-1/2 h-px bg-foreground/10" />
       {children ? (
         <div data-slot="field-separator-content" className="cube-rn-view items-center">
-          <span className="cube-rn-text bg-background px-2 text-muted-foreground text-sm">
+          <span className="cube-rn-text bg-background px-2 text-foreground/60 text-sm">
             {children}
           </span>
         </div>

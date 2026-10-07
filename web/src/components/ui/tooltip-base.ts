@@ -28,8 +28,8 @@ export type TooltipContentProps = {
 };
 
 export const TOOLTIP_CONTENT_CLASS =
-  "overflow-hidden rounded-md border border-border bg-popover px-3 py-1.5";
-export const TOOLTIP_TEXT_CLASS = "text-sm text-popover-foreground";
+  "overflow-hidden rounded-md border border-foreground/10 bg-secondary px-3 py-1.5";
+export const TOOLTIP_TEXT_CLASS = "text-sm text-foreground";
 
 /**
  * Where the bubble goes on native, per side. Radix measures and flips; there is no

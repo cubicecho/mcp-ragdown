@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import * as React from "react";
-import { cn } from "@/lib/utils";
+import { cn, type SlotNode } from "@/lib/utils";
 
 type Focusable = HTMLButtonElement;
 
@@ -25,14 +25,18 @@ const RadioGroupContext = React.createContext<RadioGroupContextValue | null>(nul
 
 function useRadioGroup() {
   const context = React.useContext(RadioGroupContext);
-  if (!context) throw new Error("RadioGroupItem must be used within <RadioGroup>");
+  if (!context) {
+    throw new Error("RadioGroupItem must be used within <RadioGroup>");
+  }
   return context;
 }
 
 /** DOM order, where there is a DOM. On device there is no keyboard to need it. */
 function byDocumentPosition(a: Focusable | null, b: Focusable | null) {
   const node = a as unknown as { compareDocumentPosition?: (other: unknown) => number } | null;
-  if (!node?.compareDocumentPosition || !b) return 0;
+  if (!node?.compareDocumentPosition || !b) {
+    return 0;
+  }
   // `Node.DOCUMENT_POSITION_FOLLOWING`, spelled out: `Node` is not a global on device.
   return node.compareDocumentPosition(b) & 4 ? -1 : 1;
 }
@@ -47,8 +51,10 @@ type RadioGroupProps = {
   /**
    * `row` (the default): a circle, a label and an optional description per option, stacked.
    * `card`: a bordered tile per option, icon over label, sharing a row.
-   * `segmented`: one framed, input-height row of equal segments, full width. Each segment shows
-   * its `icon`, its `label`, or both; an icon-only segment is named by its `aria-label`.
+   * `segmented`: one framed, input-height row of equal segments. Each segment shows its
+   * `iconSlot`, its `label`, or both; an icon-only segment is named by its `aria-label`. It is as
+   * wide as a column it is stacked in, and as wide as its segments in a row of other things — a
+   * header bar — where `className="flex-1"` makes it take what the row has left.
    */
   variant?: RadioGroupVariant | undefined;
   /**
@@ -98,7 +104,9 @@ function RadioGroup({
     (option: string, ref: React.RefObject<Focusable | null>, optionDisabled: boolean) => {
       refs.current.set(option, ref);
       setOptions((prev) => {
-        if (prev.get(option) === optionDisabled) return prev;
+        if (prev.get(option) === optionDisabled) {
+          return prev;
+        }
         const next = new Map(prev);
         next.set(option, optionDisabled);
         return next;
@@ -109,7 +117,9 @@ function RadioGroup({
   const unregister = React.useCallback((option: string) => {
     refs.current.delete(option);
     setOptions((prev) => {
-      if (!prev.has(option)) return prev;
+      if (prev.has(option) === false) {
+        return prev;
+      }
       const next = new Map(prev);
       next.delete(option);
       return next;
@@ -130,8 +140,12 @@ function RadioGroup({
           );
 
   const select = (next: string) => {
-    if (valueProp === undefined) setUncontrolled(next);
-    if (next !== value) onValueChange?.(next);
+    if (valueProp === undefined) {
+      setUncontrolled(next);
+    }
+    if (next !== value) {
+      onValueChange?.(next);
+    }
   };
 
   const move = (from: string, event: KeyEvent) => {
@@ -154,7 +168,9 @@ function RadioGroup({
     // scroll the page.
     event.preventDefault();
     const target = order[to];
-    if (target === undefined || target === from) return;
+    if (target === undefined || target === from) {
+      return;
+    }
     refs.current.get(target)?.current?.focus();
     select(target);
   };
@@ -166,8 +182,11 @@ function RadioGroup({
   const layout =
     variant === "segmented"
       ? cn(
-          "h-10 w-full flex-row gap-1 rounded-md border bg-background p-1",
-          ariaInvalid === true ? "border-destructive" : "border-input",
+          // `self-stretch`, not `w-full`: in a row that is sized by its content, a browser
+          // measures a percentage width as the content's and then resolves it against the total,
+          // which pushed the group's neighbours out of the row by their own width.
+          "h-10 self-stretch flex-row gap-1 rounded-md border bg-background p-1",
+          ariaInvalid === true ? "border-negative" : "border-foreground/15",
         )
       : horizontal
         ? "flex-row flex-wrap gap-3"
@@ -215,9 +234,9 @@ type RadioGroupItemProps = {
   /**
    * The picture over the label in a `card` tile, or the segment's face in `segmented`. Ignored by
    * `row`. On device an icon has no `currentColor` to inherit, so in `segmented` give it the
-   * checked segment's `text-selection-foreground` and the others' `text-muted-foreground` yourself.
+   * checked segment's `text-active-foreground` and the others' `text-foreground/60` yourself.
    */
-  icon?: ReactNode | undefined;
+  iconSlot?: SlotNode | undefined;
   /**
    * A hover hint — the web's `title` — and the accessibility hint on device. For the one extra
    * sentence a tile has no room for; say anything a user needs to choose in `description`.
@@ -241,7 +260,7 @@ function RadioGroupItem({
   value,
   label,
   description,
-  icon,
+  iconSlot,
   hint: hintProp,
   title,
   disabled: itemDisabled = false,
@@ -281,11 +300,11 @@ function RadioGroupItem({
       className={cn(
         "cube-rn-view",
         "h-4 w-4 shrink-0 items-center justify-center rounded-full border",
-        checked ? "border-selection" : "border-input",
-        group.invalid && "border-destructive",
+        checked ? "border-active" : "border-foreground/15",
+        group.invalid && "border-negative",
       )}
     >
-      {checked ? <div className="cube-rn-view h-2 w-2 rounded-full bg-selection" /> : null}
+      {checked ? <div className="cube-rn-view h-2 w-2 rounded-full bg-active" /> : null}
     </div>
   );
 
@@ -308,24 +327,25 @@ function RadioGroupItem({
       title={tooltip}
       className={cn(
         "cube-rn-view cube-rn-pressable",
-        "ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "focus-visible:outline-none",
         bare
-          ? "rounded-full"
+          ? "rounded-full focus-visible:bg-hover"
           : segmented
             ? cn(
                 "min-w-0 flex-1 flex-row items-center justify-center gap-1.5 rounded-sm px-3",
                 checked
-                  ? "bg-selection text-selection-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                  ? "bg-active text-active-foreground focus-visible:bg-active/90"
+                  : "text-foreground/60 hover:bg-hover hover:text-foreground focus-visible:bg-hover focus-visible:text-foreground",
               )
             : card
               ? cn(
                   "min-w-0 flex-1 items-center gap-1.5 rounded-lg border p-3",
                   // The border alone says checked: a tinted fill takes the muted description under 4.5:1.
-                  checked ? "border-selection bg-background" : "border-input bg-background",
-                  group.invalid && "border-destructive",
+                  checked ? "border-active bg-background" : "border-foreground/15 bg-background",
+                  "focus-visible:bg-hover",
+                  group.invalid && "border-negative",
                 )
-              : "flex-row items-start gap-3 rounded-sm",
+              : "flex-row items-start gap-3 rounded-sm focus-visible:bg-hover",
         disabled && "opacity-50",
         className,
       )}
@@ -334,14 +354,16 @@ function RadioGroupItem({
         circle
       ) : segmented ? (
         <>
-          {icon ? <div className="cube-rn-view items-center justify-center">{icon}</div> : null}
+          {iconSlot ? (
+            <div className="cube-rn-view items-center justify-center">{iconSlot}</div>
+          ) : null}
           {label !== undefined ? (
             <span
               id={labelId}
               className={cn(
                 "cube-rn-text",
                 "truncate text-sm font-medium",
-                checked ? "text-selection-foreground" : "text-muted-foreground",
+                checked ? "text-active-foreground" : "text-foreground/60",
               )}
             >
               {label}
@@ -350,7 +372,9 @@ function RadioGroupItem({
         </>
       ) : card ? (
         <>
-          {icon ? <div className="cube-rn-view items-center justify-center">{icon}</div> : null}
+          {iconSlot ? (
+            <div className="cube-rn-view items-center justify-center">{iconSlot}</div>
+          ) : null}
           <span
             id={labelId}
             className="cube-rn-text text-center text-foreground text-sm font-medium"
@@ -360,7 +384,7 @@ function RadioGroupItem({
           {description ? (
             <span
               id={descriptionId}
-              className="cube-rn-text text-center text-muted-foreground text-xs"
+              className="cube-rn-text text-center text-foreground/60 text-xs"
             >
               {description}
             </span>
@@ -374,7 +398,7 @@ function RadioGroupItem({
               {label}
             </span>
             {description ? (
-              <span id={descriptionId} className="cube-rn-text text-muted-foreground text-sm">
+              <span id={descriptionId} className="cube-rn-text text-foreground/60 text-sm">
                 {description}
               </span>
             ) : null}

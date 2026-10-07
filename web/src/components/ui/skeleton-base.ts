@@ -1,4 +1,4 @@
-export const skeletonClass = "rounded-md bg-accent";
+export const skeletonClass = "rounded-md bg-hover";
 
 /**
  * One pulse, in ms, down to half opacity and back: Tailwind's `animate-pulse`, which the web half

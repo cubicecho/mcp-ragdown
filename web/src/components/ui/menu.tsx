@@ -52,7 +52,9 @@ function Menu({
   const [uncontrolled, setUncontrolled] = useState(defaultOpen);
   const isOpen = open ?? uncontrolled;
   const setOpen = (next: boolean) => {
-    if (open === undefined) setUncontrolled(next);
+    if (open === undefined) {
+      setUncontrolled(next);
+    }
     onOpenChange?.(next);
   };
   const skipReturnRef = useRef(false);
@@ -86,7 +88,7 @@ function MenuContent({
         sideOffset={sideOffset}
         className={cn(
           MENU_CONTENT_CLASS,
-          "z-50 max-h-(--radix-dropdown-menu-content-available-height) origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+          "z-50 max-h-(--radix-dropdown-menu-content-available-height) origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border bg-secondary text-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
           className,
         )}
         {...props}
@@ -94,7 +96,9 @@ function MenuContent({
           onCloseAutoFocus?.(event);
           // Radix focuses the trigger unless the event is prevented. A `focusesElsewhere` row
           // has already focused its target by now, and the trigger would take it back.
-          if (skipReturnRef.current) event.preventDefault();
+          if (skipReturnRef.current) {
+            event.preventDefault();
+          }
           skipReturnRef.current = false;
         }}
       />
@@ -103,7 +107,7 @@ function MenuContent({
 }
 
 function MenuItem({
-  icon,
+  iconSlot,
   label,
   trailing,
   destructive = false,
@@ -112,13 +116,13 @@ function MenuItem({
   focusesElsewhere = false,
   className,
   href,
-  link,
+  linkSlot,
   ...props
 }: Wide<MenuItemProps, Omit<React.ComponentProps<typeof MenuPrimitive.Item>, "children">>) {
   const { setOpen, skipReturnRef } = useContext(MenuContext);
   const row = (
     <>
-      {icon}
+      {iconSlot}
       <span className={cn(MENU_ITEM_TEXT_CLASS, "truncate")}>{label}</span>
       {typeof trailing === "string" ? (
         <span className={cn(MENU_TRAILING_CLASS, "tracking-widest")}>{trailing}</span>
@@ -134,8 +138,8 @@ function MenuItem({
   // which every router's click does — so a menu handed the router's click would never close.
   // Cloned the other way, the router link is handed radix's click and runs it first. A disabled
   // row is no link at all, so nothing can follow it.
-  const anchor = disabled ? undefined : link ? (
-    cloneElement(link, undefined, row)
+  const anchor = disabled ? undefined : linkSlot ? (
+    cloneElement(linkSlot, undefined, row)
   ) : href !== undefined ? (
     <a href={href}>{row}</a>
   ) : undefined;
@@ -164,8 +168,8 @@ function MenuItem({
         MENU_ITEM_CLASS,
         MENU_ITEM_WEB_CLASS,
         destructive
-          ? "text-destructive focus:bg-destructive/10 focus:text-destructive"
-          : "text-popover-foreground focus:bg-accent focus:text-accent-foreground",
+          ? "text-negative focus:bg-negative/10 focus:text-negative"
+          : "text-foreground focus:bg-hover",
         className,
       )}
     >
@@ -192,13 +196,13 @@ function MenuSeparator({
  * edge. `ItemIndicator` renders only while its row is on; the slot around it stays.
  */
 function ToggleRowBody({
-  icon,
+  iconSlot,
   label,
   trailing,
-}: Pick<MenuCheckboxItemProps, "icon" | "label" | "trailing">) {
+}: Pick<MenuCheckboxItemProps, "iconSlot" | "label" | "trailing">) {
   return (
     <>
-      {icon}
+      {iconSlot}
       <span className={cn(MENU_ITEM_TEXT_CLASS, "truncate")}>{label}</span>
       {typeof trailing === "string" ? (
         <span className={cn(MENU_TRAILING_CLASS, "tracking-widest")}>{trailing}</span>
@@ -214,14 +218,10 @@ function ToggleRowBody({
   );
 }
 
-const TOGGLE_ROW_CLASS = cn(
-  MENU_ITEM_CLASS,
-  MENU_ITEM_WEB_CLASS,
-  "text-popover-foreground focus:bg-accent focus:text-accent-foreground",
-);
+const TOGGLE_ROW_CLASS = cn(MENU_ITEM_CLASS, MENU_ITEM_WEB_CLASS, "text-foreground focus:bg-hover");
 
 function MenuCheckboxItem({
-  icon,
+  iconSlot,
   label,
   trailing,
   checked,
@@ -249,7 +249,7 @@ function MenuCheckboxItem({
       }}
       className={cn(TOGGLE_ROW_CLASS, className)}
     >
-      <ToggleRowBody icon={icon} label={label} trailing={trailing} />
+      <ToggleRowBody iconSlot={iconSlot} label={label} trailing={trailing} />
     </MenuPrimitive.CheckboxItem>
   );
 }
@@ -271,7 +271,7 @@ function MenuRadioGroup({
 
 /** Choosing one closes the menu — radix's default, kept: a one-of-N choice is done once made. */
 function MenuRadioItem({
-  icon,
+  iconSlot,
   label,
   trailing,
   disabled = false,
@@ -289,7 +289,7 @@ function MenuRadioItem({
       {...props}
       className={cn(TOGGLE_ROW_CLASS, className)}
     >
-      <ToggleRowBody icon={icon} label={label} trailing={trailing} />
+      <ToggleRowBody iconSlot={iconSlot} label={label} trailing={trailing} />
     </MenuPrimitive.RadioItem>
   );
 }

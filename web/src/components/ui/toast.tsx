@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
-export type ToastTone = "error" | "success";
+export type ToastTone = "error" | "warning" | "positive" | "info";
 
 type Toast = { id: number; message: string; tone: ToastTone };
 
@@ -11,20 +11,26 @@ type ShowToast = (message: string, tone?: ToastTone) => void;
 
 const ToastContext = createContext<ShowToast | null>(null);
 
-/** Errors linger — the user has to read a reason; confirmations do not. */
+/** Errors and warnings linger — the user has to read a reason; confirmations do not. */
 const DURATION_MS: Record<ToastTone, number> = {
   error: 6000,
-  success: 3000,
+  warning: 6000,
+  positive: 3000,
+  info: 3000,
 };
 
 const TONE_CLASS: Record<ToastTone, string> = {
-  error: "bg-destructive",
-  success: "bg-primary",
+  error: "bg-negative",
+  warning: "bg-warning",
+  positive: "bg-positive",
+  info: "bg-info",
 };
 
 const TONE_TEXT_CLASS: Record<ToastTone, string> = {
-  error: "text-destructive-foreground",
-  success: "text-primary-foreground",
+  error: "text-negative-foreground",
+  warning: "text-warning-foreground",
+  positive: "text-positive-foreground",
+  info: "text-info-foreground",
 };
 
 /**
@@ -72,7 +78,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const pending = timers.current;
     return () => {
-      for (const timer of pending.values()) clearTimeout(timer);
+      for (const timer of pending.values()) {
+        clearTimeout(timer);
+      }
       pending.clear();
     };
   }, []);

@@ -50,7 +50,7 @@ function IndexStatus() {
     <div className="flex flex-col gap-0.5 text-xs">
       <p className="flex items-center gap-1.5 font-medium" role="status">
         <Badge
-          variant={data.ready && !data.syncing ? "success" : "warning"}
+          variant={data.ready && !data.syncing ? "positive" : "warning"}
           className={data.ready && !data.syncing ? undefined : "animate-pulse"}
         />
         {line}
@@ -83,9 +83,8 @@ function LockButton() {
         clearToken();
         requireAuth();
       }}
-    >
-      <Lock aria-hidden />
-    </ActionButton>
+      iconSlot={<Lock />}
+    />
   );
 }
 
@@ -96,7 +95,7 @@ function SettingsLink() {
     <SidebarLink
       to="/settings"
       label="Settings"
-      icon={<Settings />}
+      iconSlot={<Settings />}
       active={Boolean(matchRoute({ to: "/settings", fuzzy: true }))}
     />
   );
@@ -127,13 +126,17 @@ function Nav() {
       as="nav"
       label="Main"
       title="Folders"
-      action={
+      actionSlot={
         writable ? (
           <CreateFolder
-            trigger={
-              <ActionButton variant="outline" size="icon-sm" label="Create folder" side="right">
-                <Plus aria-hidden />
-              </ActionButton>
+            triggerSlot={
+              <ActionButton
+                variant="outline"
+                size="icon-sm"
+                label="Create folder"
+                side="right"
+                iconSlot={<Plus />}
+              />
             }
             onCreated={(folder) =>
               void navigate({ to: "/f/$folder", params: { folder: folder.name } })
@@ -148,16 +151,16 @@ function Nav() {
           count={list.length}
           compact
           rows={2}
-          empty={<EmptyState compact title="No folders yet." className="px-2" />}
+          emptySlot={<EmptyState compact title="No folders yet." className="px-2" />}
         />
       }
-      content={list.map((folder) => (
+      contentSlot={list.map((folder) => (
         <SidebarLink
           key={folder.name}
           to="/f/$folder"
           params={{ folder: folder.name }}
           label={folder.title}
-          icon={<Folder />}
+          iconSlot={<Folder />}
           status={statusOf(folder.mcp)}
           count={folder.files}
           title={`${folder.title}: ${formatCount(folder.files, "file")}, ${markerText(folder.mcp)}`}
@@ -184,25 +187,36 @@ function FolderSwitcher() {
   return (
     <Menu>
       <MenuTrigger asChild>
-        <Button variant="outline" size="sm" className="min-w-0 max-w-40 gap-1">
-          <Folder aria-hidden />
-          <span className="truncate">{current?.title ?? "Folders"}</span>
-          <ChevronDown aria-hidden />
-          <span className="sr-only">, switch folder</span>
-        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="min-w-0 max-w-40 gap-1"
+          iconSlot={<Folder />}
+          content={
+            <>
+              <span className="truncate">{current?.title ?? "Folders"}</span>
+              <span className="sr-only">, switch folder</span>
+            </>
+          }
+          trailingSlot={<ChevronDown />}
+        />
       </MenuTrigger>
       <MenuContent align="start" className="max-h-80">
         {list.map((folder) => (
           <MenuItem
             key={folder.name}
-            icon={markerOf(folder.mcp)}
+            iconSlot={markerOf(folder.mcp)}
             label={folder.title}
             trailing={folder.name === current?.name ? "✓" : formatCount(folder.files, "file")}
-            link={<Link to="/f/$folder" params={{ folder: folder.name }} />}
+            linkSlot={<Link to="/f/$folder" params={{ folder: folder.name }} />}
           />
         ))}
         <MenuSeparator />
-        <MenuItem icon={<Settings />} label="Manage folders" link={<Link to="/settings" />} />
+        <MenuItem
+          iconSlot={<Settings />}
+          label="Manage folders"
+          linkSlot={<Link to="/settings" />}
+        />
       </MenuContent>
     </Menu>
   );
@@ -217,27 +231,27 @@ export function AppShell() {
       divider="none"
       // Under `md` the sidebar's furniture moves to a bar, the folder list into a menu.
       sidebarHideBelow="md"
-      brand={<Brand />}
-      nav={<FolderSwitcher />}
+      brandSlot={<Brand />}
+      navSlot={<FolderSwitcher />}
       navLabel="Main"
-      action={
+      actionSlot={
         <>
           <BarLink
             to="/settings"
             label="Settings"
-            icon={<Settings />}
+            iconSlot={<Settings />}
             activeProps={{ active: true }}
           />
           <LockButton />
         </>
       }
-      sidebar={
+      sidebarSlot={
         <Sidebar
           className="w-56"
-          header={<Brand />}
-          content={<Nav />}
+          headerSlot={<Brand />}
+          contentSlot={<Nav />}
           footerClassName="gap-3 px-4 py-3"
-          footer={
+          footerSlot={
             <>
               <IndexStatus />
               <div className="-mx-2 flex items-center gap-1">
@@ -250,7 +264,7 @@ export function AppShell() {
           }
         />
       }
-      content={
+      contentSlot={
         <main className="h-full min-h-0 overflow-y-auto md:overflow-hidden">
           <Outlet />
         </main>

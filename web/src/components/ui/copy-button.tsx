@@ -32,13 +32,15 @@ async function write(text: string) {
   area.select();
   const ok = document.execCommand("copy");
   area.remove();
-  if (!ok) throw new Error("The clipboard refused the text");
+  if (!ok) {
+    throw new Error("The clipboard refused the text");
+  }
 }
 
 export function CopyButton({
   value,
   label = "Copy",
-  variant = "ghost",
+  variant = "outline",
   size = "icon-sm",
   onCopied,
   onError,
@@ -54,8 +56,7 @@ export function CopyButton({
       aria-label={copied ? "Copied" : label}
       className={className}
       onClick={() => void copy()}
-    >
-      {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-    </Button>
+      iconSlot={copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+    />
   );
 }
