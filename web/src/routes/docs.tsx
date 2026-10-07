@@ -124,6 +124,16 @@ function useDebounced<T>(value: T, ms: number): T {
 
 type Mode = "filter" | "search";
 
+/** Frontmatter the preview's header draws itself, so it is not also listed as a plain field. */
+const SHOWN_FIELDS: ReadonlySet<string> = new Set([
+  "tags",
+  "title",
+  "aliases",
+  "description",
+  "created_by",
+  "session",
+]);
+
 /** A document as the file tree lists it: its path within the folder, and the document. */
 type DocEntry = TreeEntry & { doc: DocSummary };
 
@@ -161,7 +171,7 @@ function DocList({
     const matching = (docs.data ?? []).filter((doc) => {
       if (tag && !hasTag(doc.tags, tag)) return false;
       const haystack =
-        `${doc.title} ${withinFolder(doc.path)} ${doc.aliases.join(" ")} ${doc.tags.join(" ")}`.toLowerCase();
+        `${doc.title} ${withinFolder(doc.path)} ${doc.aliases.join(" ")} ${doc.tags.join(" ")} ${doc.description}`.toLowerCase();
       return words.every((word) => haystack.includes(word));
     });
     return sort === "recent" ? matching.sort((a, b) => b.mtime_ms - a.mtime_ms) : matching;
@@ -297,10 +307,19 @@ function DocList({
                     to="/f/$folder"
                     params={{ folder }}
                     search={(prev) => ({ ...prev, doc: node.path })}
-                    title={node.entry?.doc.title}
+                    title={node.entry?.doc.description || node.entry?.doc.title}
                   />
                 )}
-                meta={(node) => (node.entry?.doc.superseded_by.length ? <Superseded /> : null)}
+                meta={(node) =>
+                  node.entry ? (
+                    <>
+                      {node.entry.doc.created_by ? (
+                        <ByAgent tool={node.entry.doc.created_by} />
+                      ) : null}
+                      {node.entry.doc.superseded_by.length > 0 ? <Superseded /> : null}
+                    </>
+                  ) : null
+                }
                 actionSlot={(node) =>
                   writable && node.type === "dir" ? (
                     <NewDocument
@@ -463,6 +482,10 @@ function HitRow({ folder, hit, active }: { folder: string; hit: SearchHit; activ
             <ItemDescription className="truncate text-xs">{hit.heading}</ItemDescription>
           ) : null}
           <ItemDescription className="line-clamp-2 text-xs">{hit.text}</ItemDescription>
+          <ItemDescription className="flex items-center gap-1.5 text-xs">
+            changed {formatAgo(hit.mtime_ms)}
+            {hit.created_by ? <ByAgent tool={hit.created_by} /> : null}
+          </ItemDescription>
         </ItemContent>
       </Link>
     </Item>
@@ -473,6 +496,19 @@ function Superseded() {
   return (
     <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
       superseded
+    </Badge>
+  );
+}
+
+/** Marks a document whose frontmatter says a tool wrote it: a claim in the file, not proof. */
+function ByAgent({ tool }: { tool: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className="shrink-0 font-normal text-muted-foreground"
+      title={`Written by an agent with ${tool}`}
+    >
+      agent
     </Badge>
   );
 }
@@ -497,12 +533,16 @@ function DocRow({ folder, doc, active }: { folder: string; doc: DocSummary; acti
         <ItemContent className="min-w-0 gap-0.5">
           <ItemTitle className="w-full">
             <span className="truncate">{doc.title}</span>
+            {doc.created_by ? <ByAgent tool={doc.created_by} /> : null}
             {doc.superseded_by.length > 0 ? <Superseded /> : null}
           </ItemTitle>
           <ItemDescription className="truncate text-xs">
             <span className="text-muted-foreground/70">{dir}</span>
             {file}
           </ItemDescription>
+          {doc.description ? (
+            <ItemDescription className="line-clamp-2 text-xs">{doc.description}</ItemDescription>
+          ) : null}
         </ItemContent>
       </Link>
     </Item>
@@ -604,14 +644,22 @@ function DocPreview({
   };
   const tags = doc.data?.tags ?? summary?.tags ?? frontmatter("tags");
   const aliases = doc.data?.aliases ?? summary?.aliases ?? frontmatter("aliases");
-  const otherFields = parsed.fields.filter(
-    ([key]) => key !== "tags" && key !== "title" && key !== "aliases",
-  );
+  // The index's reading, and the open file's own frontmatter until the index has caught up.
+  const scalar = (key: string) => parsed.fields.find(([name]) => name === key)?.[1] ?? "";
+  const description = summary?.description || scalar("description");
+  const createdBy = summary?.created_by || scalar("created_by");
+  const session = summary?.session || scalar("session");
+  const otherFields = parsed.fields.filter(([key]) => !SHOWN_FIELDS.has(key));
   const replacedBy = (doc.data?.superseded_by ?? summary?.superseded_by ?? []).map(
     (each) => docs?.find((d) => d.path === each) ?? { path: each, title: withinFolder(each) },
   );
   const hasBadges =
-    tags.length > 0 || aliases.length > 0 || otherFields.length > 0 || replacedBy.length > 0;
+    tags.length > 0 ||
+    aliases.length > 0 ||
+    otherFields.length > 0 ||
+    replacedBy.length > 0 ||
+    description !== "" ||
+    createdBy !== "";
   const title = summary?.title ?? path.split("/").pop() ?? path;
 
   if (editing && doc.data) {
@@ -690,6 +738,23 @@ function DocPreview({
                         </Link>
                       </span>
                     ))}
+                  </p>
+                ) : null}
+                {description ? (
+                  <p className="w-full text-muted-foreground text-sm">{description}</p>
+                ) : null}
+                {createdBy ? (
+                  <p className="w-full text-muted-foreground text-sm">
+                    <Badge variant="outline" className="mr-1.5 font-normal">
+                      agent
+                    </Badge>
+                    written with <span className="font-mono text-xs">{createdBy}</span>
+                    {session ? (
+                      <>
+                        {" "}
+                        in session <span className="font-mono text-xs">{session}</span>
+                      </>
+                    ) : null}
                   </p>
                 ) : null}
                 {aliases.length > 0 ? (

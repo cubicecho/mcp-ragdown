@@ -110,6 +110,12 @@ export interface DocSummary {
   /** Lowercase, without `#`: frontmatter tags and inline ones, nested ones as `a/b`. */
   tags: string[];
   aliases: string[];
+  /** The frontmatter's `description`: what the document is, in a line. Empty when it has none. */
+  description: string;
+  /** The tool the frontmatter says wrote it, so an agent did. Empty for a document of the user's. */
+  created_by: string;
+  /** The conversation the frontmatter says it was written in. Empty when not recorded. */
+  session: string;
   /** Root-relative paths of the documents whose frontmatter says they replace this one. */
   superseded_by: string[];
 }
@@ -139,6 +145,10 @@ export interface SearchHit {
   similarity: number;
   text: string;
   tags: string[];
+  /** When the hit's file last changed. */
+  mtime_ms: number;
+  /** The tool the file's frontmatter says wrote it. Empty for a document of the user's. */
+  created_by: string;
 }
 
 /** Where a wikilink points, from `GET /api/resolve`: a root-relative path, maybe an attachment. */
