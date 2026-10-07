@@ -113,9 +113,23 @@ export class Scope {
       settings: resolveHook(options, own, this.config.hook),
       textLimit: this.config.textLimit,
       seenBy: () =>
-        sessionId ? this.rag.sessions.seen(`${this.dir}\0${sessionId}`) : new Set<string>(),
+        sessionId ? this.rag.sessions.seen(this.sessionKey(sessionId)) : new Set<string>(),
       recall: (query, topK) => this.recall(query, topK),
     });
+  }
+
+  /**
+   * Forget which chunks a session was given in this scope. For a client that has just dropped them
+   * from its context — a compaction keeps the session id and loses the text — so that `context`
+   * returns them again when they are next related.
+   */
+  forgetSession(sessionId: string): void {
+    this.rag.sessions.forget(this.sessionKey(sessionId));
+  }
+
+  /** A session's key in the shared session memory: each scope remembers its own. */
+  private sessionKey(sessionId: string): string {
+    return `${this.dir}\0${sessionId}`;
   }
 
   /**

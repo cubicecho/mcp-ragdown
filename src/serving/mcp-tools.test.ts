@@ -106,6 +106,26 @@ describe("MCP server", () => {
     expect((await t.call("ragdown_context", { prompt: "ok" })).text).toBe("");
   });
 
+  it("returns a section again once the session is reset", async () => {
+    const t = await connect();
+    const args = { prompt: "how do I run pg_restore on backups?", session_id: "claude:1" };
+    const first = (await t.call("ragdown_context", args)).text;
+    expect(first).toContain("ops/backups.md");
+    expect((await t.call("ragdown_context", args)).text).toBe("");
+
+    // What a hook sends after a compaction: nothing to search for, only the session to forget.
+    expect(await t.call("ragdown_context", { ...args, prompt: "", reset: true })).toEqual({
+      isError: false,
+      text: "",
+    });
+    expect((await t.call("ragdown_context", args)).text).toBe(first);
+    // Another session's memory is left alone, and a reset with a prompt answers it.
+    await t.call("ragdown_context", { ...args, session_id: "claude:2" });
+    await t.call("ragdown_context", { prompt: "", session_id: "claude:1", reset: true });
+    expect((await t.call("ragdown_context", { ...args, session_id: "claude:2" })).text).toBe("");
+    expect((await t.call("ragdown_context", { ...args, reset: true })).text).toBe(first);
+  });
+
   it("reads files by line range and refuses paths outside the folder", async () => {
     const t = await connect();
     const doc = JSON.parse(

@@ -107,13 +107,19 @@ export function createMcpServer(
     {
       title: "Context for a prompt",
       description:
-        "For hooks that run before a turn: the documents related to a user prompt, as a ready-to-inject <ragdown-context> block, or empty text when nothing is similar enough. Unlike ragdown_recall it filters by min_score, skips short prompts and slash commands, and never returns a section twice for the same session_id.",
+        "For hooks that run before a turn: the documents related to a user prompt, as a ready-to-inject <ragdown-context> block, or empty text when nothing is similar enough. Unlike ragdown_recall it filters by min_score, skips short prompts and slash commands, and never returns a section twice for the same session_id. reset: true first forgets what that session was given; call it with an empty prompt after the client compacts or clears its context.",
       inputSchema: {
         prompt: z.string().describe("The user's prompt, verbatim"),
         session_id: z
           .string()
           .optional()
           .describe("Stable id of the conversation; sections already returned for it are skipped"),
+        reset: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Forget the sections already returned for session_id before answering, because the client no longer has them",
+          ),
         top_k: z
           .number()
           .int()
@@ -146,6 +152,9 @@ export function createMcpServer(
     },
     (args) =>
       run(ready, async (rag) => {
+        if (args.reset && args.session_id) {
+          rag.forgetSession(args.session_id);
+        }
         const context = await rag.context(args.prompt, args.session_id || undefined, {
           topK: args.top_k,
           minScore: args.min_score,
