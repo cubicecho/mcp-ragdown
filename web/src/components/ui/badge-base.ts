@@ -8,8 +8,9 @@ export type BadgeVariant =
   | "outline"
   | "ghost"
   | "link"
-  | "success"
-  | "warning";
+  | "positive"
+  | "warning"
+  | "info";
 
 export type BadgeProps = {
   variant?: BadgeVariant | undefined;
@@ -17,7 +18,7 @@ export type BadgeProps = {
    * Overrides the variant's background with a literal colour — for a badge
    * standing in for a user-chosen tag or category. Passing it also drops the
    * variant's label colour, since the caller's background is unknown and
-   * `text-primary-foreground` would be a guess. Pair it with `readableTextColor`
+   * `text-neutral-foreground` would be a guess. Pair it with `readableTextColor`
    * when the label has to stay legible on an arbitrary hue.
    */
   backgroundColor?: string | undefined;
@@ -53,7 +54,7 @@ export type BadgeProps = {
 
 /** Whether `children` holds anything to show, which is what decides pill or dot. */
 export function badgeHasLabel(children: ReactNode): boolean {
-  return !(children === undefined || children === null || children === false || children === "");
+  return children !== undefined && children !== null && children !== false && children !== "";
 }
 
 /**
@@ -82,14 +83,15 @@ export function badgeRemoveLabel(children: ReactNode, label?: string | undefined
 export const badgeContainerVariants = cva("shrink-0 rounded-full border border-transparent", {
   variants: {
     variant: {
-      default: "bg-primary",
-      secondary: "bg-secondary",
-      destructive: "bg-destructive",
-      outline: "border-border bg-transparent",
+      default: "bg-neutral",
+      secondary: "bg-foreground/10",
+      destructive: "bg-negative",
+      outline: "border-foreground/10 bg-transparent",
       ghost: "bg-transparent",
       link: "bg-transparent",
-      success: "bg-green-700",
-      warning: "bg-amber-700",
+      positive: "bg-positive",
+      warning: "bg-warning",
+      info: "bg-info",
     },
     shape: {
       pill: "flex-row items-center justify-center gap-1 px-2 py-0.5",
@@ -101,20 +103,21 @@ export const badgeContainerVariants = cva("shrink-0 rounded-full border border-t
 
 /** The label's colour and nothing else, per variant. */
 const BADGE_INK = {
-  default: "text-primary-foreground",
-  secondary: "text-secondary-foreground",
-  destructive: "text-white",
+  default: "text-neutral-foreground",
+  secondary: "text-foreground",
+  destructive: "text-negative-foreground",
   outline: "text-foreground",
   ghost: "text-foreground",
-  link: "text-primary",
-  success: "text-white",
-  warning: "text-white",
+  link: "text-info",
+  positive: "text-positive-foreground",
+  warning: "text-warning-foreground",
+  info: "text-info-foreground",
 } satisfies Record<BadgeVariant, string>;
 
 /** The label's type and colour, per variant. */
 export const badgeTextVariants = cva("text-xs font-medium", {
   variants: {
-    variant: { ...BADGE_INK, link: "text-primary underline-offset-4" },
+    variant: { ...BADGE_INK, link: "text-info underline-offset-4" },
   },
   defaultVariants: { variant: "default" },
 });

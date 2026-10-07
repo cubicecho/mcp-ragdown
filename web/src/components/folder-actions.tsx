@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import { InputField, NumberField, SwitchField, useAppForm } from "@/components/app-form";
 import { DialogLayout } from "@/components/dialog-layout";
 import { Section } from "@/components/section";
@@ -31,13 +31,14 @@ import {
   useStatus,
   useUpdateFolder,
 } from "@/lib/queries";
+import type { SlotNode } from "@/lib/utils";
 
 /** A new top-level folder: the directory and its `.ragdown.json`. Human-only unless MCP is on. */
 export function CreateFolder({
-  trigger,
+  triggerSlot,
   onCreated,
 }: {
-  trigger: ReactNode;
+  triggerSlot: SlotNode;
   onCreated?: (folder: Folder) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -53,7 +54,7 @@ export function CreateFolder({
           ...(title ? { title } : {}),
           mcp: value.mcp,
         });
-        toast(`Created ${folder.title}`, "success");
+        toast(`Created ${folder.title}`, "positive");
         reset(false);
         onCreated?.(folder);
       } catch (error) {
@@ -71,11 +72,11 @@ export function CreateFolder({
     <DialogLayout
       open={open}
       onOpenChange={reset}
-      trigger={trigger}
+      triggerSlot={triggerSlot}
       title="Create folder"
       description="A top-level folder in the docs directory, with its own notes, search and MCP address."
       hasUnsavedChanges={() => !form.state.isDefaultValue}
-      content={
+      contentSlot={
         <form
           id="create-folder"
           className="flex flex-col gap-4"
@@ -110,15 +111,11 @@ export function CreateFolder({
           />
         </form>
       }
-      footerActions={(close) => (
+      footerActionsSlot={(close) => (
         <>
-          <Button variant="outline" onClick={close}>
-            Cancel
-          </Button>
+          <Button variant="outline" onClick={close} content="Cancel" />
           <form.AppForm>
-            <form.SubmitButton form="create-folder" pendingLabel="Creating…">
-              Create
-            </form.SubmitButton>
+            <form.SubmitButton form="create-folder" pendingLabel="Creating…" content="Create" />
           </form.AppForm>
         </>
       )}
@@ -147,7 +144,7 @@ export function EditFolder({ folder, onClose }: FolderDialogProps) {
     onSubmit: async ({ value }) => {
       try {
         await update.mutateAsync({ name: folder.name, patch: folderPatch(folder, value) });
-        toast(`Saved ${value.title.trim() || folder.name}`, "success");
+        toast(`Saved ${value.title.trim() || folder.name}`, "positive");
         onClose();
       } catch (error) {
         toast(`Could not update ${folder.name}: ${errorMessage(error)}`);
@@ -169,7 +166,7 @@ export function EditFolder({ folder, onClose }: FolderDialogProps) {
         </>
       }
       hasUnsavedChanges={changed}
-      content={
+      contentSlot={
         <form
           id="edit-folder"
           className="flex flex-col gap-4"
@@ -213,7 +210,7 @@ export function EditFolder({ folder, onClose }: FolderDialogProps) {
                 empty, a value is the server's.
               </>
             }
-            content={
+            contentSlot={
               <div className="grid gap-4 sm:grid-cols-2">
                 <NumberField
                   form={form}
@@ -261,19 +258,20 @@ export function EditFolder({ folder, onClose }: FolderDialogProps) {
           />
         </form>
       }
-      footerActions={(close) => (
+      footerActionsSlot={(close) => (
         <>
-          <Button variant="outline" onClick={close}>
-            Cancel
-          </Button>
+          <Button variant="outline" onClick={close} content="Cancel" />
           <form.AppForm>
             <form.Subscribe
               selector={(state) => Object.keys(folderPatch(folder, state.values)).length === 0}
             >
               {(unchanged) => (
-                <form.SubmitButton form="edit-folder" pendingLabel="Saving…" disabled={unchanged}>
-                  Save
-                </form.SubmitButton>
+                <form.SubmitButton
+                  form="edit-folder"
+                  pendingLabel="Saving…"
+                  disabled={unchanged}
+                  content="Save"
+                />
               )}
             </form.Subscribe>
           </form.AppForm>
@@ -296,7 +294,7 @@ export function RenameFolder({ folder, onClose }: FolderDialogProps) {
           patch: { name: value.name.trim() },
         });
         if (getLastFolder() === folder.name) setLastFolder(renamed.name);
-        toast(`Renamed ${folder.name} to ${renamed.name}`, "success");
+        toast(`Renamed ${folder.name} to ${renamed.name}`, "positive");
         onClose();
       } catch (error) {
         form.setFieldMeta("name", serverError(errorMessage(error)));
@@ -319,7 +317,7 @@ export function RenameFolder({ folder, onClose }: FolderDialogProps) {
         </>
       }
       hasUnsavedChanges={() => form.state.values.name.trim() !== folder.name}
-      content={
+      contentSlot={
         <form
           id="rename-folder"
           onSubmit={(event) => {
@@ -338,11 +336,9 @@ export function RenameFolder({ folder, onClose }: FolderDialogProps) {
           />
         </form>
       }
-      footerActions={(close) => (
+      footerActionsSlot={(close) => (
         <>
-          <Button variant="outline" onClick={close}>
-            Cancel
-          </Button>
+          <Button variant="outline" onClick={close} content="Cancel" />
           <form.AppForm>
             <form.Subscribe selector={(state) => state.values.name.trim() === folder.name}>
               {(unchanged) => (
@@ -350,9 +346,8 @@ export function RenameFolder({ folder, onClose }: FolderDialogProps) {
                   form="rename-folder"
                   pendingLabel="Renaming…"
                   disabled={unchanged}
-                >
-                  Rename
-                </form.SubmitButton>
+                  content="Rename"
+                />
               )}
             </form.Subscribe>
           </form.AppForm>
@@ -383,7 +378,7 @@ export function DeleteFolder({ folder, onClose }: FolderDialogProps) {
         remove.mutate(folder.name, {
           onSuccess: () => {
             if (getLastFolder() === folder.name) setLastFolder(null);
-            toast(`Deleted ${folder.name}`, "success");
+            toast(`Deleted ${folder.name}`, "positive");
             onClose();
           },
           onError: (error) => toast(`Could not delete ${folder.name}: ${errorMessage(error)}`),
@@ -415,7 +410,7 @@ export function McpConfig({ folder, onClose }: FolderDialogProps) {
           ? "Either one adds this folder as its own MCP server."
           : "MCP is off for this folder, so its address answers 404 until you turn it on."
       }
-      content={
+      contentSlot={
         <div className="flex flex-col gap-4">
           <Snippet label="Claude Code" text={command} />
           <Snippet label="mcpServers entry" text={json} />
@@ -438,7 +433,7 @@ function Snippet({ label, text }: { label: string; text: string }) {
       <p className="font-medium text-sm">{label}</p>
       <CodeBlock
         content={text}
-        action={<CopyButton variant="outline" value={text} label={`Copy the ${label}`} />}
+        actionSlot={<CopyButton variant="outline" value={text} label={`Copy the ${label}`} />}
       />
     </div>
   );

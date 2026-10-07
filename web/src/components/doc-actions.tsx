@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { InputField, useAppForm } from "@/components/app-form";
 import { ConfirmButton } from "@/components/confirm-button";
@@ -13,6 +13,7 @@ import { folderOf, inFolder, withinFolder } from "@/lib/folders";
 import { errorMessage, serverError } from "@/lib/form-errors";
 import { formatCount } from "@/lib/format";
 import { useDeleteDoc, useMoveDoc, useUploadDoc } from "@/lib/queries";
+import type { SlotNode } from "@/lib/utils";
 
 const MARKDOWN = /\.(md|markdown|mdx)$/i;
 
@@ -79,7 +80,7 @@ export function UploadDocs({ folder, title }: { folder: string; title: string })
     }
     setFiles((prev) => prev.filter((file) => file.state !== "done"));
 
-    if (uploaded.length > 0) toast(`Uploaded ${formatCount(uploaded.length, "file")}`, "success");
+    if (uploaded.length > 0) toast(`Uploaded ${formatCount(uploaded.length, "file")}`, "positive");
     // Everything picked is in: close, and show the file when there is only one to show.
     if (uploaded.length === files.length) {
       reset(false);
@@ -110,15 +111,18 @@ export function UploadDocs({ folder, title }: { folder: string; title: string })
     <DialogLayout
       open={open}
       onOpenChange={reset}
-      trigger={
-        <ActionButton label="Upload Markdown files" variant="outline" size="icon-sm">
-          <Upload aria-hidden />
-        </ActionButton>
+      triggerSlot={
+        <ActionButton
+          label="Upload Markdown files"
+          variant="outline"
+          size="icon-sm"
+          iconSlot={<Upload />}
+        />
       }
       title="Upload Markdown"
       description={`Files are written into ${title} and indexed before the upload finishes.`}
       hasUnsavedChanges={() => files.some((file) => file.state !== "done")}
-      content={
+      contentSlot={
         <form
           id="upload-docs"
           className="flex flex-col gap-4"
@@ -175,9 +179,8 @@ export function UploadDocs({ folder, title }: { folder: string; title: string })
                       variant="outline"
                       disabled={busy}
                       onClick={() => void send([file], true)}
-                    >
-                      Overwrite
-                    </Button>
+                      content="Overwrite"
+                    />
                   ) : null}
                   <ActionButton
                     label={`Remove ${file.name}`}
@@ -187,37 +190,34 @@ export function UploadDocs({ folder, title }: { folder: string; title: string })
                     onClick={() =>
                       setFiles((prev) => prev.filter((other) => other.name !== file.name))
                     }
-                  >
-                    <X aria-hidden />
-                  </ActionButton>
+                    iconSlot={<X />}
+                  />
                 </li>
               ))}
             </ul>
           ) : null}
         </form>
       }
-      footer={
+      footerSlot={
         existing.length > 1 ? (
-          <Button variant="outline" disabled={busy} onClick={() => void send(existing, true)}>
-            Overwrite {existing.length}
-          </Button>
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={() => void send(existing, true)}
+            content={`Overwrite ${existing.length}`}
+          />
         ) : undefined
       }
-      footerActions={(close) => (
+      footerActionsSlot={(close) => (
         <>
-          <Button variant="outline" onClick={close}>
-            Cancel
-          </Button>
+          <Button variant="outline" onClick={close} content="Cancel" />
           <form.AppForm>
             <form.SubmitButton
               form="upload-docs"
               pendingLabel="Uploading…"
               disabled={busy || ready.length === 0}
-            >
-              {busy
-                ? "Uploading…"
-                : `Upload ${ready.length > 0 ? formatCount(ready.length, "file") : ""}`}
-            </form.SubmitButton>
+              content={`Upload ${ready.length > 0 ? formatCount(ready.length, "file") : ""}`}
+            />
           </form.AppForm>
         </>
       )}
@@ -253,12 +253,12 @@ export function NewNote({
   folder,
   title: folderTitle,
   dir = "",
-  trigger,
+  triggerSlot,
 }: {
   folder: string;
   title: string;
   dir?: string | undefined;
-  trigger?: ReactNode | undefined;
+  triggerSlot?: SlotNode | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const create = useUploadDoc();
@@ -304,17 +304,15 @@ export function NewNote({
     <DialogLayout
       open={open}
       onOpenChange={reset}
-      trigger={
-        trigger ?? (
-          <ActionButton label="New note" variant="outline" size="icon-sm">
-            <Plus aria-hidden />
-          </ActionButton>
+      triggerSlot={
+        triggerSlot ?? (
+          <ActionButton label="New note" variant="outline" size="icon-sm" iconSlot={<Plus />} />
         )
       }
       title="New note"
       description={`A Markdown file in ${folderTitle}, opened in the editor once it is created.`}
       hasUnsavedChanges={() => form.state.values.title !== ""}
-      content={
+      contentSlot={
         <form
           id="new-note"
           className="flex flex-col gap-4"
@@ -364,7 +362,7 @@ export function NewNote({
           />
         </form>
       }
-      footer={
+      footerSlot={
         exists ? (
           <Button
             variant="outline"
@@ -373,20 +371,15 @@ export function NewNote({
               reset(false);
               openNote(relative, false);
             }}
-          >
-            Open it
-          </Button>
+            content="Open it"
+          />
         ) : undefined
       }
-      footerActions={(close) => (
+      footerActionsSlot={(close) => (
         <>
-          <Button variant="outline" onClick={close}>
-            Cancel
-          </Button>
+          <Button variant="outline" onClick={close} content="Cancel" />
           <form.AppForm>
-            <form.SubmitButton form="new-note" pendingLabel="Creating…">
-              Create
-            </form.SubmitButton>
+            <form.SubmitButton form="new-note" pendingLabel="Creating…" content="Create" />
           </form.AppForm>
         </>
       )}
@@ -421,7 +414,7 @@ export function RenameDoc({ path }: { path: string }) {
         const links = moved.updated.length;
         toast(
           links > 0 ? `Moved, and updated links in ${formatCount(links, "note")}` : "Moved",
-          "success",
+          "positive",
         );
         void navigate({
           to: "/f/$folder",
@@ -448,15 +441,18 @@ export function RenameDoc({ path }: { path: string }) {
     <DialogLayout
       open={open}
       onOpenChange={reset}
-      trigger={
-        <ActionButton label="Rename or move" variant="outline" size="icon-sm">
-          <FilePen aria-hidden />
-        </ActionButton>
+      triggerSlot={
+        <ActionButton
+          label="Rename or move"
+          variant="outline"
+          size="icon-sm"
+          iconSlot={<FilePen />}
+        />
       }
       title="Rename or move"
       description="Links to this note from anywhere in the folder are rewritten to follow it."
       hasUnsavedChanges={() => movedTo(form.state.values.to) !== current}
-      content={
+      contentSlot={
         <form
           id="rename-doc"
           className="flex flex-col gap-4"
@@ -496,15 +492,11 @@ export function RenameDoc({ path }: { path: string }) {
           </form.Subscribe>
         </form>
       }
-      footerActions={(close) => (
+      footerActionsSlot={(close) => (
         <>
-          <Button variant="outline" onClick={close}>
-            Cancel
-          </Button>
+          <Button variant="outline" onClick={close} content="Cancel" />
           <form.AppForm>
-            <form.SubmitButton form="rename-doc" pendingLabel="Moving…">
-              Move
-            </form.SubmitButton>
+            <form.SubmitButton form="rename-doc" pendingLabel="Moving…" content="Move" />
           </form.AppForm>
         </>
       )}
@@ -528,7 +520,7 @@ export function DeleteDoc({ path }: { path: string }) {
       onConfirm={() =>
         remove.mutate(path, {
           onSuccess: () => {
-            toast(`Deleted ${path}`, "success");
+            toast(`Deleted ${path}`, "positive");
             void navigate({
               to: "/f/$folder",
               params: { folder: folderOf(path) },
@@ -538,8 +530,7 @@ export function DeleteDoc({ path }: { path: string }) {
           onError: (error) => toast(`Could not delete ${path}: ${error.message}`),
         })
       }
-    >
-      <Trash2 aria-hidden />
-    </ConfirmButton>
+      iconSlot={<Trash2 />}
+    />
   );
 }

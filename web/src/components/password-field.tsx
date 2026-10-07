@@ -24,7 +24,7 @@ function BoundPasswordField(props: PasswordFieldProps) {
       // The function form: the props belong on the `Input` inside the wrapper, not on the
       // `<div>` that positions the eye. Cloning would put the label's target on the wrapper —
       // the same blind spot `SelectField` has, and just as quiet.
-      control={(wired) => (
+      controlSlot={(wired) => (
         <PasswordInput
           {...input}
           {...wired}

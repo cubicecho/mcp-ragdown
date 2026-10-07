@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import { cn, type SlotNode } from "@/lib/utils";
 
 /**
  * How each heading level is drawn.
@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
  * *one* project disagree with each other. This map is what ends that.
  *
  * - `row` is the floor under the title row. It holds the row to one height whether or not the
- *   page has an action and whether or not it has a description, so `content` beneath it starts
+ *   page has an action and whether or not it has a description, so `contentSlot` beneath it starts
  *   at the same place on every page.
  * - `bar` is the height of one line of `title`, so a loading header is exactly as tall as the
  *   header it becomes.
@@ -64,7 +64,7 @@ const INK = "text-foreground";
 const SLOT = "block";
 
 /** A bar standing in for text that has not arrived — `Skeleton`'s look, on both platforms. */
-const BAR = cn("max-w-full rounded-md bg-accent", "animate-pulse");
+const BAR = cn("max-w-full rounded-md bg-hover", "animate-pulse");
 
 export type PageHeaderProps = {
   /**
@@ -75,11 +75,12 @@ export type PageHeaderProps = {
    * `searchZone` and an `actionsZone` escape hatch beside two of them, and three of those five
    * words have one live call site between them. They buy nothing the order of the nodes does not
    * already say, and none of them poses a question for the shell to settle the way `loading` and
-   * `empty` do on a card. A word added to this vocabulary is added to every component in the set.
+   * `emptySlot` do on a card. A word added to this vocabulary is added to every component in the
+   * set.
    *
    * It is also what decides the rule under the header — see the component comment.
    */
-  content?: ReactNode | undefined;
+  contentSlot?: SlotNode | undefined;
   /**
    * What the page is called. Required, because a header with no title is a toolbar, and a
    * toolbar is a row of nodes the caller can place without help. It is also the heading
@@ -94,7 +95,7 @@ export type PageHeaderProps = {
   /**
    * One line on what the page is for. It wraps; it is not clipped.
    *
-   * `text-sm text-muted-foreground` is the one thing every hand-written header in these apps
+   * `text-sm text-foreground/60` is the one thing every hand-written header in these apps
    * already agrees on, so the only question left was truncation — and the headers that truncate
    * are the ones that lose the end of the sentence with no way to read it.
    */
@@ -106,7 +107,7 @@ export type PageHeaderProps = {
    * Also where a status dot goes. Four of these apps put a coloured dot, a live indicator or a
    * category swatch in front of a title, each at its own size and its own muted colour.
    */
-  icon?: ReactNode | undefined;
+  iconSlot?: SlotNode | undefined;
   /**
    * The header's far end: the page's buttons, a status pill, a menu. A fragment of them is fine
    * — the shell rows and gaps them, so two pages never disagree about the space between New and
@@ -116,7 +117,7 @@ export type PageHeaderProps = {
    * They sit here rather than beside the search field, so a page with no search puts them where
    * a page with one does.
    */
-  action?: ReactNode | undefined;
+  actionSlot?: SlotNode | undefined;
   /**
    * The line above the title: a breadcrumb trail, or a back link, which is a one-step trail.
    *
@@ -125,11 +126,11 @@ export type PageHeaderProps = {
    * drift this set exists to stop.
    *
    * Above the title, not beside it. Both placements are in use; above is the one that also holds
-   * a trail, and a back button beside the title competes with `icon` for the same spot and takes
-   * width from the page's name for a control that is not part of it. It is a node, not a route —
-   * no shell routes.
+   * a trail, and a back button beside the title competes with `iconSlot` for the same spot and
+   * takes width from the page's name for a control that is not part of it. It is a node, not a
+   * route — no shell routes.
    */
-  breadcrumbs?: ReactNode | undefined;
+  breadcrumbsSlot?: SlotNode | undefined;
   /**
    * Whether the title is still being fetched. On, a bar of the title's own height stands in for
    * it — and for the description, when one was passed — so the page beneath does not jump when
@@ -235,12 +236,12 @@ function Heading({
  * screen that gives it context — a page title *is* the context, and half of one names nothing.
  */
 export function PageHeader({
-  content,
+  contentSlot,
   title,
   description,
-  icon,
-  action,
-  breadcrumbs,
+  iconSlot,
+  actionSlot,
+  breadcrumbsSlot,
   loading = false,
   level = 1,
   className,
@@ -258,7 +259,7 @@ export function PageHeader({
   //
   // Level 1 only. A section heading inside a card sits above a body the card has already fenced,
   // and not one of the section headings in these apps draws a second line.
-  const rule = level === 1 && !content ? "border-b border-border" : undefined;
+  const rule = level === 1 && !contentSlot ? "border-b border-foreground/10" : undefined;
 
   return (
     // `px-4` is the seam: the body of a `width="page"` chassis carries the same, and nothing else
@@ -268,17 +269,19 @@ export function PageHeader({
       aria-busy={loading || undefined}
       className={cn("cube-rn-view", "min-w-0 flex-col gap-3 px-4 py-4", rule, className)}
     >
-      {breadcrumbs ? (
+      {breadcrumbsSlot ? (
         <div data-slot="page-header-breadcrumbs" className={cn("cube-rn-view", SLOT, "min-w-0")}>
-          {breadcrumbs}
+          {breadcrumbsSlot}
         </div>
       ) : null}
 
       <div
         data-slot="page-header-title-row"
+        // `content-center`: a wrapping row packs its lines at the start on device and under
+        // react-native-web, so the floor was left as an empty band under a lone title (#248).
         className={cn(
           "cube-rn-view",
-          "flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2",
+          "flex-row flex-wrap content-center items-center justify-between gap-x-4 gap-y-2",
           rowFloor,
         )}
       >
@@ -290,12 +293,12 @@ export function PageHeader({
           className="cube-rn-view min-w-0 flex-1 basis-64 flex-col gap-1"
         >
           <div className="cube-rn-view min-w-0 flex-row items-center gap-2">
-            {icon ? (
+            {iconSlot ? (
               // Sized here on the web rather than by the caller, so an icon passed as `<Users />`
               // and one passed as `<Users className="size-6" />` land at the same size — and so the
               // size follows the level instead of being guessed once per page.
-              <div className={cn("cube-rn-view", "shrink-0 text-muted-foreground", iconSize)}>
-                {icon}
+              <div className={cn("cube-rn-view", "shrink-0 text-foreground/60", iconSize)}>
+                {iconSlot}
               </div>
             ) : null}
             {loading ? (
@@ -335,7 +338,7 @@ export function PageHeader({
             ) : (
               <p
                 data-slot="page-header-description"
-                className="cube-rn-text text-muted-foreground text-sm"
+                className="cube-rn-text text-foreground/60 text-sm"
               >
                 {description}
               </p>
@@ -343,22 +346,22 @@ export function PageHeader({
           ) : null}
         </div>
 
-        {action ? (
+        {actionSlot ? (
           <div
             data-slot="page-header-action"
             className="cube-rn-view shrink-0 flex-row flex-wrap items-center gap-2"
           >
-            {action}
+            {actionSlot}
           </div>
         ) : null}
       </div>
 
-      {content ? (
+      {contentSlot ? (
         <div
           data-slot="page-header-content"
           className={cn("cube-rn-view", "min-w-0 flex-col gap-2", contentClassName)}
         >
-          {content}
+          {contentSlot}
         </div>
       ) : null}
     </div>

@@ -19,6 +19,11 @@ export type SwitchProps = {
    * name on an iPhone passes `accessibilityLabel` too.
    */
   "aria-labelledby"?: string | undefined;
+  /**
+   * What says more about the switch — a `SwitchField`'s `description` — by id. Web only: React
+   * Native has no description relation, so on device the line is read where it is drawn.
+   */
+  "aria-describedby"?: string | undefined;
   className?: string | undefined;
 };
 

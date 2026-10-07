@@ -17,7 +17,7 @@ const Empty = React.forwardRef<HTMLDivElement, ViewProps>(({ className, ...props
     data-slot="empty"
     className={cn(
       "cube-rn-view",
-      "w-full min-w-0 items-center justify-center gap-3 rounded-lg border-dashed border-border py-10",
+      "w-full min-w-0 items-center justify-center gap-3 rounded-lg border-dashed border-foreground/10 py-10",
       className,
     )}
     {...(props as React.ComponentPropsWithoutRef<"div">)}
@@ -40,7 +40,7 @@ export type EmptyMediaVariant = "default" | "icon";
 /** `icon` is the muted bubble `EmptyState` draws; `default` is a bare box for an avatar or image. */
 const EMPTY_MEDIA = {
   default: "",
-  icon: "rounded-full bg-muted p-3 text-muted-foreground [&_svg:not([class*='size-'])]:size-6",
+  icon: "rounded-full bg-foreground/10 p-3 text-foreground/60 [&_svg:not([class*='size-'])]:size-6",
 } satisfies Record<EmptyMediaVariant, string>;
 
 type EmptyMediaProps = ViewProps & {
@@ -63,7 +63,7 @@ const EmptyMedia = React.forwardRef<HTMLDivElement, EmptyMediaProps>(
           className={cn("cube-rn-view", box)}
           {...(props as React.ComponentPropsWithoutRef<"div">)}
         >
-          <IconClassContext.Provider value="h-6 w-6 text-muted-foreground">
+          <IconClassContext.Provider value="h-6 w-6 text-foreground/60">
             {children}
           </IconClassContext.Provider>
         </div>
@@ -100,7 +100,7 @@ const EmptyDescription = React.forwardRef<HTMLSpanElement, TextProps>(
       data-slot="empty-description"
       className={cn(
         "cube-rn-text",
-        "text-center text-sm text-muted-foreground [&>a]:underline [&>a]:underline-offset-4 [&>a:hover]:text-primary",
+        "text-center text-sm text-foreground/60 [&>a]:underline [&>a]:underline-offset-4 [&>a:hover]:text-info",
         className,
       )}
       {...(props as React.ComponentPropsWithoutRef<"span">)}

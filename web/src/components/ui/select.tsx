@@ -32,6 +32,19 @@ function Select(props: SelectProps) {
   const defined = Object.fromEntries(
     Object.entries(props).filter(([, value]) => value !== undefined),
   ) as RootProps;
+  const { onValueChange } = defined;
+  // Inside a `<form>` radix mirrors the value into a hidden native `<select>` and reports that
+  // element's `change` back. A value whose item has not rendered yet — a list still being fetched,
+  // an option just created — has no `<option>` there, so the element reads `""` and radix hands
+  // that back as if it had been picked. No item can carry `""` (radix refuses one), so it is never
+  // a choice: dropping it keeps the value until its option arrives.
+  if (onValueChange) {
+    defined.onValueChange = (next) => {
+      if (next !== "") {
+        onValueChange(next);
+      }
+    };
+  }
   return <SelectPrimitive.Root data-slot="select" {...defined} />;
 }
 
@@ -60,7 +73,7 @@ function SelectTrigger({
       className={cn(
         SELECT_TRIGGER_CLASS,
         SELECT_TRIGGER_TEXT_CLASS,
-        "ring-offset-background focus:ring-ring flex focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive data-[placeholder]:text-muted-foreground data-[size=sm]:h-8 [&>span]:line-clamp-1",
+        "flex focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-negative aria-invalid:focus:border-active focus:border-active data-[placeholder]:text-foreground/60 data-[size=sm]:h-8 [&>span]:line-clamp-1",
         className,
       )}
     >
@@ -87,7 +100,7 @@ function SelectContent({
         align={align}
         {...props}
         className={cn(
-          "bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border shadow-md",
+          "bg-secondary text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border shadow-md",
           position === "popper" &&
             "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
           className,
@@ -117,7 +130,7 @@ function SelectItem({ className, children, ...props }: Props<typeof SelectPrimit
       className={cn(
         SELECT_ITEM_CLASS,
         SELECT_ITEM_TEXT_CLASS,
-        "focus:bg-accent focus:text-accent-foreground relative flex cursor-default select-none outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+        "focus:bg-hover focus:text-foreground relative flex cursor-default select-none outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
         className,
       )}
     >

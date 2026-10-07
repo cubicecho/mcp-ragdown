@@ -7,6 +7,7 @@ import {
   ITEM_DESCRIPTION_CLASS,
   ITEM_FOOTER_CLASS,
   ITEM_HEADER_CLASS,
+  ITEM_SELECTED_CLASS,
   ITEM_SEPARATOR_CLASS,
   ITEM_TITLE_CLASS,
   ITEM_TITLE_TEXT,
@@ -57,22 +58,38 @@ function ItemSeparator({
 
 /** What only a DOM row has: the hover on a link row, and the focus ring. */
 const ITEM_WEB =
-  "group/item flex text-sm transition-colors duration-100 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [a]:transition-colors [a]:hover:bg-muted";
+  "group/item flex text-sm transition-colors duration-100 outline-none [a]:transition-colors [a]:hover:bg-hover [a]:focus-visible:bg-hover";
 
 function Item({
   className,
   variant = "default",
   size = "default",
   asChild = false,
+  selected = false,
   ...props
-}: React.ComponentProps<"div"> & VariantProps<typeof itemVariants> & { asChild?: boolean }) {
+}: React.ComponentProps<"div"> &
+  VariantProps<typeof itemVariants> & {
+    asChild?: boolean;
+    /**
+     * The chosen row: the one open beside the list. Tinted in `active`, and it stays that under
+     * the pointer. Set `aria-current` or `aria-selected` on the row or the link inside as well.
+     */
+    selected?: boolean | undefined;
+  }) {
   const Comp = asChild ? Slot.Root : "div";
   return (
     <Comp
       data-slot="item"
       data-variant={variant}
       data-size={size}
-      className={cn(ITEM_WEB, itemVariants({ variant, size }), className)}
+      data-selected={selected ? "" : undefined}
+      className={cn(
+        ITEM_WEB,
+        itemVariants({ variant, size }),
+        selected && ITEM_SELECTED_CLASS,
+        selected && "[a]:hover:bg-active/40 [a]:focus-visible:bg-active/40",
+        className,
+      )}
       {...props}
     />
   );
@@ -135,7 +152,7 @@ function ItemDescription({ className, ...props }: React.ComponentProps<"p">) {
       data-slot="item-description"
       className={cn(
         ITEM_DESCRIPTION_CLASS,
-        "text-balance [&>a]:underline [&>a]:underline-offset-4 [&>a:hover]:text-primary",
+        "text-balance [&>a]:underline [&>a]:underline-offset-4 [&>a:hover]:text-info",
         className,
       )}
       {...props}

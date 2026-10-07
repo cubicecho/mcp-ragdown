@@ -88,14 +88,14 @@ export function SettingsPage() {
         title="Settings"
         description="Folders, how this device shows ragdown, and how the server is set up."
         width="prose"
-        breadcrumbs={
+        breadcrumbsSlot={
           // Under `md` the sidebar is gone, and its folder links with it.
           <Link to="/" className="inline-flex items-center gap-1 md:hidden">
             <ArrowLeft className="size-3.5" aria-hidden />
             Documents
           </Link>
         }
-        headerContent={
+        headerContentSlot={
           <TabsList aria-label="Settings" className="self-start">
             {TABS.map((t) => (
               <TabsTrigger key={t.value} value={t.value}>
@@ -104,7 +104,7 @@ export function SettingsPage() {
             ))}
           </TabsList>
         }
-        content={
+        contentSlot={
           <div className="py-6">
             <TabsContent value="folders" className="mt-0">
               <FoldersSection writable={writable} />
@@ -112,13 +112,13 @@ export function SettingsPage() {
             <TabsContent value="device" className="mt-0">
               <Section
                 description="Kept on this device, in this browser's storage. Other devices and browsers keep their own."
-                content={
+                contentSlot={
                   <div className="flex flex-col gap-4">
                     <CardLayout
                       title="Appearance"
                       description="System follows the device's light or dark setting."
                       // Uncontrolled: bound to the same stored preference as the sidebar's toggle.
-                      content={<ThemePicker />}
+                      contentSlot={<ThemePicker />}
                     />
                     <AccessCard status={status.data} loading={status.isPending} />
                   </div>
@@ -128,15 +128,18 @@ export function SettingsPage() {
             <TabsContent value="server" className="mt-0">
               <Section
                 description="What the index is doing, then how the server is set up. Each setting starts as an environment variable; the embedder, watching and the search defaults can be changed here, and a value saved here wins over its variable."
-                action={
+                actionSlot={
                   writable && status.data ? (
-                    <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                      <Pencil />
-                      Edit settings
-                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEditing(true)}
+                      iconSlot={<Pencil />}
+                      content="Edit settings"
+                    />
                   ) : null
                 }
-                content={
+                contentSlot={
                   status.isError ? (
                     <QueryError
                       error={status.error}
@@ -188,13 +191,11 @@ function FoldersSection({ writable }: { writable: boolean }) {
   return (
     <Section
       description="Top-level folders of the docs directory. Each has its own search, and its own MCP address while MCP is on for it."
-      action={
+      actionSlot={
         writable ? (
           <CreateFolder
-            trigger={
-              <Button variant="outline" size="sm">
-                <Plus aria-hidden /> Create folder
-              </Button>
+            triggerSlot={
+              <Button variant="outline" size="sm" iconSlot={<Plus />} content="Create folder" />
             }
             onCreated={(folder) =>
               void navigate({ to: "/f/$folder", params: { folder: folder.name } })
@@ -202,7 +203,7 @@ function FoldersSection({ writable }: { writable: boolean }) {
           />
         ) : undefined
       }
-      content={
+      contentSlot={
         <div className="flex flex-col gap-4">
           <McpOffHint link={false} />
           {loose.length > 0 ? <LooseFiles files={loose} writable={writable} /> : null}
@@ -218,7 +219,7 @@ function FoldersSection({ writable }: { writable: boolean }) {
             what="the folders"
             count={list.length}
             rows={2}
-            empty={
+            emptySlot={
               <EmptyState
                 icon={FolderIcon}
                 title="No folders yet"
@@ -298,13 +299,12 @@ function LooseFiles({ files, writable }: { files: string[]; writable: boolean })
                 description={`${file} is deleted from the docs directory on disk. It was never indexed, so no folder or agent loses anything.`}
                 onConfirm={() =>
                   remove.mutate(file, {
-                    onSuccess: () => toast(`Deleted ${file}`, "success"),
+                    onSuccess: () => toast(`Deleted ${file}`, "positive"),
                     onError: (error) => toast(`Could not delete ${file}: ${error.message}`),
                   })
                 }
-              >
-                <Trash2 className="text-destructive" aria-hidden />
-              </ConfirmButton>
+                iconSlot={<Trash2 className="text-destructive" />}
+              />
             ) : null}
           </li>
         ))}
@@ -349,9 +349,8 @@ function FolderRow({
             size="icon-sm"
             label={`Copy MCP config for ${folder.title}`}
             onClick={() => onOpen("mcp")}
-          >
-            <Copy aria-hidden />
-          </ActionButton>
+            iconSlot={<Copy />}
+          />
           {writable ? (
             <>
               <ActionButton
@@ -359,25 +358,22 @@ function FolderRow({
                 size="icon-sm"
                 label={`Edit ${folder.title}`}
                 onClick={() => onOpen("edit")}
-              >
-                <Pencil aria-hidden />
-              </ActionButton>
+                iconSlot={<Pencil />}
+              />
               <ActionButton
                 variant="outline"
                 size="icon-sm"
                 label={`Rename ${folder.name}`}
                 onClick={() => onOpen("rename")}
-              >
-                <FolderPen aria-hidden />
-              </ActionButton>
+                iconSlot={<FolderPen />}
+              />
               <ActionButton
                 variant="outline"
                 size="icon-sm"
                 label={`Delete ${folder.title}`}
                 onClick={() => onOpen("delete")}
-              >
-                <Trash2 className="text-destructive" aria-hidden />
-              </ActionButton>
+                iconSlot={<Trash2 className="text-destructive" />}
+              />
             </>
           ) : null}
         </div>
@@ -400,16 +396,16 @@ function AccessCard({ status, loading }: { status: Status | undefined; loading: 
           : "The server asks for the token set in RAGDOWN_TOKEN. This device keeps it after you enter it once."
       }
       loading={loading}
-      content={
+      contentSlot={
         status?.auth_required ? (
           <DescriptionList
-            content={[
+            contentSlot={[
               <PropertyRow key="required" label="Token required" value={<YesNo value />} />,
               <PropertyRow
                 key="stored"
                 label="Stored here"
                 value={<YesNo value={stored} />}
-                action={
+                actionSlot={
                   <ConfirmButton
                     label="Forget token"
                     variant="outline"
@@ -423,9 +419,8 @@ function AccessCard({ status, loading }: { status: Status | undefined; loading: 
                       clearToken();
                       requireAuth();
                     }}
-                  >
-                    Forget token
-                  </ConfirmButton>
+                    content="Forget token"
+                  />
                 }
               />,
             ]}
@@ -443,7 +438,7 @@ function IndexStatusCard({ status, loading }: { status: Status | undefined; load
     <CardLayout
       title="Index status"
       description={status ? `${status.name} ${status.version}` : undefined}
-      action={
+      actionSlot={
         status ? (
           <Badge variant={status.ready ? "secondary" : "outline"}>
             {!status.ready ? "Loading the model" : status.syncing ? "Indexing" : "Ready"}
@@ -451,10 +446,10 @@ function IndexStatusCard({ status, loading }: { status: Status | undefined; load
         ) : null
       }
       loading={loading}
-      content={
+      contentSlot={
         status ? (
           <DescriptionList
-            content={[
+            contentSlot={[
               <PropertyRow
                 key="indexed"
                 label="Indexed"
@@ -507,10 +502,10 @@ function IndexSettingsCard({ status, loading }: { status: Status | undefined; lo
       title="Index settings"
       description="What is indexed, with which model, and how it is kept in sync."
       loading={loading}
-      content={
+      contentSlot={
         status ? (
           <DescriptionList
-            content={[
+            contentSlot={[
               <PropertyRow
                 key="docs"
                 label="Docs directory"
@@ -575,10 +570,10 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
         </>
       }
       loading={loading}
-      content={
+      contentSlot={
         settings ? (
           <DescriptionList
-            content={[
+            contentSlot={[
               <PropertyRow
                 key="top-k"
                 label="Sections per prompt"

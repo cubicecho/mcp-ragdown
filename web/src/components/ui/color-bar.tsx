@@ -21,7 +21,9 @@ type ColorBarProps = {
  * the bar follows the rounded corners.
  */
 export function ColorBar({ color, label, className }: ColorBarProps) {
-  if (!color) return null;
+  if (!color) {
+    return null;
+  }
   return (
     <div
       className={cn("cube-rn-view", "absolute inset-y-0 left-0 w-2.5", className)}

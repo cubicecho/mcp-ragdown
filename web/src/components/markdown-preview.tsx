@@ -90,7 +90,7 @@ export function MarkdownPreview({
   return (
     <Markdown
       content={content}
-      empty={<p className="m-0 text-muted-foreground italic">This file is empty.</p>}
+      emptySlot={<p className="m-0 text-muted-foreground italic">This file is empty.</p>}
       headingId={slug}
       components={components}
       remarkPlugins={PLUGINS}

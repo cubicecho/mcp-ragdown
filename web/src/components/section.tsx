@@ -1,16 +1,16 @@
 import type { ReactNode } from "react";
 import * as React from "react";
-import { cn } from "@/lib/utils";
+import { cn, type SlotNode } from "@/lib/utils";
 
 type SectionProps = {
   /** The body: the fields, the rows, whatever the heading is over. */
-  content?: ReactNode | undefined;
+  contentSlot?: SlotNode | undefined;
   /** The overline. A short noun phrase — "Pomodoro", "Danger zone", "Notifications". */
   title?: ReactNode | undefined;
   /** One line under the title, in sentence case, on what the group is for. */
   description?: ReactNode | undefined;
   /** The heading row's far end: an add button, a count, a switch that disables the group. */
-  action?: ReactNode | undefined;
+  actionSlot?: SlotNode | undefined;
   /** A hairline under the heading. Off by default; on, the group reads as one block. */
   divider?: boolean | undefined;
   /**
@@ -84,13 +84,13 @@ const ACTION_FIT = "[&>*]:max-w-full";
  * at the start, when they do not — by the width the section is given, not the window's. Plain
  * flex-wrap, so Yoga does the same on device.
  *
- * No state, no data, no `children` — the body is `content`, like every other shell here.
+ * No state, no data, no `children` — the body is `contentSlot`, like every other shell here.
  */
 export function Section({
-  content,
+  contentSlot,
   title,
   description,
-  action,
+  actionSlot,
   divider = false,
   level = 2,
   surface = "none",
@@ -100,7 +100,7 @@ export function Section({
 }: SectionProps) {
   const titleId = React.useId();
   const hasText = Boolean(title || description);
-  const hasHeading = Boolean(hasText || action);
+  const hasHeading = Boolean(hasText || actionSlot);
 
   return (
     <section
@@ -110,7 +110,7 @@ export function Section({
         "cube-rn-view",
         "min-w-0 gap-3",
         surface === "card" &&
-          "rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm",
+          "rounded-lg border border-foreground/10 bg-secondary p-4 text-foreground shadow-sm",
         className,
       )}
     >
@@ -121,8 +121,8 @@ export function Section({
             "cube-rn-view",
             "min-w-0 flex-row flex-wrap items-center gap-2",
             // With no text there is no column to push the action along, so the row does it.
-            !hasText && "justify-end",
-            divider && "border-b border-border pb-1",
+            hasText === false && "justify-end",
+            divider && "border-b border-foreground/10 pb-1",
           )}
         >
           {hasText ? (
@@ -136,7 +136,7 @@ export function Section({
                   aria-level={level}
                   className={cn(
                     "cube-rn-text",
-                    "truncate font-semibold text-muted-foreground text-xs uppercase tracking-wider",
+                    "truncate font-semibold text-foreground/60 text-xs uppercase tracking-wider",
                     titleClassName,
                   )}
                 >
@@ -146,27 +146,27 @@ export function Section({
               {description ? (
                 <p
                   data-slot="section-description"
-                  className="cube-rn-text mt-1 text-muted-foreground text-sm"
+                  className="cube-rn-text mt-1 text-foreground/60 text-sm"
                 >
                   {description}
                 </p>
               ) : null}
             </div>
           ) : null}
-          {action ? (
+          {actionSlot ? (
             <div data-slot="section-action" className={cn("cube-rn-view", ACTION, ACTION_FIT)}>
-              {action}
+              {actionSlot}
             </div>
           ) : null}
         </div>
       ) : null}
 
-      {content ? (
+      {contentSlot ? (
         <div
           data-slot="section-content"
           className={cn("cube-rn-view", "min-w-0 gap-4", contentClassName)}
         >
-          {content}
+          {contentSlot}
         </div>
       ) : null}
     </section>

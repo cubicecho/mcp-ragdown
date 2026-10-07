@@ -28,7 +28,7 @@ type CardProps = ViewProps & {
 const Card = React.forwardRef<HTMLDivElement, CardProps>(
   ({ className, accentColor, accentLabel, onClick: onPress, children, ...props }, ref) => {
     const classes = cn(
-      "rounded-lg border border-border bg-card text-card-foreground shadow-sm",
+      "rounded-lg border border-foreground/10 bg-secondary text-foreground shadow-sm",
       accentColor && "relative overflow-hidden",
       className,
     );
@@ -87,7 +87,9 @@ type CardTitleProps = TextProps & {
   level?: 1 | 2 | 3 | undefined;
 };
 
-const CARD_TITLE = "text-2xl font-semibold leading-none tracking-tight text-card-foreground";
+// shadcn's current card: the page's own text size, so a card under a page header never has a
+// bigger title than the page does (#249).
+const CARD_TITLE = "text-base font-semibold leading-none text-foreground";
 
 // One arm per level because the compiler emits `<h1>`–`<h3>` from a *literal* `aria-level`; a level
 // held in a variable would be a tag chosen at runtime, which it refuses (see `page-header.tsx`).
@@ -126,7 +128,7 @@ const CardDescription = React.forwardRef<HTMLSpanElement, TextProps>(
   ({ className, ...props }, ref) => (
     <span
       ref={ref as React.Ref<HTMLSpanElement>}
-      className={cn("cube-rn-text", "text-sm text-muted-foreground", className)}
+      className={cn("cube-rn-text", "text-sm text-foreground/60", className)}
       {...(props as React.ComponentPropsWithoutRef<"span">)}
     />
   ),

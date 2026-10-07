@@ -57,14 +57,10 @@ export function HomePage() {
             : null}
         </>
       }
-      action={
+      actionSlot={
         writable ? (
           <CreateFolder
-            trigger={
-              <Button>
-                <Plus aria-hidden /> Create folder
-              </Button>
-            }
+            triggerSlot={<Button iconSlot={<Plus />} content="Create folder" />}
             onCreated={(folder) =>
               void navigate({ to: "/f/$folder", params: { folder: folder.name } })
             }

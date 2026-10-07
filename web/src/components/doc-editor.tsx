@@ -16,7 +16,7 @@ import { splitFrontmatter } from "@/lib/markdown";
 import { useSaveDoc, useUploadDoc } from "@/lib/queries";
 
 /** CodeMirror is most of the editor's weight: it loads the first time someone presses Edit. */
-const MarkdownEditor = lazy(() => import("@/components/markdown-editor"));
+const NoteEditor = lazy(() => import("@/components/note-editor"));
 
 type View = "write" | "preview";
 
@@ -70,7 +70,7 @@ export function DocEditor({
         onSuccess: (result) => {
           setSaved({ text: draft, hash: result.hash ?? saved.hash });
           setConflict(null);
-          toast("Saved", "success");
+          toast("Saved", "positive");
         },
         onError: (error) => {
           if (error instanceof ApiError && error.code === "changed") setConflict(error.message);
@@ -88,7 +88,7 @@ export function DocEditor({
         onSuccess: (result) => {
           setSaved({ text, hash: result.hash ?? "" });
           setConflict(null);
-          toast("Saved over the version on disk", "success");
+          toast("Saved over the version on disk", "positive");
         },
         onError: (error) => toast(error instanceof Error ? error.message : String(error), "error"),
       },
@@ -105,22 +105,22 @@ export function DocEditor({
     <>
       <StickyHeaderContentFooter
         width="prose"
-        header={
+        headerSlot={
           <PageHeader
             title={title}
-            breadcrumbs={
+            breadcrumbsSlot={
               <p className="break-all font-mono text-muted-foreground text-xs">
                 {withinFolder(path)}
               </p>
             }
             description={busy ? "Saving…" : dirty ? "Unsaved changes" : "No unsaved changes"}
-            action={
+            actionSlot={
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <SegmentedGroup
                   aria-label="Editor view"
                   variant="framed"
                   value={view}
-                  onValueChange={(next) => setView(next as View)}
+                  onValueChange={setView}
                 >
                   <SegmentedButton value="write">Write</SegmentedButton>
                   <SegmentedButton value="preview">Preview</SegmentedButton>
@@ -128,28 +128,32 @@ export function DocEditor({
                 <Button
                   variant="outline"
                   onClick={() => (dirty ? setConfirmClose(true) : onClose())}
-                >
-                  Close
-                </Button>
-                <Button disabled={!dirty || busy} onClick={onSave}>
-                  Save
-                </Button>
+                  content="Close"
+                />
+                <Button disabled={!dirty || busy} onClick={onSave} content="Save" />
               </div>
             }
-            content={
+            contentSlot={
               conflict ? (
                 <Alert
                   variant="destructive"
-                  icon={<TriangleAlert />}
+                  iconSlot={<TriangleAlert />}
                   description={`${conflict}. Saving yours replaces it; discarding reopens the file as it is now.`}
-                  action={
+                  actionSlot={
                     <div className="flex gap-2">
-                      <Button variant="outline" size="xs" onClick={onClose}>
-                        Discard mine
-                      </Button>
-                      <Button variant="destructive" size="xs" disabled={busy} onClick={keepMine}>
-                        Save mine anyway
-                      </Button>
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        onClick={onClose}
+                        content="Discard mine"
+                      />
+                      <Button
+                        variant="destructive"
+                        size="xs"
+                        disabled={busy}
+                        onClick={keepMine}
+                        content="Save mine anyway"
+                      />
                     </div>
                   }
                 />
@@ -158,7 +162,7 @@ export function DocEditor({
           />
         }
         contentClassName="pb-10"
-        content={
+        contentSlot={
           // Kept mounted under Preview: CodeMirror's undo history and cursor survive the switch.
           <>
             <div hidden={view !== "write"}>
@@ -171,12 +175,15 @@ export function DocEditor({
                   </div>
                 }
               >
-                <MarkdownEditor
-                  value={doc.text}
-                  onChange={setDraft}
+                <NoteEditor
+                  value={draft}
+                  onValueChange={setDraft}
                   onSave={onSave}
                   label={`Markdown of ${withinFolder(path)}`}
+                  placeholder="Write Markdown…"
                   notes={notes}
+                  autoFocus
+                  className="min-h-[60vh]"
                 />
               </Suspense>
             </div>

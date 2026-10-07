@@ -34,9 +34,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { type DocSummary, type Folder, getFile, type SearchHit } from "@/lib/api";
 import { inFolder, setLastFolder, withinFolder } from "@/lib/folders";
+import { errorMessage } from "@/lib/form-errors";
 import { formatAgo, formatBytes, formatCount } from "@/lib/format";
 import { listValue, slug, splitFrontmatter } from "@/lib/markdown";
-import { useDoc, useDocs, useFolders, useSearch, useWritable } from "@/lib/queries";
+import { useDoc, useDocs, useFolders, useMoveDoc, useSearch, useWritable } from "@/lib/queries";
 import type { TreeEntry } from "@/lib/tree";
 import { cn } from "@/lib/utils";
 
@@ -93,8 +94,10 @@ function FolderDocs({
       sidebarWidth="md"
       stackBelow="md"
       divider="line"
-      sidebar={<DocList folder={folder} title={title} info={info} docs={docs} selected={path} />}
-      content={
+      sidebarSlot={
+        <DocList folder={folder} title={title} info={info} docs={docs} selected={path} />
+      }
+      contentSlot={
         path ? (
           <DocPreview
             key={path}
@@ -151,6 +154,41 @@ function DocList({
   const search = useSearch(folder, query, tag);
   const navigate = useNavigate();
   const writable = useWritable();
+  const move = useMoveDoc();
+  const toast = useToast();
+
+  /**
+   * A row dropped onto a folder of the tree: the note or subfolder keeps its name and lands in
+   * `into`. Rename is the same move from the keyboard. Never rejects, as the tree leaves a
+   * failure to its caller to report.
+   */
+  const moveInto = async (from: string, into: string) => {
+    const name = from.slice(from.lastIndexOf("/") + 1);
+    const to = into ? `${into}/${name}` : name;
+    try {
+      const moved = await move.mutateAsync({
+        from: inFolder(folder, from),
+        to: inFolder(folder, to),
+      });
+      const links = moved.updated.length;
+      toast(
+        `Moved ${name} to ${into || title}${links > 0 ? `, and updated links in ${formatCount(links, "note")}` : ""}`,
+        "positive",
+      );
+      // The open note went with it, alone or inside a moved subfolder: follow it there.
+      const open = selected ? withinFolder(selected) : undefined;
+      if (open === from || open?.startsWith(`${from}/`)) {
+        void navigate({
+          to: "/f/$folder",
+          params: { folder },
+          search: (prev) => ({ ...prev, doc: `${to}${open.slice(from.length)}` }),
+          replace: true,
+        });
+      }
+    } catch (error) {
+      toast(`Could not move ${name}: ${errorMessage(error)}`, "error");
+    }
+  };
 
   const tags = useMemo(
     () => [...new Set(docs.data?.flatMap((doc) => doc.tags))].sort(),
@@ -175,15 +213,15 @@ function DocList({
 
   return (
     <StickyHeaderContentFooter
-      header={
+      headerSlot={
         <PageHeader
           level={2}
           // A narrow pane: the folder's name keeps 10rem, not the page header's 16, before its two
           // buttons drop to a line of their own.
           className="[&_[data-slot=page-header-titles]]:basis-40"
           title={title}
-          icon={<FolderIcon className="size-4 text-muted-foreground" aria-hidden />}
-          action={
+          iconSlot={<FolderIcon className="size-4 text-muted-foreground" aria-hidden />}
+          actionSlot={
             writable ? (
               <div className="flex shrink-0 items-center gap-1">
                 <NewNote folder={folder} title={title} dir={dirOf(selected)} />
@@ -200,7 +238,7 @@ function DocList({
               </>
             ) : undefined
           }
-          content={
+          contentSlot={
             <div className="flex flex-col gap-2">
               <McpOffHint />
               <div className="flex items-center gap-2">
@@ -208,7 +246,7 @@ function DocList({
                   aria-label="Find by"
                   variant="framed"
                   value={mode}
-                  onValueChange={(next) => setMode(next as Mode)}
+                  onValueChange={setMode}
                 >
                   <SegmentedButton value="filter">Filter</SegmentedButton>
                   <SegmentedButton value="search">Search</SegmentedButton>
@@ -248,7 +286,7 @@ function DocList({
         />
       }
       contentClassName="px-2 pb-4"
-      content={
+      contentSlot={
         searching ? (
           <SearchResults folder={folder} search={search} selected={selected} />
         ) : (
@@ -257,7 +295,7 @@ function DocList({
               query={docs}
               what="the documents"
               count={rows.length}
-              empty={
+              emptySlot={
                 <EmptyState
                   icon={FileText}
                   title={
@@ -290,6 +328,7 @@ function DocList({
                 label="Notes"
                 entries={entries}
                 selected={selected ? withinFolder(selected) : undefined}
+                onMove={writable ? moveInto : undefined}
                 linkSlot={(node) => (
                   <Link
                     to="/f/$folder"
@@ -305,14 +344,13 @@ function DocList({
                       folder={folder}
                       title={title}
                       dir={node.path}
-                      trigger={
+                      triggerSlot={
                         <ActionButton
                           variant="ghost"
                           size="icon-xs"
                           label={`New note in ${node.path}`}
-                        >
-                          <FilePlus aria-hidden />
-                        </ActionButton>
+                          iconSlot={<FilePlus />}
+                        />
                       }
                     />
                   ) : null
@@ -340,15 +378,18 @@ function TagMenu({
   return (
     <Menu>
       <MenuTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Tag aria-hidden /> {active ? `#${active}` : "Tags"}
-        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          iconSlot={<Tag />}
+          content={active ? `#${active}` : "Tags"}
+        />
       </MenuTrigger>
       <MenuContent align="end" className="max-h-80">
         {active ? (
           <MenuItem
             label="All tags"
-            link={
+            linkSlot={
               <Link to="/f/$folder" params={{ folder }} search={({ tag: _, ...rest }) => rest} />
             }
           />
@@ -358,7 +399,7 @@ function TagMenu({
             key={tag}
             label={`#${tag}`}
             trailing={tag === active ? "✓" : undefined}
-            link={
+            linkSlot={
               <Link to="/f/$folder" params={{ folder }} search={(prev) => ({ ...prev, tag })} />
             }
           />
@@ -379,22 +420,21 @@ function SortMenu({ folder, active }: { folder: string; active: "recent" | undef
           size="icon-sm"
           aria-label={active === "recent" ? "Sorted by recently changed" : "Sorted by path"}
           title={active === "recent" ? "Sorted by recently changed" : "Sorted by path"}
-        >
-          <ArrowDownWideNarrow aria-hidden />
-        </Button>
+          iconSlot={<ArrowDownWideNarrow />}
+        />
       </MenuTrigger>
       <MenuContent align="end">
         <MenuItem
           label="By path"
           trailing={active === undefined ? "✓" : undefined}
-          link={
+          linkSlot={
             <Link to="/f/$folder" params={{ folder }} search={({ sort: _, ...rest }) => rest} />
           }
         />
         <MenuItem
           label="Recently changed"
           trailing={active === "recent" ? "✓" : undefined}
-          link={
+          linkSlot={
             <Link
               to="/f/$folder"
               params={{ folder }}
@@ -424,7 +464,7 @@ function SearchResults({
         query={search}
         what="the search"
         count={hits.length}
-        empty={<EmptyState icon={Search} title="Nothing in this folder matches that." />}
+        emptySlot={<EmptyState icon={Search} title="Nothing in this folder matches that." />}
       />
       <ItemGroup role="list">
         {hits.map((hit) => (
@@ -527,15 +567,13 @@ function NothingSelected({
           ? `${title} holds ${formatCount(count, "file")}. What you see here is read from disk, so it is current even while the index catches up.`
           : `The list fills in as the index syncs with ${title}.`
       }
-      action={
+      actionSlot={
         writable ? (
           <NewNote
             folder={folder}
             title={title}
-            trigger={
-              <Button variant="outline" size="sm">
-                <Plus aria-hidden /> New note
-              </Button>
+            triggerSlot={
+              <Button variant="outline" size="sm" iconSlot={<Plus />} content="New note" />
             }
           />
         ) : undefined
@@ -630,10 +668,10 @@ function DocPreview({
   return (
     <StickyHeaderContentFooter
       width="prose"
-      header={
+      headerSlot={
         <PageHeader
           title={title}
-          breadcrumbs={
+          breadcrumbsSlot={
             <p className="break-all font-mono text-muted-foreground text-xs">
               {withinFolder(path)}
             </p>
@@ -647,7 +685,7 @@ function DocPreview({
               </>
             ) : undefined
           }
-          action={
+          actionSlot={
             <>
               <CopyButton variant="outline" value={path} label="Copy path" />
               <DownloadDoc path={path} />
@@ -657,15 +695,14 @@ function DocPreview({
                   size="icon-sm"
                   label="Edit"
                   onClick={() => setEditing(true)}
-                >
-                  <Pencil aria-hidden />
-                </ActionButton>
+                  iconSlot={<Pencil />}
+                />
               ) : null}
               {writable && summary ? <RenameDoc path={path} /> : null}
               {writable && summary ? <DeleteDoc path={path} /> : null}
             </>
           }
-          content={
+          contentSlot={
             hasBadges ? (
               <div className="flex flex-wrap items-center gap-1.5">
                 {replacedBy.length > 0 ? (
@@ -719,7 +756,7 @@ function DocPreview({
         />
       }
       contentClassName="pb-10"
-      content={
+      contentSlot={
         doc.isError ? (
           <QueryError error={doc.error} onRetry={() => void doc.refetch()} what={path} />
         ) : doc.isPending ? (
@@ -765,8 +802,7 @@ function DownloadDoc({ path }: { path: string }) {
           .catch((error) => toast(error instanceof Error ? error.message : String(error), "error"))
           .finally(() => setBusy(false));
       }}
-    >
-      <Download aria-hidden />
-    </ActionButton>
+      iconSlot={<Download />}
+    />
   );
 }

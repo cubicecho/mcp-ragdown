@@ -38,7 +38,7 @@ export function EditServerSettings({
           value.embedder === settings.embedder
             ? "Saved the server settings"
             : `Saved. Rebuilding the index with ${value.embedder}`,
-          "success",
+          "positive",
         );
         onClose();
       } catch (error) {
@@ -63,7 +63,7 @@ export function EditServerSettings({
         </>
       }
       hasUnsavedChanges={changed}
-      content={
+      contentSlot={
         <form
           id="edit-server-settings"
           className="flex flex-col gap-4"
@@ -105,7 +105,7 @@ export function EditServerSettings({
                 the environment's, shown in the field.
               </>
             }
-            content={
+            contentSlot={
               <div className="grid gap-4 sm:grid-cols-2">
                 <NumberField
                   form={form}
@@ -170,11 +170,9 @@ export function EditServerSettings({
           />
         </form>
       }
-      footerActions={(close) => (
+      footerActionsSlot={(close) => (
         <>
-          <Button variant="outline" onClick={close}>
-            Cancel
-          </Button>
+          <Button variant="outline" onClick={close} content="Cancel" />
           <form.AppForm>
             <form.Subscribe
               selector={(state) => Object.keys(settingsPatch(settings, state.values)).length === 0}
@@ -184,9 +182,8 @@ export function EditServerSettings({
                   form="edit-server-settings"
                   pendingLabel="Saving…"
                   disabled={unchanged}
-                >
-                  Save
-                </form.SubmitButton>
+                  content="Save"
+                />
               )}
             </form.Subscribe>
           </form.AppForm>

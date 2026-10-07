@@ -1,7 +1,7 @@
 import { Children, createContext, isValidElement, type ReactNode, useContext } from "react";
 import { CircleAlert, Info, TriangleAlert } from "@/components/ui/icons";
 import { IconClassContext } from "@/components/ui/icons-base";
-import { cn } from "@/lib/utils";
+import { cn, type SlotNode } from "@/lib/utils";
 
 export type AlertVariant = "default" | "info" | "warning" | "destructive";
 
@@ -13,16 +13,17 @@ export type AlertProps = {
   variant?: AlertVariant | undefined;
   /**
    * Before the title. A bare `<RefreshCw />`; the alert sizes it and gives it the variant's ink.
-   * Left out, the variant's own glyph is drawn — `Info`, `TriangleAlert` or `CircleAlert`. `null`
-   * draws no icon at all, and the text moves to the edge.
+   * Left out, the variant's own glyph is drawn — `Info`, `TriangleAlert` or `CircleAlert` — except
+   * on `info`, which is a colour and draws nothing it was not given. `null` draws no icon at all,
+   * and the text moves to the edge.
    */
-  icon?: ReactNode | undefined;
+  iconSlot?: SlotNode | undefined;
   /** What happened, in a few words: "API key generated", "Last error". */
   title?: ReactNode | undefined;
   /** The line under the title: what it means, or what to do about it. A link may sit inside it. */
   description?: ReactNode | undefined;
   /** The far end: one button that deals with it — "Change the embedder", "Retry". */
-  action?: ReactNode | undefined;
+  actionSlot?: SlotNode | undefined;
   className?: string | undefined;
   /**
    * shadcn's compound form: `AlertTitle`, `AlertDescription`, and an icon. See the header for how
@@ -39,32 +40,42 @@ const AlertVariantContext = createContext<AlertVariant>("default");
 
 /** The box: the tint and the border that names its colour, per variant. */
 const ALERT_SURFACE = {
-  default: "border border-border bg-card",
-  info: "border border-sky-600/40 bg-sky-600/10",
-  warning: "border border-amber-700/40 bg-amber-700/10",
-  destructive: "border border-destructive/40 bg-destructive/10",
+  default: "border border-foreground/10 bg-secondary",
+  info: "border border-info/40 bg-info/10",
+  warning: "border border-warning/40 bg-warning/10",
+  destructive: "border border-negative/40 bg-negative/10",
 } satisfies Record<AlertVariant, string>;
 
 /** The icon's colour, and the only place the variant's hue reaches something drawn. */
 const ALERT_ICON_INK = {
   default: "text-foreground",
-  info: "text-sky-600",
-  warning: "text-amber-700",
-  destructive: "text-destructive",
+  info: "text-info",
+  warning: "text-warning",
+  destructive: "text-negative",
 } satisfies Record<AlertVariant, string>;
 
 /** The line under the title. Muted only on the card, where muted is still 4.5:1. */
 const ALERT_DESCRIPTION_INK = {
-  default: "text-muted-foreground",
+  default: "text-foreground/60",
   info: "text-foreground",
   warning: "text-foreground",
   destructive: "text-foreground",
 } satisfies Record<AlertVariant, string>;
 
-/** The variant's own glyph, for when the caller passes no `icon`. */
+/**
+ * The variant's own glyph, for when the caller passes no `iconSlot`. `info` has none: it is the
+ * blue and nothing else, so the same alert can say "new" or "tip" without an ⓘ arguing with it.
+ */
 function defaultIcon(variant: AlertVariant): ReactNode {
-  if (variant === "destructive") return <CircleAlert />;
-  if (variant === "warning") return <TriangleAlert />;
+  if (variant === "info") {
+    return null;
+  }
+  if (variant === "destructive") {
+    return <CircleAlert />;
+  }
+  if (variant === "warning") {
+    return <TriangleAlert />;
+  }
   return <Info />;
 }
 
@@ -100,10 +111,10 @@ function isTextPart(child: ReactNode): boolean {
 
 export function Alert({
   variant = "default",
-  icon,
+  iconSlot,
   title,
   description,
-  action,
+  actionSlot,
   className,
   children,
 }: AlertProps) {
@@ -116,8 +127,8 @@ export function Alert({
     ),
   );
   const textParts = parts.filter(isTextPart);
-  const iconParts = parts.filter((child) => !isTextPart(child));
-  const glyph = icon !== undefined ? icon : parts.length > 0 ? null : defaultIcon(variant);
+  const iconParts = parts.filter((child) => isTextPart(child) === false);
+  const glyph = iconSlot !== undefined ? iconSlot : parts.length > 0 ? null : defaultIcon(variant);
   const ink = ALERT_ICON_INK[variant];
 
   return (
@@ -154,9 +165,9 @@ export function Alert({
           {textParts}
         </AlertVariantContext.Provider>
       </div>
-      {action ? (
+      {actionSlot ? (
         <div data-slot="alert-action" className="cube-rn-view shrink-0 self-center">
-          {action}
+          {actionSlot}
         </div>
       ) : null}
     </div>

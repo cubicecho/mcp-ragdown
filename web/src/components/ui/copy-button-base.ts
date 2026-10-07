@@ -13,7 +13,7 @@ export type CopyButtonProps = {
    * press the name is `Copied`, whatever this says.
    */
   label?: string | undefined;
-  /** The button's variant. The default is `ghost`, since a copy button sits beside its text. */
+  /** The button's variant. The default is `outline`. */
   variant?: ButtonProps["variant"] | undefined;
   /** The button's size. The default is `icon-sm`, which sits flush in a row of small text. */
   size?: ButtonProps["size"] | undefined;
@@ -66,7 +66,9 @@ export function useCopy(
     onCopied?.();
     // The write is async, so the button can be gone by the time it lands, and a timer started
     // then would outlive the cleanup above.
-    if (!mounted.current) return;
+    if (!mounted.current) {
+      return;
+    }
     setCopied(true);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setCopied(false), COPIED_MS);
