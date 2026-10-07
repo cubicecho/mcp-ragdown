@@ -62,8 +62,7 @@ as it was, so the document it hid reappears in search. Intended?
 
 **File:** `src/shared/config.ts`. `RAGDOWN_NOTES_DIR` and its `notes` default are the last of
 it: everything else says "document". Renaming the variable or the default directory is breaking
-for anyone who set one or has documents in the other. The site's screenshots also still show the
-dialog as "New note".
+for anyone who set one or has documents in the other.
 
 ### A4 — `DELETE /api/doc` takes no `base_hash`
 
