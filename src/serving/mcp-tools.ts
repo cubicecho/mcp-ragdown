@@ -60,7 +60,7 @@ export function createMcpServer(
     {
       title: "Search documents",
       description:
-        "Hybrid (semantic + keyword) search over the user's Markdown documents. Returns the most relevant sections with file path, line range, heading breadcrumb and cosine similarity (above ~0.8 is usually on topic). A section of a document an agent wrote says so. Use it before answering anything the documents may cover; follow up with ragdown_read_doc for the surrounding text.",
+        "Hybrid (semantic + keyword) search over the user's Markdown documents. Returns the most relevant sections with file path, line range, heading breadcrumb and cosine similarity (above ~0.8 is usually on topic) and the day the file last changed. A section of a document an agent wrote says so. Use it before answering anything the documents may cover; follow up with ragdown_read_doc for the surrounding text.",
       inputSchema: {
         query: z.string().min(1).describe("What to look for, as a question or keywords"),
         top_k: z.number().int().min(1).max(defaults.maxTopK).default(8),

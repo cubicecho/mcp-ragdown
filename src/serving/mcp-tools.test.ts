@@ -75,7 +75,12 @@ describe("MCP server", () => {
       top_k: 1,
       max_chars: 5,
     });
-    expect(text.text).toMatch(/^\[1\] ops\/backups\.md:7-7 — Backups › Restore \(similarity/);
+    const today = new Date().toISOString().slice(0, 10);
+    expect(text.text).toMatch(
+      new RegExp(
+        `^\\[1\\] ops/backups\\.md:7-7 — Backups › Restore \\(similarity \\d\\.\\d\\d, changed ${today}\\)`,
+      ),
+    );
     expect(text.text).toContain(
       '[clipped: 5 of 21 characters — ragdown_read_doc {path: "ops/backups.md", start_line: 7, end_line: 7}]',
     );
@@ -84,6 +89,7 @@ describe("MCP server", () => {
       (await t.call("ragdown_recall", { query: "pg_restore", format: "json" })).text,
     );
     expect(json.hits[0]).toMatchObject({ path: "ops/backups.md", heading: "Backups › Restore" });
+    expect(json.hits[0].modified.slice(0, 10)).toBe(today);
   });
 
   it("returns hook context once per session, and empty text when there is none", async () => {

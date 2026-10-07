@@ -85,6 +85,8 @@ export interface Hit {
   tags: string[];
   /** The document's frontmatter `created_by`; empty for a document the user wrote. */
   createdBy: string;
+  /** When the document's file last changed, as the index saw it. */
+  mtimeMs: number;
 }
 
 interface Meta {
@@ -103,6 +105,7 @@ const HIT_COLUMNS = [
   "text",
   "tags",
   "created_by",
+  "mtime_ms",
   "line_start",
   "line_end",
 ] as const;
@@ -538,6 +541,7 @@ function toHit(row: ScoredRow, score: number, sources: Hit["sources"]): Hit {
     sources,
     tags: splitTags(row.tags),
     createdBy: row.created_by,
+    mtimeMs: row.mtime_ms,
   };
 }
 

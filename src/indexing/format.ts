@@ -14,14 +14,15 @@ export function formatHits(hits: Hit[], maxChars: number): string {
 }
 
 /**
- * One hit as text: where it is, its tags and similarity, then its text cut to `maxChars`. A document
- * an agent wrote says so, since a reader should weigh it differently from one the user wrote.
+ * One hit as text: where it is, its tags, similarity and the day its file last changed, then its
+ * text cut to `maxChars`. The date is what lets a reader doubt an old fact; a document an agent
+ * wrote says so, since a reader should weigh it differently from one the user wrote.
  */
 export function formatHit(hit: Hit, maxChars: number): string {
   const where = breadcrumb(hit.title, hit.heading);
   const tags = hit.tags.length > 0 ? ` [${hit.tags.map((tag) => `#${tag}`).join(" ")}]` : "";
   const author = hit.createdBy ? `, written by an agent with ${hit.createdBy}` : "";
-  const header = `${hit.path}:${hit.lineStart}-${hit.lineEnd} — ${where}${tags} (similarity ${hit.similarity.toFixed(2)}${author})`;
+  const header = `${hit.path}:${hit.lineStart}-${hit.lineEnd} — ${where}${tags} (similarity ${hit.similarity.toFixed(2)}, changed ${day(hit.mtimeMs)}${author})`;
   return `${header}\n${clip(hit, maxChars)}`;
 }
 
@@ -37,9 +38,15 @@ export function hitJson(hit: Hit) {
     score: Number(hit.score.toFixed(5)),
     sources: hit.sources,
     tags: hit.tags,
+    modified: new Date(hit.mtimeMs).toISOString(),
     ...(hit.createdBy ? { created_by: hit.createdBy } : {}),
     text: hit.text,
   };
+}
+
+/** The UTC day of a time, as `2026-09-15`. */
+function day(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
 }
 
 function clip(hit: Hit, maxChars: number): string {
