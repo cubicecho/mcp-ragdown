@@ -135,10 +135,27 @@ created_by: ragdown_remember
 
         <h2 id="hooks">Hooks</h2>
         <p>There is no hook command and no hook HTTP route: a hook calls <code>ragdown_context</code> over MCP like any
-          other tool, so automatic per-prompt context needs a client whose hooks call MCP tools, such as min-agent.
-          (There is no hook command to wire into Claude Code; there Claude calls <code>ragdown_recall</code> itself
-          when the notes might help.) A min-agent server entry
-          under <strong>Settings → MCP</strong>:</p>
+          other tool, so automatic per-prompt context needs a client whose hooks call MCP tools. Claude Code's
+          <code>mcp_tool</code> hooks do, in <code>.claude/settings.json</code>:</p>
+        <pre class="code"><code>{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "mcp_tool", "server": "ragdown", "tool": "ragdown_context",   <span class="cmt">// the name given to claude mcp add</span>
+          "input": { "prompt": "${prompt}", "session_id": "claude:${session_id}", "format": "claude-code" } } ] }
+    ],
+    "SessionStart": [
+      { "matcher": "compact", "hooks": [ { "type": "mcp_tool", "server": "ragdown", "tool": "ragdown_context",
+          "input": { "prompt": "", "session_id": "claude:${session_id}", "reset": true } } ] }
+    ]
+  }
+}</code></pre>
+        <p><code>format: claude-code</code> is needed: Claude Code (2.1.292, where this was tried) calls the tool
+          either way but only passes the result on to the model as a hook's <code>additionalContext</code>. The
+          <code>SessionStart</code> hook is for compaction, which keeps the session id and drops the notes Claude
+          was given: <code>reset</code> lets them be sent again. Claude Code skips <code>mcp_tool</code> hooks on the
+          <code>SessionStart</code> at launch, which needs no reset, and caps a hook's output at 10,000 characters
+          (<code>RAGDOWN_HOOK_MAX_CHARS</code> defaults to 6,000).</p>
+        <p>A min-agent server entry under <strong>Settings → MCP</strong>:</p>
         <pre class="code"><code>{
   "id": "ragdown",
   "label": "Notes",

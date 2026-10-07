@@ -81,8 +81,33 @@ claude mcp add ragdown -e RAGDOWN_DOCS_DIR=$HOME/notes/work -- node /path/to/mcp
 it by launching it). Point it at an Obsidian vault and the whole vault is the folder.
 
 Claude calls `ragdown_recall` and `ragdown_read_doc` itself when the documents might help; the server's
-instructions tell it to. There is no hook command to wire into Claude Code: automatic per-prompt
-context needs a client whose hooks call MCP tools, such as min-agent.
+instructions tell it to.
+
+For related documents on every prompt without Claude asking, Claude Code's `mcp_tool` hooks call
+`ragdown_context` on the server you added. In `.claude/settings.json` (or `~/.claude/settings.json`):
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "mcp_tool", "server": "ragdown", "tool": "ragdown_context",
+          "input": { "prompt": "${prompt}", "session_id": "claude:${session_id}", "format": "claude-code" } } ] }
+    ],
+    "SessionStart": [
+      { "matcher": "compact", "hooks": [ { "type": "mcp_tool", "server": "ragdown", "tool": "ragdown_context",
+          "input": { "prompt": "", "session_id": "claude:${session_id}", "reset": true } } ] }
+    ]
+  }
+}
+```
+
+- `server` is the name you gave `claude mcp add`.
+- `format: claude-code` is needed: Claude Code (2.1.292, where this was tried) calls the tool
+  either way but only passes the result on to the model as a hook's `additionalContext`.
+- The `SessionStart` hook is for compaction, which keeps the session id and drops the sections
+  Claude was given: `reset` lets them be sent again. Claude Code skips `mcp_tool` hooks on the
+  `SessionStart` at launch, which needs no reset.
+- Claude Code caps a hook's output at 10,000 characters; `RAGDOWN_HOOK_MAX_CHARS` defaults to 6,000.
 
 ## Folders
 

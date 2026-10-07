@@ -225,8 +225,19 @@ ragdown_read_doc({ path: "Backups#Restore" })                   <span class="cmt
     <div class="step" id="hook">
       <div class="step-head"><span class="step-num">8</span><h2>Add notes to every turn with a hook</h2></div>
       <p>For context without the model having to ask, a hook calls <code>ragdown_context</code> before each turn.
-        It is an MCP tool like the others, so it needs a client whose hooks call MCP tools — min-agent does. There is no
-        hook command to wire into Claude Code; there, Claude calls <code>ragdown_recall</code> itself. In min-agent, add the server under <strong>Settings → MCP</strong>:</p>
+        It is an MCP tool like the others, so it needs a client whose hooks call MCP tools. Claude Code's
+        <code>mcp_tool</code> hooks do, in <code>.claude/settings.json</code>:</p>
+      <pre class="code"><code>{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "mcp_tool", "server": "ragdown", "tool": "ragdown_context",
+          "input": { "prompt": "${prompt}", "session_id": "claude:${session_id}", "format": "claude-code" } } ] }
+    ]
+  }
+}</code></pre>
+      <p><code>server</code> is the name you gave <code>claude mcp add</code>, and <code>format: claude-code</code>
+        returns the notes in the shape Claude Code passes on to the model. In min-agent, add the server under
+        <strong>Settings → MCP</strong>:</p>
       <pre class="code"><code>{
   "id": "ragdown",
   "label": "Notes",
