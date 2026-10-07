@@ -531,6 +531,7 @@ export class Scope {
       notes: docs.slice(0, options.limit ?? docs.length).map((doc) => ({
         path: this.toScoped(doc.path),
         title: doc.title,
+        ...(doc.description ? { description: doc.description } : {}),
         ...(doc.tags.length > 0 ? { tags: doc.tags } : {}),
         ...(doc.aliases.length > 0 ? { aliases: doc.aliases } : {}),
         modified: new Date(doc.mtimeMs).toISOString(),

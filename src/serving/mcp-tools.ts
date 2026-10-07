@@ -205,7 +205,7 @@ export function createMcpServer(
     {
       title: "List documents",
       description:
-        "Browse the documents rather than search them: every document's path, title, tags and last change, and for one an agent wrote, created_by and its session. Optionally under a subfolder, with a tag, by who wrote it, or from one session. sort: 'recent' puts the most recently changed first.",
+        "Browse the documents rather than search them: every document's path, title, tags and last change, its description when its frontmatter has one, and for one an agent wrote, created_by and its session. Optionally under a subfolder, with a tag, by who wrote it, or from one session. sort: 'recent' puts the most recently changed first.",
       inputSchema: {
         path_prefix: z
           .string()

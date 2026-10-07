@@ -433,6 +433,28 @@ describe("MCP server", () => {
     expect(await list({ session_id: "nobody" })).toEqual([]);
   });
 
+  it("lists a document's description, which is not searched", async () => {
+    const t = await connect();
+    await t.write("ops/dr.md", "---\ndescription: Zebra crossing plan\n---\n# DR\n\nFail over.");
+    await t.rag.sync(false);
+
+    const { notes } = JSON.parse((await t.call("ragdown_list", { path_prefix: "ops" })).text);
+    expect(notes).toEqual([
+      { path: "ops/backups.md", title: "Backups", modified: expect.any(String) },
+      {
+        path: "ops/dr.md",
+        title: "DR",
+        description: "Zebra crossing plan",
+        modified: expect.any(String),
+      },
+    ]);
+    // Frontmatter is metadata: it is neither embedded nor in the text the keyword search reads.
+    const { hits } = JSON.parse(
+      (await t.call("ragdown_recall", { query: "zebra crossing", format: "json" })).text,
+    );
+    expect(JSON.stringify(hits)).not.toContain("Zebra");
+  });
+
   it("lists the notes that link to a note, by wikilink, alias and relative link", async () => {
     const t = await connect();
     await t.write("ops/restore.md", "---\naliases: [DR]\n---\n# Restore\n");

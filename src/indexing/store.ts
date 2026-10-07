@@ -17,7 +17,7 @@ const META_FILE_MODE = 0o600;
  * rebuilt rather than queried with columns it does not have. Separate from `CHUNKER_VERSION`: the
  * chunks may be unchanged and still be stored differently.
  */
-const INDEX_VERSION = 4;
+const INDEX_VERSION = 5;
 
 /** What the index remembers about a file, to decide on the next sync whether it changed. */
 export interface FileState {
@@ -38,6 +38,8 @@ export interface DocumentInfo {
   aliases: string[];
   /** Root-relative paths this document's frontmatter says it replaces. */
   supersedes: string[];
+  /** The frontmatter's `description`: what the document is, in a line. Empty when it has none. */
+  description: string;
   /** The frontmatter's `created_by`: the tool that wrote it. Empty for a document the user wrote. */
   createdBy: string;
   /** The frontmatter's `session`: the conversation it was written in. Empty when not recorded. */
@@ -61,6 +63,8 @@ export interface FileUpdate {
   tags?: string[];
   /** Frontmatter aliases: other names the document answers to in a wikilink; none when omitted. */
   aliases?: string[];
+  /** Frontmatter `description` (`readDocumentMeta`); empty when omitted. Never embedded. */
+  description?: string;
   /** Frontmatter `created_by` and `session` (`readDocumentMeta`); empty when omitted. */
   createdBy?: string;
   session?: string;
@@ -138,6 +142,8 @@ interface Row {
   tags: string;
   /** The document's aliases, newline-separated. */
   aliases: string;
+  /** The file's `description` frontmatter; the same on every row of a file. */
+  description: string;
   /** The file's `created_by` and `session` frontmatter; the same on every row of a file. */
   created_by: string;
   session: string;
@@ -265,6 +271,7 @@ export class Store {
       | "tags"
       | "aliases"
       | "supersedes"
+      | "description"
       | "created_by"
       | "session"
     >[] = await this.table
@@ -277,6 +284,7 @@ export class Store {
         "tags",
         "aliases",
         "supersedes",
+        "description",
         "created_by",
         "session",
       ])
@@ -296,6 +304,7 @@ export class Store {
           tags: splitTags(row.tags),
           aliases: row.aliases ? row.aliases.split("\n") : [],
           supersedes: row.supersedes ? row.supersedes.split("\n") : [],
+          description: row.description,
           createdBy: row.created_by,
           session: row.session,
         });
@@ -336,6 +345,7 @@ export class Store {
         supersedes: u.supersedes.join("\n"),
         tags: u.tags?.length ? ` ${u.tags.join(" ")} ` : "",
         aliases: u.aliases?.join("\n") ?? "",
+        description: u.description ?? "",
         created_by: u.createdBy ?? "",
         session: u.session ?? "",
         line_start: chunk.lineStart,
@@ -592,6 +602,7 @@ function schema(dim: number): Schema {
     new Field("supersedes", new Utf8(), false),
     new Field("tags", new Utf8(), false),
     new Field("aliases", new Utf8(), false),
+    new Field("description", new Utf8(), false),
     new Field("created_by", new Utf8(), false),
     new Field("session", new Utf8(), false),
     new Field("line_start", new Int32(), false),

@@ -177,6 +177,31 @@ describe("readDocumentMeta", () => {
     });
   });
 
+  it("reads the frontmatter's description, on one line or as a block", () => {
+    expect(readDocumentMeta('---\ndescription: "How backups are restored"\n---\nx')).toEqual({
+      tags: [],
+      aliases: [],
+      description: "How backups are restored",
+    });
+    const block = [
+      "---",
+      "description: >-",
+      "  How backups",
+      "  are restored.",
+      "tags: ops",
+      "---",
+    ];
+    expect(readDocumentMeta(block.join("\n"))).toEqual({
+      tags: ["ops"],
+      aliases: [],
+      description: "How backups are restored.",
+    });
+    expect(readDocumentMeta("---\ndescription: |\ntags: ops\n---\nx")).toEqual({
+      tags: ["ops"],
+      aliases: [],
+    });
+  });
+
   it("finds nothing in a plain note", () => {
     expect(readDocumentMeta("# Title\n\nText.")).toEqual({ tags: [], aliases: [] });
   });

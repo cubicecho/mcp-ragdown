@@ -151,6 +151,7 @@ export function readSupersedes(source: string, relPath: string): string[] {
 export interface DocumentMeta {
   tags: string[];
   aliases: string[];
+  description?: string;
   createdBy?: string;
   session?: string;
 }
@@ -163,6 +164,8 @@ export interface DocumentMeta {
  *
  * Stored beside the chunks as metadata, never added to the embedded text: that was measured and
  * did not pay for its rebuild.
+ *
+ * `description` is the frontmatter's one-line summary of the document, for a listing to show.
  *
  * `createdBy` and `session` are the frontmatter's `created_by` and `session`, which the write tools
  * record: who a document says wrote it, not proof of it. Absent when the frontmatter has neither.
@@ -205,24 +208,40 @@ export function readDocumentMeta(source: string): DocumentMeta {
   }
 
   const aliases = [...new Set(readList(front, "aliases").filter(Boolean))];
+  const description = readScalar(front, "description");
   const createdBy = readScalar(front, "created_by");
   const session = readScalar(front, "session");
   return {
     tags: [...tags].sort(),
     aliases,
+    ...(description ? { description } : {}),
     ...(createdBy ? { createdBy } : {}),
     ...(session ? { session } : {}),
   };
 }
 
-/** A top-level frontmatter key holding one value, unquoted; undefined when missing or empty. */
+/**
+ * A top-level frontmatter key holding one value, unquoted; undefined when missing or empty. A block
+ * scalar (`key: >` or `key: |` over indented lines) is read as one line.
+ */
 function readScalar(front: string[], key: string): string | undefined {
   const pattern = new RegExp(`^${key}:\\s*(.+?)\\s*$`);
-  for (const line of front) {
+  for (const [i, line] of front.entries()) {
     const match = pattern.exec(line);
-    if (match?.[1]) {
+    if (!match?.[1]) {
+      continue;
+    }
+    if (!/^[>|][+-]?$/.test(match[1])) {
       return unquote(match[1]) || undefined;
     }
+    const block: string[] = [];
+    for (const next of front.slice(i + 1)) {
+      if (next.trim() && !/^\s/.test(next)) {
+        break;
+      }
+      block.push(next.trim());
+    }
+    return block.filter(Boolean).join(" ") || undefined;
   }
   return undefined;
 }
