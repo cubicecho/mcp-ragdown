@@ -528,7 +528,7 @@ export class Scope {
     }
     return {
       total: docs.length,
-      notes: docs.slice(0, options.limit ?? docs.length).map((doc) => ({
+      documents: docs.slice(0, options.limit ?? docs.length).map((doc) => ({
         path: this.toScoped(doc.path),
         title: doc.title,
         ...(doc.description ? { description: doc.description } : {}),

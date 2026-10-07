@@ -264,7 +264,7 @@ describe("MCP server", () => {
     expect(await onDisk("ops/backups.md")).not.toContain("created_by");
 
     const listed = JSON.parse((await t.call("ragdown_list", { written_by: "agent" })).text);
-    expect(listed.notes.map((doc: { path: string }) => doc.path)).toEqual([
+    expect(listed.documents.map((doc: { path: string }) => doc.path)).toEqual([
       "new/front.md",
       "new/own.md",
       "new/plain.md",
@@ -301,7 +301,7 @@ describe("MCP server", () => {
       "# Index\n\nSee [[snapshots#Restore]] and [backups](infra/db/snapshots.md).",
     );
     const listed = JSON.parse((await t.call("ragdown_list", {})).text);
-    expect(listed.notes.map((note: { path: string }) => note.path)).toEqual([
+    expect(listed.documents.map((note: { path: string }) => note.path)).toEqual([
       "index.md",
       "infra/db/snapshots.md",
     ]);
@@ -353,7 +353,7 @@ describe("MCP server", () => {
     const list = async (args: Record<string, unknown>) =>
       JSON.parse((await t.call("ragdown_list", args)).text);
 
-    expect((await list({})).notes.map((n: { path: string }) => n.path)).toEqual([
+    expect((await list({})).documents.map((n: { path: string }) => n.path)).toEqual([
       "notes/a.md",
       "notes/b.md",
       "ops/backups.md",
@@ -361,17 +361,20 @@ describe("MCP server", () => {
     const tagged = await list({ tag: "#project" });
     expect(tagged).toMatchObject({
       total: 1,
-      notes: [{ path: "notes/a.md", title: "Alpha", tags: ["project/alpha"] }],
+      documents: [{ path: "notes/a.md", title: "Alpha", tags: ["project/alpha"] }],
     });
     expect((await list({ path_prefix: "notes/", limit: 1 })).total).toBe(2);
-    expect((await list({ path_prefix: "notes/", limit: 1 })).notes).toHaveLength(1);
+    expect((await list({ path_prefix: "notes/", limit: 1 })).documents).toHaveLength(1);
 
     // The index keeps a file's mtime until its content changes, so b is changed, not only touched.
     await new Promise((done) => setTimeout(done, 20));
     await t.write("notes/b.md", "# Beta\n\n#ops, changed");
     await t.rag.sync(false);
     const recent = await list({ sort: "recent", path_prefix: "notes" });
-    expect(recent.notes.map((n: { path: string }) => n.path)).toEqual(["notes/b.md", "notes/a.md"]);
+    expect(recent.documents.map((n: { path: string }) => n.path)).toEqual([
+      "notes/b.md",
+      "notes/a.md",
+    ]);
   });
 
   it("tells an agent's documents from the user's, when searching and listing", async () => {
@@ -415,7 +418,7 @@ describe("MCP server", () => {
     expect(context.text).toContain("written by an agent with ragdown_remember");
 
     const list = async (args: Record<string, unknown>) =>
-      JSON.parse((await t.call("ragdown_list", args)).text).notes as Record<string, unknown>[];
+      JSON.parse((await t.call("ragdown_list", args)).text).documents as Record<string, unknown>[];
     expect((await list({ written_by: "agent" })).map((doc) => doc.path)).toEqual([
       "notes/drill.md",
       "notes/window.md",
@@ -438,8 +441,8 @@ describe("MCP server", () => {
     await t.write("ops/dr.md", "---\ndescription: Zebra crossing plan\n---\n# DR\n\nFail over.");
     await t.rag.sync(false);
 
-    const { notes } = JSON.parse((await t.call("ragdown_list", { path_prefix: "ops" })).text);
-    expect(notes).toEqual([
+    const { documents } = JSON.parse((await t.call("ragdown_list", { path_prefix: "ops" })).text);
+    expect(documents).toEqual([
       { path: "ops/backups.md", title: "Backups", modified: expect.any(String) },
       {
         path: "ops/dr.md",
@@ -495,7 +498,7 @@ describe("MCP server", () => {
     );
     expect(newer).not.toHaveProperty("superseded_by");
     const listed = JSON.parse((await t.call("ragdown_list", {})).text);
-    expect(listed.notes).toContainEqual(
+    expect(listed.documents).toContainEqual(
       expect.objectContaining({ path: "ops/backups.md", superseded_by: ["ops/backups-v2.md"] }),
     );
   });
