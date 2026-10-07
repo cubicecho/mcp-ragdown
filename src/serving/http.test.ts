@@ -683,7 +683,12 @@ describe("HTTP server", () => {
       hits: { path: string; tags: string[] }[];
     };
     expect(tagged.hits).toEqual([
-      expect.objectContaining({ path: "ops/db/pg.md", tags: ["db", "infra/postgres"] }),
+      expect.objectContaining({
+        path: "ops/db/pg.md",
+        tags: ["db", "infra/postgres"],
+        mtime_ms: expect.any(Number),
+        created_by: "",
+      }),
     ]);
     expect((await get("/api/search?folder=ops")).status).toBe(400);
     expect((await get("/api/search?folder=nope&q=x")).status).toBe(404);

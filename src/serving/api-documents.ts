@@ -167,6 +167,8 @@ export async function handleDocuments(request: ApiRequest): Promise<void> {
         similarity: Number(hit.similarity.toFixed(4)),
         text: hit.text,
         tags: hit.tags,
+        mtime_ms: hit.mtimeMs,
+        created_by: hit.createdBy,
       })),
     });
     return;
