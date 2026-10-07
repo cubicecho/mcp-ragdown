@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { FilePlus } from "@/components/app-icons";
 import { Backlinks } from "@/components/backlinks";
-import { DeleteDoc, NewNote, RenameDoc, UploadDocs } from "@/components/doc-actions";
+import { DeleteDoc, NewDocument, RenameDoc, UploadDocs } from "@/components/doc-actions";
 import { DocEditor } from "@/components/doc-editor";
 import { FileTree } from "@/components/file-tree";
 import { McpOffHint } from "@/components/folder-actions";
@@ -42,7 +42,7 @@ import { cn } from "@/lib/utils";
 
 const route = getRouteApi("/f/$folder");
 
-/** `notes/ideas/a.md` → `notes/ideas`: where a new note goes beside the open one. */
+/** `notes/ideas/a.md` → `notes/ideas`: where a new document goes beside the open one. */
 const dirOf = (path: string | undefined) =>
   path ? withinFolder(path).split("/").slice(0, -1).join("/") : "";
 
@@ -124,12 +124,12 @@ function useDebounced<T>(value: T, ms: number): T {
 
 type Mode = "filter" | "search";
 
-/** A note as the file tree lists it: its path within the folder, and the note. */
-type NoteEntry = TreeEntry & { doc: DocSummary };
+/** A document as the file tree lists it: its path within the folder, and the document. */
+type DocEntry = TreeEntry & { doc: DocSummary };
 
 /**
  * The folder's files. Filter narrows the list by title, path, tag and alias as you type, on this
- * side; search asks the index, so it finds what a note says rather than what it is called.
+ * side; search asks the index, so it finds what a document says rather than what it is called.
  */
 function DocList({
   folder,
@@ -167,7 +167,7 @@ function DocList({
     return sort === "recent" ? matching.sort((a, b) => b.mtime_ms - a.mtime_ms) : matching;
   }, [docs.data, text, tag, mode, sort]);
   const entries = useMemo(
-    () => rows.map((doc): NoteEntry => ({ path: withinFolder(doc.path), type: "file", doc })),
+    () => rows.map((doc): DocEntry => ({ path: withinFolder(doc.path), type: "file", doc })),
     [rows],
   );
   const chunks = docs.data?.reduce((sum, doc) => sum + doc.chunks, 0) ?? 0;
@@ -186,7 +186,7 @@ function DocList({
           action={
             writable ? (
               <div className="flex shrink-0 items-center gap-1">
-                <NewNote folder={folder} title={title} dir={dirOf(selected)} />
+                <NewDocument folder={folder} title={title} dir={dirOf(selected)} />
                 <UploadDocs folder={folder} title={title} />
               </div>
             ) : undefined
@@ -221,7 +221,9 @@ function DocList({
               <SearchInput
                 label={mode === "search" ? `Search ${title}` : "Filter documents"}
                 placeholder={
-                  mode === "search" ? "Search what the notes say" : "Filter by title, path or tag"
+                  mode === "search"
+                    ? "Search what the documents say"
+                    : "Filter by title, path or tag"
                 }
                 value={text}
                 onChangeText={setText}
@@ -287,7 +289,7 @@ function DocList({
               </ItemGroup>
             ) : (
               <FileTree
-                label="Notes"
+                label="Documents"
                 entries={entries}
                 selected={selected ? withinFolder(selected) : undefined}
                 linkSlot={(node) => (
@@ -301,7 +303,7 @@ function DocList({
                 meta={(node) => (node.entry?.doc.superseded_by.length ? <Superseded /> : null)}
                 actionSlot={(node) =>
                   writable && node.type === "dir" ? (
-                    <NewNote
+                    <NewDocument
                       folder={folder}
                       title={title}
                       dir={node.path}
@@ -309,7 +311,7 @@ function DocList({
                         <ActionButton
                           variant="ghost"
                           size="icon-xs"
-                          label={`New note in ${node.path}`}
+                          label={`New document in ${node.path}`}
                         >
                           <FilePlus aria-hidden />
                         </ActionButton>
@@ -407,7 +409,7 @@ function SortMenu({ folder, active }: { folder: string; active: "recent" | undef
   );
 }
 
-/** Sections the index found, best first; each opens its note at the heading it came from. */
+/** Sections the index found, best first; each opens its document at the heading it came from. */
 function SearchResults({
   folder,
   search,
@@ -529,12 +531,12 @@ function NothingSelected({
       }
       action={
         writable ? (
-          <NewNote
+          <NewDocument
             folder={folder}
             title={title}
             trigger={
               <Button variant="outline" size="sm">
-                <Plus aria-hidden /> New note
+                <Plus aria-hidden /> New document
               </Button>
             }
           />
@@ -583,7 +585,7 @@ function DocPreview({
   const { edit } = route.useSearch();
   const navigate = useNavigate();
 
-  // `?edit` (from New note) opens the editor once the note has loaded, then leaves the URL.
+  // `?edit` (from New document) opens the editor once the document has loaded, then leaves the URL.
   useEffect(() => {
     if (!edit || !doc.data || !writable) return;
     setEditing(true);
@@ -669,7 +671,7 @@ function DocPreview({
             hasBadges ? (
               <div className="flex flex-wrap items-center gap-1.5">
                 {replacedBy.length > 0 ? (
-                  // Search already leaves this note out; this is for whoever opened it anyway.
+                  // Search already leaves this document out; this is for whoever opened it anyway.
                   <p className="w-full text-muted-foreground text-sm">
                     <Badge variant="outline" className="mr-1.5 font-normal">
                       superseded
@@ -740,7 +742,7 @@ function DocPreview({
   );
 }
 
-/** The note's file as it is on disk, front matter and all, saved under its own name. */
+/** The document's file as it is on disk, front matter and all, saved under its own name. */
 function DownloadDoc({ path }: { path: string }) {
   const [busy, setBusy] = useState(false);
   const toast = useToast();

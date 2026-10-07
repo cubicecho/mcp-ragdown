@@ -60,11 +60,10 @@ as it was, so the document it hid reappears in search. Intended?
 
 ### A3 — "note" remains where changing it changes an interface or is out of scope
 
-**File:** `src/documents/scope.ts` (`listDocuments` answers `{ notes: [...] }`, which
-`ragdown_list` and `/api/docs` return), `src/documents/remember.ts` (the file-name fallback
-`"note"`), `RAGDOWN_NOTES_DIR` and its `notes` default, `site/src/*.njk`, and the web UI's text
-("New note"). A2 changed messages, tool descriptions and the README only. Decide which of these
-follow; the JSON key and the env var are breaking.
+**File:** `src/shared/config.ts`. `RAGDOWN_NOTES_DIR` and its `notes` default are the last of
+it: everything else says "document". Renaming the variable or the default directory is breaking
+for anyone who set one or has documents in the other. The site's screenshots also still show the
+dialog as "New note".
 
 ### A4 — `DELETE /api/doc` takes no `base_hash`
 

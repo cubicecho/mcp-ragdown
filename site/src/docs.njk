@@ -35,23 +35,23 @@ permalink: /docs/
 
         <h2 id="tools">MCP tools</h2>
         <p>Every endpoint — stdio, each <code>/mcp/&lt;folder&gt;</code> and its subfolders — serves the same tools.
-          Claude calls <code>ragdown_recall</code> and <code>ragdown_read_doc</code> on its own when the notes might
+          Claude calls <code>ragdown_recall</code> and <code>ragdown_read_doc</code> on its own when the documents might
           help; the server's instructions tell it to. A tool failure comes back as an error result, never a dropped
           connection.</p>
         <div class="table-scroll">
           <table>
             <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
             <tbody>
-              <tr><td><code>ragdown_recall</code></td><td>Hybrid search. Returns path, line range, heading breadcrumb, tags, similarity and the day the file last changed for each hit, and says when an agent wrote the note. Takes <code>top_k</code>, <code>path_prefix</code>, <code>tag</code>, <code>written_by</code> (<code>agent</code> or <code>user</code>), <code>format</code> (<code>text</code> or <code>json</code>) and <code>max_chars</code>.</td></tr>
-              <tr><td><code>ragdown_read_doc</code></td><td>Reads a file, or a line range of one, straight from disk. Never clipped. Also takes a wikilink target (<code>Note#Heading</code>); see <a href="#obsidian">Obsidian</a>. Returns the whole file's <code>hash</code>, for <code>ragdown_edit</code>, and <code>superseded_by</code> when another note replaces it.</td></tr>
-              <tr><td><code>ragdown_backlinks</code></td><td>The notes that link to a <code>path</code> — by wikilink, alias or relative Markdown link — with the lines the links are on. Links in code are not links.</td></tr>
-              <tr><td><code>ragdown_list</code></td><td>Browses rather than searches, returning <code>total</code> and <code>documents</code>: each note's path, title, tags, last change, frontmatter <code>description</code>, <code>created_by</code> and <code>session</code> if an agent wrote it, and <code>superseded_by</code> if it has been replaced. Takes <code>path_prefix</code>, <code>tag</code>, <code>written_by</code> (<code>agent</code> or <code>user</code>), <code>session_id</code>, <code>sort</code> (<code>path</code> or <code>recent</code>) and <code>limit</code>.</td></tr>
+              <tr><td><code>ragdown_recall</code></td><td>Hybrid search. Returns path, line range, heading breadcrumb, tags, similarity and the day the file last changed for each hit, and says when an agent wrote the document. Takes <code>top_k</code>, <code>path_prefix</code>, <code>tag</code>, <code>written_by</code> (<code>agent</code> or <code>user</code>), <code>format</code> (<code>text</code> or <code>json</code>) and <code>max_chars</code>.</td></tr>
+              <tr><td><code>ragdown_read_doc</code></td><td>Reads a file, or a line range of one, straight from disk. Never clipped. Also takes a wikilink target (<code>Note#Heading</code>); see <a href="#obsidian">Obsidian</a>. Returns the whole file's <code>hash</code>, for <code>ragdown_edit</code>, and <code>superseded_by</code> when another document replaces it.</td></tr>
+              <tr><td><code>ragdown_backlinks</code></td><td>The documents that link to a <code>path</code> — by wikilink, alias or relative Markdown link — with the lines the links are on. Links in code are not links.</td></tr>
+              <tr><td><code>ragdown_list</code></td><td>Browses rather than searches, returning <code>total</code> and <code>documents</code>: each document's path, title, tags, last change, frontmatter <code>description</code>, <code>created_by</code> and <code>session</code> if an agent wrote it, and <code>superseded_by</code> if it has been replaced. Takes <code>path_prefix</code>, <code>tag</code>, <code>written_by</code> (<code>agent</code> or <code>user</code>), <code>session_id</code>, <code>sort</code> (<code>path</code> or <code>recent</code>) and <code>limit</code>.</td></tr>
               <tr><td><code>ragdown_context</code></td><td>For hooks: the sections related to a <code>prompt</code> as a <code>&lt;ragdown-context&gt;</code> block, or empty text. Filters by similarity, skips short prompts and slash commands, and never repeats a section for the same <code>session_id</code> until <code>reset: true</code> forgets what that session was given. <code>format: claude-code</code> wraps the block as a Claude Code hook's <code>additionalContext</code>. Takes <code>top_k</code>, <code>min_score</code>, <code>min_ratio</code> and <code>max_chars</code> to override the <code>RAGDOWN_HOOK_*</code> defaults.</td></tr>
               <tr><td><code>ragdown_stats</code></td><td>Folder, index size, embedder, role (primary or reader), whether a sync is running, and the last sync.</td></tr>
-              <tr><td><code>ragdown_remember</code></td><td>Writes a new note (with frontmatter) under <code>RAGDOWN_NOTES_DIR</code> and indexes it before returning. Never overwrites a file. <code>supersedes</code> lists the notes this one replaces, which search then skips; <code>session_id</code> is recorded as provenance.</td></tr>
-              <tr><td><code>ragdown_edit</code></td><td>Changes a note at a <code>path</code>, or creates one, which gets <code>created_by: ragdown_edit</code> (and the <code>session_id</code>) in its frontmatter. <code>text</code> replaces the whole file, which for an existing note needs <code>base_hash</code> — the <code>hash</code> <code>ragdown_read_doc</code> gave — so an agent never overwrites a version it has not read. <code>append: true</code> adds <code>text</code> at the end instead, or with <code>heading</code> at the end of that section. A file that changed since <code>base_hash</code> is not written.</td></tr>
-              <tr><td><code>ragdown_move</code></td><td>Renames or moves a note, or a subfolder with everything in it, from <code>from</code> to <code>to</code>, and rewrites every wikilink and relative Markdown link that pointed at what moved. Returns the notes it <code>updated</code>. Never overwrites what is already at <code>to</code>.</td></tr>
-              <tr><td><code>ragdown_delete</code></td><td>Deletes a note or a subfolder at <code>path</code>, for good: there is no trash. A subfolder that holds anything needs <code>recursive: true</code>, and then goes with its attachments too. Links to a deleted note are left as they are. With <code>base_hash</code> (the <code>hash</code> <code>ragdown_read_doc</code> gave), a note is deleted only if it has not changed since.</td></tr>
+              <tr><td><code>ragdown_remember</code></td><td>Writes a new document (with frontmatter) under <code>RAGDOWN_NOTES_DIR</code> and indexes it before returning. Never overwrites a file. <code>supersedes</code> lists the documents this one replaces, which search then skips; <code>session_id</code> is recorded as provenance.</td></tr>
+              <tr><td><code>ragdown_edit</code></td><td>Changes a document at a <code>path</code>, or creates one, which gets <code>created_by: ragdown_edit</code> (and the <code>session_id</code>) in its frontmatter. <code>text</code> replaces the whole file, which for an existing document needs <code>base_hash</code> — the <code>hash</code> <code>ragdown_read_doc</code> gave — so an agent never overwrites a version it has not read. <code>append: true</code> adds <code>text</code> at the end instead, or with <code>heading</code> at the end of that section. A file that changed since <code>base_hash</code> is not written.</td></tr>
+              <tr><td><code>ragdown_move</code></td><td>Renames or moves a document, or a subfolder with everything in it, from <code>from</code> to <code>to</code>, and rewrites every wikilink and relative Markdown link that pointed at what moved. Returns the documents it <code>updated</code>. Never overwrites what is already at <code>to</code>.</td></tr>
+              <tr><td><code>ragdown_delete</code></td><td>Deletes a document or a subfolder at <code>path</code>, for good: there is no trash. A subfolder that holds anything needs <code>recursive: true</code>, and then goes with its attachments too. Links to a deleted document are left as they are. With <code>base_hash</code> (the <code>hash</code> <code>ragdown_read_doc</code> gave), a document is deleted only if it has not changed since.</td></tr>
               <tr><td><code>ragdown_reindex</code></td><td>Syncs now; <code>full: true</code> re-embeds everything.</td></tr>
             </tbody>
           </table>
@@ -60,10 +60,10 @@ permalink: /docs/
           <code>ragdown_delete</code> and <code>ragdown_reindex</code> — are not listed when
           <code>RAGDOWN_READ_ONLY=true</code>.</p>
 
-        <h3>Superseding a note</h3>
-        <p>A note whose frontmatter lists <code>supersedes:</code> hides the notes it names from search and from hook
+        <h3>Superseding a document</h3>
+        <p>A document whose frontmatter lists <code>supersedes:</code> hides the documents it names from search and from hook
           context. Nothing is deleted — the old file stays on disk and <code>ragdown_read_doc</code> still opens it —
-          but a fact that changed stops coming back next to its replacement. Paths are relative to the note's own
+          but a fact that changed stops coming back next to its replacement. Paths are relative to the document's own
           folder, like a Markdown link.</p>
         <pre class="code"><code>---
 title: "Embedder"
@@ -76,7 +76,7 @@ created_by: ragdown_remember
         <p><code>serve</code> treats every top-level directory of <code>RAGDOWN_DOCS_DIR</code> as a
           <strong>folder</strong>, found as it appears. All folders share one index, one model and one watcher, but
           each is its own MCP server at <code>/mcp/&lt;folder&gt;</code>, named <code>ragdown-&lt;folder&gt;</code>,
-          and sees only its own notes: paths in and out are relative to it (<code>backups.md</code>, not
+          and sees only its own documents: paths in and out are relative to it (<code>backups.md</code>, not
           <code>work/backups.md</code>), and <code>ragdown_read_doc</code> refuses one that leaves it.</p>
         <p>A folder's settings live in <code>.ragdown.json</code> at its root, and the web UI edits them:</p>
         <pre class="code"><code>{ "title": "Work notes", "mcp": true }</code></pre>
@@ -95,7 +95,7 @@ created_by: ragdown_remember
         <p>The web UI creates, renames and deletes folders, and <strong>Copy MCP config</strong> on each gives the
           <code>claude mcp add</code> line and the <code>mcpServers</code> entry for it. Under
           <code>RAGDOWN_READ_ONLY</code> a folder's title and MCP switch can still change — they are settings, not
-          notes — but creating, renaming and deleting cannot.</p>
+          documents — but creating, renaming and deleting cannot.</p>
 
         <h3 id="subfolders">Subfolders</h3>
         <p><code>/mcp/&lt;folder&gt;/&lt;subfolder...&gt;</code> narrows a folder's server to a subfolder, following
@@ -116,19 +116,19 @@ created_by: ragdown_remember
         <p>A missing subfolder, a file, a symlink or a dot-folder is a 404.</p>
 
         <h2 id="obsidian">Obsidian</h2>
-        <p>Open a folder as an Obsidian vault and both see the same notes:</p>
+        <p>Open a folder as an Obsidian vault and both see the same documents:</p>
         <ul class="notes">
           <li><code>.obsidian/</code>, <code>.trash/</code> and every other dot-folder are skipped, as is
             <code>.ragdown.json</code>.</li>
           <li><strong>Tags</strong> from frontmatter (<code>tags: [a, b]</code> or <code>tags: a, b</code>) and inline
-            <code>#tags</code> in the text (not in code) are indexed per note. <code>ragdown_recall</code>'s
+            <code>#tags</code> in the text (not in code) are indexed per document. <code>ragdown_recall</code>'s
             <code>tag</code> filter matches a tag and the tags nested under it: <code>project</code> finds
-            <code>#project/alpha</code>. Every hit lists its note's tags.</li>
+            <code>#project/alpha</code>. Every hit lists its document's tags.</li>
           <li><strong>Aliases</strong> from frontmatter are found by keyword search and by wikilinks.</li>
           <li><strong>Wikilinks.</strong> <code>ragdown_read_doc</code> takes a link target as well as a path —
             <code>Note</code>, <code>Note#Heading</code>, <code>sub/Note</code>, an alias — and resolves it the way
-            Obsidian does, within the folder: an exact path, then a note whose name matches (the one beside the linking
-            note, then the shortest path), then an alias. A heading narrows the text to that section.</li>
+            Obsidian does, within the folder: an exact path, then a document whose name matches (the one beside the linking
+            document, then the shortest path), then an alias. A heading narrows the text to that section.</li>
         </ul>
         <p>Tags and aliases get their own columns; they are not added to the text that is embedded, which was measured
           and made retrieval worse.</p>
@@ -151,7 +151,7 @@ created_by: ragdown_remember
 }</code></pre>
         <p><code>format: claude-code</code> is needed: Claude Code (2.1.292, where this was tried) calls the tool
           either way but only passes the result on to the model as a hook's <code>additionalContext</code>. The
-          <code>SessionStart</code> hook is for compaction, which keeps the session id and drops the notes Claude
+          <code>SessionStart</code> hook is for compaction, which keeps the session id and drops the documents Claude
           was given: <code>reset</code> lets them be sent again. Claude Code skips <code>mcp_tool</code> hooks on the
           <code>SessionStart</code> at launch, which needs no reset, and caps a hook's output at 10,000 characters
           (<code>RAGDOWN_HOOK_MAX_CHARS</code> defaults to 6,000).</p>
@@ -221,14 +221,14 @@ created_by: ragdown_remember
               <tr><td><code>POST /api/doc</code></td><td>bearer</td><td>Write a file: JSON <code>{ path, text, overwrite?, base_hash? }</code>, up to 4 MiB. 201 created, 200 overwritten, 409 for an existing file without <code>overwrite: true</code>. With <code>base_hash</code> it saves an edit: only over the version with that hash, else 409 with <code>code: "changed"</code>. Answers with the new <code>hash</code>.</td></tr>
               <tr><td><code>DELETE /api/doc?path=</code></td><td>bearer</td><td>Delete a Markdown file. 404 when it is not there.</td></tr>
               <tr><td><code>GET /api/search?folder=&amp;q=&amp;tag=&amp;top_k=</code></td><td>bearer</td><td>Hybrid search in one folder, human-only ones included. <code>top_k</code> defaults to 10, at most 50.</td></tr>
-              <tr><td><code>GET /api/resolve?from=&amp;link=</code></td><td>bearer</td><td>A wikilink target, resolved from the note <code>from</code> within its folder: <code>{ path, anchor? }</code> or 404.</td></tr>
+              <tr><td><code>GET /api/resolve?from=&amp;link=</code></td><td>bearer</td><td>A wikilink target, resolved from the document <code>from</code> within its folder: <code>{ path, anchor? }</code> or 404.</td></tr>
               <tr><td><code>GET /api/file?path=</code></td><td>bearer</td><td>Any file inside a folder — an image, a PDF — as raw bytes, sandboxed and <code>nosniff</code>. Never a dot-path or a symlink out.</td></tr>
               <tr><td><code>GET /*</code></td><td>none</td><td>The web UI from <code>web/dist</code>.</td></tr>
             </tbody>
           </table>
         </div>
         <p>Every <code>path</code> in <code>/api</code> includes the folder: <code>work/notes/a.md</code>. Writes answer
-          after the index has synced; new notes, edits, uploads, deletes, and creating, renaming or deleting a folder are a 403 under
+          after the index has synced; new documents, edits, uploads, deletes, and creating, renaming or deleting a folder are a 403 under
           <code>RAGDOWN_READ_ONLY</code>. They exist for the web UI; agents write with <code>ragdown_remember</code>.
           An upload must be <code>.md</code>, <code>.markdown</code> or <code>.mdx</code> inside an existing folder,
           somewhere the indexer reads — no <code>..</code>, dot-folders, <code>node_modules</code> or symlinked
@@ -236,7 +236,7 @@ created_by: ragdown_remember
 
         <h2 id="web-ui">Web UI</h2>
         <p><code>serve</code> serves a web UI at <code>/</code>. It asks for the token once and keeps it in the
-          browser's local storage; its static files hold no notes, and everything it shows comes from the bearer
+          browser's local storage; its static files hold no documents, and everything it shows comes from the bearer
           routes above.</p>
         <ul class="notes">
           <li><strong>Folders</strong> — the sidebar lists every folder, marked as served over MCP or human-only.
@@ -244,9 +244,9 @@ created_by: ragdown_remember
             renders beside the list with its tags, size, line count and chunk count; <code>[[wikilinks]]</code> are
             followed, <code>![[embeds]]</code> and images shown, and a search hit opens at its heading. The folder and
             file are in the URL.</li>
-          <li><strong>New note</strong> — a title and an optional subfolder (created if missing); the note is saved
+          <li><strong>New document</strong> — a title and an optional subfolder (created if missing); the document is saved
             as <code>&lt;title&gt;.md</code> starting with that heading and opens in the editor. A taken name is
-            refused, with a way to open the existing note.</li>
+            refused, with a way to open the existing document.</li>
           <li><strong>Edit</strong> — the previewed file in a Markdown editor with a preview tab;
             <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>S</kbd> saves. A save goes through only over the version that was
             opened; if the file changed on disk meanwhile, you choose to discard yours or save it anyway. Unsaved
@@ -310,10 +310,10 @@ created_by: ragdown_remember
           <li><strong>One bearer token guards everything</strong> except <code>/api/status</code> and the static UI
             files. Generate it with <code>openssl rand -hex 32</code>.</li>
           <li><strong>A folder is not a boundary between agents.</strong> One token opens every folder with MCP on.
-            Keep notes agents must never read in a human-only folder: it has no MCP endpoint, though the web UI's
+            Keep documents agents must never read in a human-only folder: it has no MCP endpoint, though the web UI's
             <code>/api</code> routes, behind the same token, still read it.</li>
           <li><strong><code>SECURE_LOCAL_NET=true</code></strong> drops the token entirely: anyone who can reach the
-            port can read and, unless read-only, write the notes. Use it only on a trusted network.</li>
+            port can read and, unless read-only, write the documents. Use it only on a trusted network.</li>
           <li><strong>To forbid writes</strong>, mount the folder <code>:ro</code> and set
             <code>RAGDOWN_READ_ONLY=true</code>.</li>
         </ul>

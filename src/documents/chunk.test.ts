@@ -106,7 +106,7 @@ describe("readSupersedes", () => {
     ]);
   });
 
-  it("resolves paths against the note's own folder, like a Markdown link", () => {
+  it("resolves paths against the document's own folder, like a Markdown link", () => {
     expect(readSupersedes(front("supersedes: ../ops/old.md"), "notes/new.md")).toEqual([
       "ops/old.md",
     ]);
@@ -202,7 +202,7 @@ describe("readDocumentMeta", () => {
     });
   });
 
-  it("finds nothing in a plain note", () => {
+  it("finds nothing in a plain document", () => {
     expect(readDocumentMeta("# Title\n\nText.")).toEqual({ tags: [], aliases: [] });
   });
 });

@@ -1,5 +1,5 @@
 /**
- * The YAML frontmatter of a note, split from its body. Only the flat `key: value` lines ragdown
+ * The YAML frontmatter of a document, split from its body. Only the flat `key: value` lines ragdown
  * itself writes are read — a preview needs the title and tags, not a YAML parser.
  */
 export function splitFrontmatter(source: string): { fields: [string, string][]; body: string } {
@@ -43,7 +43,7 @@ export function resolveDocLink(from: string, href: string): string | undefined {
   }
   const target = decodeSafe(href.split("#")[0]?.split("?")[0] ?? "");
   if (!target) return undefined;
-  // A leading `/` is the note's own folder, the way a folder opened as its own notes app reads it.
+  // A leading `/` is the document's own folder, the way a folder opened as its own documents app reads it.
   const parts = target.startsWith("/") ? from.split("/").slice(0, 1) : from.split("/").slice(0, -1);
   for (const part of target.split("/")) {
     if (part === "" || part === ".") continue;
@@ -62,7 +62,7 @@ export const WIKIEMBED = "wikiembed:";
 const MARKDOWN_FILE = /\.(md|markdown|mdx)$/i;
 const IMAGE_FILE = /\.(png|jpe?g|gif|webp|avif|svg|bmp|ico)$/i;
 
-/** A path with no extension is a note, as it is in a wikilink. */
+/** A path with no extension is a document, as it is in a wikilink. */
 export const isMarkdownPath = (path: string) =>
   MARKDOWN_FILE.test(path) || !/\.[^/.]+$/.test(path.split("/").pop() ?? "");
 

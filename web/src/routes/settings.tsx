@@ -210,7 +210,7 @@ function FoldersSection({ writable }: { writable: boolean }) {
             <Alert
               variant="warning"
               title={`${lowScore.map((folder) => folder.title).join(", ")}: the minimum score is too low`}
-              description={`An unrelated prompt scores up to ${unrelated} on this embedder, so a minimum score at or under that injects notes into prompts they have nothing to do with. Edit the folder and clear its minimum score, or raise it.`}
+              description={`An unrelated prompt scores up to ${unrelated} on this embedder, so a minimum score at or under that injects documents into prompts they have nothing to do with. Edit the folder and clear its minimum score, or raise it.`}
             />
           ) : null}
           <QueryState
@@ -232,7 +232,7 @@ function FoldersSection({ writable }: { writable: boolean }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Folder</TableHead>
-                  <TableHead className="hidden sm:table-cell">Notes</TableHead>
+                  <TableHead className="hidden sm:table-cell">Documents</TableHead>
                   <TableHead>Agents</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -396,7 +396,7 @@ function AccessCard({ status, loading }: { status: Status | undefined; loading: 
       title="Access"
       description={
         status && !status.auth_required
-          ? "This server runs with SECURE_LOCAL_NET=true, so it asks for no token: anyone who can reach it can read the notes."
+          ? "This server runs with SECURE_LOCAL_NET=true, so it asks for no token: anyone who can reach it can read the documents."
           : "The server asks for the token set in RAGDOWN_TOKEN. This device keeps it after you enter it once."
       }
       loading={loading}
@@ -597,8 +597,8 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
                       <span className="text-destructive">
                         {" "}
                         Too low: an unrelated prompt scores up to {settings.hook.unrelated_score} on
-                        this embedder, so notes are injected into prompts they have nothing to do
-                        with. Leave it unset to use the embedder's own.
+                        this embedder, so documents are injected into prompts they have nothing to
+                        do with. Leave it unset to use the embedder's own.
                       </span>
                     ) : null}
                   </>

@@ -239,7 +239,7 @@ describe("HTTP server", () => {
       body: JSON.stringify({ name: "new" }),
     });
     expect(create.status).toBe(403);
-    // A folder's settings are not notes: a read-only server can still turn MCP on and off.
+    // A folder's settings are not documents: a read-only server can still turn MCP on and off.
     const toggle = await fetch(`${t.url}/api/folders/ops`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -545,7 +545,7 @@ describe("HTTP server", () => {
     await patch({ text_limit: null, hook: { min_score: null, max_chars: null } });
     await expect(readFile(file, "utf8")).rejects.toThrow();
     expect(await settings()).toMatchObject({ text_limit: 2000, saved: {} });
-    // The settings file is not a note and not a loose file.
+    // The settings file is not a document and not a loose file.
     const folders = (await (
       await fetch(`${t.url}/api/folders`, { headers: auth("s3cret") })
     ).json()) as { loose_files: string[] };
@@ -603,7 +603,7 @@ describe("HTTP server", () => {
       embedder: "openai:fake@3",
       settings: { embedder: "openai:fake", saved: { embedder: "openai:fake" } },
     });
-    // The rebuild runs behind the answer; the note is found again once it is done.
+    // The rebuild runs behind the answer; the document is found again once it is done.
     await eventually(async () => (await status()).chunks === 1);
     const search = await fetch(`${t.url}/api/search?folder=ops&q=restore`, {
       headers: auth("s3cret"),
@@ -634,7 +634,7 @@ describe("HTTP server", () => {
 
     expect(await loose()).toEqual(["loose.md"]);
     expect((await remove("loose.md", "wrong")).status).toBe(401);
-    // Only a name the listing gives: not a note in a folder, a folder, a path out or another file.
+    // Only a name the listing gives: not a document in a folder, a folder, a path out or another file.
     for (const name of ["ops/backups.md", "ops", "../loose.md", "keep.txt", "missing.md"]) {
       expect((await remove(name)).status).toBe(404);
     }

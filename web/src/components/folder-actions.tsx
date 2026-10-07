@@ -73,7 +73,7 @@ export function CreateFolder({
       onOpenChange={reset}
       trigger={trigger}
       title="Create folder"
-      description="A top-level folder in the docs directory, with its own notes, search and MCP address."
+      description="A top-level folder in the docs directory, with its own documents, search and MCP address."
       hasUnsavedChanges={() => !form.state.isDefaultValue}
       content={
         <form
@@ -364,7 +364,7 @@ export function RenameFolder({ folder, onClose }: FolderDialogProps) {
 
 /**
  * Delete a folder and everything in it, from disk. Asked with the name typed out, because it takes
- * every note with it — a click-through confirm is too easy to wave past for that.
+ * every document with it — a click-through confirm is too easy to wave past for that.
  */
 export function DeleteFolder({ folder, onClose }: FolderDialogProps) {
   const remove = useDeleteFolder();

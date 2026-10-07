@@ -59,10 +59,10 @@ describe("Scope", () => {
     expect((await beta.readDocument("backups.md")).path).toBe("backups.md");
     await expect(beta.readDocument("../alpha/backups.md")).rejects.toThrow(/outside/);
 
-    const note = await beta.remember("Kafka", "Retention is seven days.", [], "kafka");
-    expect(note.path).toBe("kafka.md");
+    const doc = await beta.remember("Kafka", "Retention is seven days.", [], "kafka");
+    expect(doc.path).toBe("kafka.md");
     expect(await readFile(join(t.docsDir, "projects/beta/kafka.md"), "utf8")).toContain("seven");
-    // At the root, notes still go under RAGDOWN_NOTES_DIR.
+    // At the root, documents still go under RAGDOWN_NOTES_DIR.
     expect((await new Scope(t.rag).remember("Root", "A root note.", [], "root")).path).toBe(
       "notes/root.md",
     );
@@ -250,8 +250,8 @@ describe("Scope", () => {
   });
 });
 
-describe("superseding a note", () => {
-  it("hides the replaced note from search, keeps it on disk, and records provenance", async () => {
+describe("superseding a document", () => {
+  it("hides the replaced document from search, keeps it on disk, and records provenance", async () => {
     const t = await setup();
     const root = new Scope(t.rag);
     await t.write("notes/embedder.md", "# Embedder\n\nThe embedder is bge-small.");
@@ -260,17 +260,17 @@ describe("superseding a note", () => {
       "notes/embedder.md",
     );
 
-    const note = await root.remember(
+    const doc = await root.remember(
       "Embedder",
       "The embedder is granite-small.",
       [],
       "embedder-v2",
       { supersedes: ["notes/embedder.md"], sessionId: "session-1" },
     );
-    expect(note.supersedes).toEqual(["notes/embedder.md"]);
+    expect(doc.supersedes).toEqual(["notes/embedder.md"]);
 
     const written = await readFile(join(t.docsDir, "notes/embedder-v2.md"), "utf8");
-    // A sibling, so the path is relative to the note's own folder.
+    // A sibling, so the path is relative to the document's own folder.
     expect(written).toContain('supersedes: ["embedder.md"]');
     expect(written).toContain("created_by: ragdown_remember");
     expect(written).toContain('session: "session-1"');
@@ -282,7 +282,7 @@ describe("superseding a note", () => {
     expect((await root.readDocument("notes/embedder.md")).text).toContain("bge-small");
   });
 
-  it("refuses a supersedes path that names no note in the folder", async () => {
+  it("refuses a supersedes path that names no document in the folder", async () => {
     const t = await setup();
     const root = new Scope(t.rag);
     await expect(
@@ -293,7 +293,7 @@ describe("superseding a note", () => {
     ).rejects.toThrow(/outside/);
   });
 
-  it("follows wikilinks and tags within the folder, and remembers into the folder's notes", async () => {
+  it("follows wikilinks and tags within the folder, and remembers into the folder's documents", async () => {
     const t = await tempSetup({}, "folders");
     closers.push(t.cleanup);
     await t.write(
@@ -326,8 +326,8 @@ describe("superseding a note", () => {
     ]);
     expect(await work.recall("postgres", 10, undefined, "infr")).toEqual([]);
 
-    const note = await work.remember("Decision", "Use postgres.", [], "decision");
-    expect(note.path).toBe("notes/decision.md");
+    const doc = await work.remember("Decision", "Use postgres.", [], "decision");
+    expect(doc.path).toBe("notes/decision.md");
     expect(await readFile(join(t.docsDir, "work/notes/decision.md"), "utf8")).toContain(
       "Use postgres.",
     );
@@ -335,7 +335,7 @@ describe("superseding a note", () => {
   });
 });
 
-describe("moving a note", () => {
+describe("moving a document", () => {
   async function folder() {
     const t = await tempSetup({}, "folders");
     closers.push(t.cleanup);
@@ -420,7 +420,7 @@ describe("moving a note", () => {
     await expect(t.work.move("db", "run")).rejects.toMatchObject({ status: 409 });
   });
 
-  it("refuses a taken path, a missing note and a move onto itself", async () => {
+  it("refuses a taken path, a missing document and a move onto itself", async () => {
     const t = await folder();
     await expect(t.work.move("ops/pg.md", "kafka.md")).rejects.toMatchObject({ status: 409 });
     await expect(t.work.move("nope.md", "x.md")).rejects.toMatchObject({ status: 404 });

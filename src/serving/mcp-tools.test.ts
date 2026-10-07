@@ -159,7 +159,7 @@ describe("MCP server", () => {
     expect(missing.isError).toBe(true);
   });
 
-  it("remembers a note, never overwriting, and indexes it before returning", async () => {
+  it("remembers a document, never overwriting, and indexes it before returning", async () => {
     const t = await connect();
     const args = {
       title: "Kafka retention",
@@ -185,7 +185,7 @@ describe("MCP server", () => {
     expect(outside.isError).toBe(true);
   });
 
-  it("edits a note only over the version it read, and appends under a heading", async () => {
+  it("edits a document only over the version it read, and appends under a heading", async () => {
     const t = await connect();
     const read = async () =>
       JSON.parse((await t.call("ragdown_read_doc", { path: "ops/backups.md" })).text);
@@ -292,7 +292,7 @@ describe("MCP server", () => {
     );
   });
 
-  it("moves a note and a subfolder, keeping the links to them", async () => {
+  it("moves a document and a subfolder, keeping the links to them", async () => {
     const t = await connect();
     await t.write("index.md", "# Index\n\nSee [[backups#Restore]] and [backups](ops/backups.md).");
     await t.rag.sync(false);
@@ -312,7 +312,7 @@ describe("MCP server", () => {
       "# Index\n\nSee [[snapshots#Restore]] and [backups](infra/db/snapshots.md).",
     );
     const listed = JSON.parse((await t.call("ragdown_list", {})).text);
-    expect(listed.documents.map((note: { path: string }) => note.path)).toEqual([
+    expect(listed.documents.map((doc: { path: string }) => doc.path)).toEqual([
       "index.md",
       "infra/db/snapshots.md",
     ]);
@@ -323,7 +323,7 @@ describe("MCP server", () => {
     expect(outside.isError).toBe(true);
   });
 
-  it("deletes a note, and a subfolder that holds anything only when told to", async () => {
+  it("deletes a document, and a subfolder that holds anything only when told to", async () => {
     const t = await connect();
     await t.write("ops/diagram.png", "png");
     await t.write("ops/old/pg.md", "# Postgres");
@@ -337,8 +337,8 @@ describe("MCP server", () => {
     expect(stale).toMatchObject({ isError: true, text: expect.stringMatching(/changed since/) });
     const folder = await t.call("ragdown_delete", { path: "ops/old", base_hash: hash });
     expect(folder).toMatchObject({ isError: true, text: expect.stringMatching(/subfolder/) });
-    const note = await t.call("ragdown_delete", { path: "ops/old/pg.md", base_hash: hash });
-    expect(JSON.parse(note.text)).toMatchObject({ path: "ops/old/pg.md", sync: { removed: 1 } });
+    const doc = await t.call("ragdown_delete", { path: "ops/old/pg.md", base_hash: hash });
+    expect(JSON.parse(doc.text)).toMatchObject({ path: "ops/old/pg.md", sync: { removed: 1 } });
     const again = await t.call("ragdown_delete", { path: "ops/old/pg.md" });
     expect(again).toMatchObject({ isError: true, text: expect.stringMatching(/no such/) });
     expect((await t.call("ragdown_delete", { path: "ops/old" })).isError).toBe(false);
@@ -356,7 +356,7 @@ describe("MCP server", () => {
     expect((await t.call("ragdown_delete", { path: "..", recursive: true })).isError).toBe(true);
   });
 
-  it("lists notes by folder and tag, most recent first", async () => {
+  it("lists documents by folder and tag, most recent first", async () => {
     const t = await connect();
     await t.write("notes/a.md", "---\ntitle: Alpha\ntags: [project/alpha]\n---\nA.");
     await t.write("notes/b.md", "# Beta\n\n#ops");
@@ -469,7 +469,7 @@ describe("MCP server", () => {
     expect(JSON.stringify(hits)).not.toContain("Zebra");
   });
 
-  it("lists the notes that link to a note, by wikilink, alias and relative link", async () => {
+  it("lists the documents that link to a document, by wikilink, alias and relative link", async () => {
     const t = await connect();
     await t.write("ops/restore.md", "---\naliases: [DR]\n---\n# Restore\n");
     await t.write("a.md", "# A\n\nSee [[restore]].\n\nAnd [[DR|disaster recovery]].");
@@ -498,7 +498,7 @@ describe("MCP server", () => {
     expect((await t.call("ragdown_backlinks", { path: "nope.md" })).isError).toBe(true);
   });
 
-  it("says which note replaces a superseded one, when reading and listing", async () => {
+  it("says which document replaces a superseded one, when reading and listing", async () => {
     const t = await connect();
     await t.write("ops/backups-v2.md", "---\nsupersedes: backups.md\n---\n# Backups v2\n");
     await t.rag.sync(false);

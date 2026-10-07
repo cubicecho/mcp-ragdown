@@ -110,7 +110,7 @@ export interface DocSummary {
   /** Lowercase, without `#`: frontmatter tags and inline ones, nested ones as `a/b`. */
   tags: string[];
   aliases: string[];
-  /** Root-relative paths of the notes whose frontmatter says they replace this one. */
+  /** Root-relative paths of the documents whose frontmatter says they replace this one. */
   superseded_by: string[];
 }
 
@@ -125,7 +125,7 @@ export interface Doc {
   hash: string;
   tags?: string[];
   aliases?: string[];
-  /** Root-relative paths of the notes that replace this one; absent when none do. */
+  /** Root-relative paths of the documents that replace this one; absent when none do. */
   superseded_by?: string[];
 }
 
@@ -147,7 +147,7 @@ export interface Resolved {
   anchor?: string;
 }
 
-/** The notes in a note's folder that link to it, from `GET /api/backlinks`. */
+/** The documents in a document's folder that link to it, from `GET /api/backlinks`. */
 export interface Backlinks {
   path: string;
   backlinks: { path: string; title: string; lines: { line: number; text: string }[] }[];
@@ -265,13 +265,13 @@ export const searchDocs = async (search: {
 }) => (await request<{ hits: SearchHit[] }>(`/api/search${query(search)}`)).hits;
 
 /**
- * Where `link` — the text inside `[[…]]` before any `|` — points from the note at `from`. A link
+ * Where `link` — the text inside `[[…]]` before any `|` — points from the document at `from`. A link
  * that resolves to nothing is an `ApiError` with status 404.
  */
 export const resolveLink = (from: string, link: string) =>
   request<Resolved>(`/api/resolve${query({ from, link })}`);
 
-/** The notes that link to `path`, by wikilink, alias or relative Markdown link. */
+/** The documents that link to `path`, by wikilink, alias or relative Markdown link. */
 export const getBacklinks = (path: string) =>
   request<Backlinks>(`/api/backlinks${query({ path })}`);
 
@@ -297,8 +297,8 @@ export const saveDoc = (save: { path: string; text: string; base_hash: string })
   request<DocWrite>("/api/doc", { method: "POST", body: save });
 
 /**
- * Rename or move a note within its folder. The server rewrites the links that pointed at it and
- * answers with the notes it changed; something already at `to` is an `ApiError` with status 409.
+ * Rename or move a document within its folder. The server rewrites the links that pointed at it and
+ * answers with the documents it changed; something already at `to` is an `ApiError` with status 409.
  */
 export const moveDoc = (move: { from: string; to: string }) =>
   request<{ from: string; to: string; updated: string[]; sync: DocWrite["sync"] }>("/api/move", {

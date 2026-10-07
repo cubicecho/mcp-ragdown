@@ -139,7 +139,7 @@ The web UI creates, edits, renames and deletes folders, and **Copy MCP config** 
 title, MCP switch and search defaults can still change — they are settings, not documents — but
 creating, renaming and deleting cannot.
 
-**New note** (the **+** beside Upload in a folder's list, or the button in an empty folder) asks
+**New document** (the **+** beside Upload in a folder's list, or the button in an empty folder) asks
 for a title and an optional subfolder, created if missing. It starts beside the open document, writes
 `# <title>` to `<subfolder>/<title>.md`, and opens it in the editor. A name that is already taken
 offers to open that document instead.
