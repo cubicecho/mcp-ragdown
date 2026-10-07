@@ -107,7 +107,7 @@ export function createMcpServer(
     {
       title: "Context for a prompt",
       description:
-        "For hooks that run before a turn: the documents related to a user prompt, as a ready-to-inject <ragdown-context> block, or empty text when nothing is similar enough. Unlike ragdown_recall it filters by min_score, skips short prompts and slash commands, and never returns a section twice for the same session_id. reset: true first forgets what that session was given; call it with an empty prompt after the client compacts or clears its context.",
+        "For hooks that run before a turn: the documents related to a user prompt, as a ready-to-inject <ragdown-context> block, or empty text when nothing is similar enough. Unlike ragdown_recall it filters by min_score, skips short prompts and slash commands, and never returns a section twice for the same session_id. reset: true first forgets what that session was given; call it with an empty prompt after the client compacts or clears its context. format: 'claude-code' wraps the block as the JSON a Claude Code UserPromptSubmit hook adds to the prompt.",
       inputSchema: {
         prompt: z.string().describe("The user's prompt, verbatim"),
         session_id: z
@@ -119,6 +119,12 @@ export function createMcpServer(
           .default(false)
           .describe(
             "Forget the sections already returned for session_id before answering, because the client no longer has them",
+          ),
+        format: z
+          .enum(["text", "claude-code"])
+          .default("text")
+          .describe(
+            "'text' is the block itself. 'claude-code' is the block as a Claude Code hook's additionalContext, for an mcp_tool hook on UserPromptSubmit, which does not pass plain text on to the model",
           ),
         top_k: z
           .number()
@@ -161,7 +167,12 @@ export function createMcpServer(
           minRatio: args.min_ratio,
           maxChars: args.max_chars,
         });
-        return context ?? "";
+        if (!context || args.format === "text") {
+          return context ?? "";
+        }
+        return JSON.stringify({
+          hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: context },
+        });
       }),
   );
 

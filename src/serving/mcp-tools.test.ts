@@ -106,6 +106,17 @@ describe("MCP server", () => {
     expect((await t.call("ragdown_context", { prompt: "ok" })).text).toBe("");
   });
 
+  it("wraps hook context as a Claude Code hook's additional context", async () => {
+    const t = await connect();
+    const args = { prompt: "how do I run pg_restore on backups?", format: "claude-code" };
+    const block = (await t.call("ragdown_context", { ...args, format: "text" })).text;
+    expect(JSON.parse((await t.call("ragdown_context", args)).text)).toEqual({
+      hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: block },
+    });
+    // Nothing to add is empty text in either format, which a hook treats as nothing.
+    expect((await t.call("ragdown_context", { ...args, prompt: "ok" })).text).toBe("");
+  });
+
   it("returns a section again once the session is reset", async () => {
     const t = await connect();
     const args = { prompt: "how do I run pg_restore on backups?", session_id: "claude:1" };
