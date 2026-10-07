@@ -2,7 +2,7 @@
   "name": "mcp-ragdown",
   "version": "5.15.0",
   "private": true,
-  "description": "RAG over a folder of Markdown files, exposed over MCP, with a context tool for hooks that inject related notes into every prompt",
+  "description": "RAG over a folder of Markdown files, exposed over MCP, with a context tool for hooks that inject related documents into every prompt",
   "type": "module",
   "engines": {
     "node": ">=26"

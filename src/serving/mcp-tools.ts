@@ -7,6 +7,17 @@ import { formatHits, hitJson } from "../indexing/format.ts";
 import { defaults } from "../shared/defaults.ts";
 import { errorMessage } from "../shared/errors.ts";
 
+/**
+ * The `written_by` filter of the search and list tools. A document is an agent's when its
+ * frontmatter has `created_by`, which the write tools record; that is a claim in a file, not proof.
+ */
+const writtenBy = z
+  .enum(["agent", "user"])
+  .optional()
+  .describe(
+    "Only documents an agent wrote ('agent': frontmatter has created_by) or only the user's own ('user')",
+  );
+
 /** The name the MCP server and `/api/status` give for themselves. */
 export const SERVER_NAME = "ragdown";
 /** The package's own version: semantic-release bumps `package.json`, which ships beside `src`. */
@@ -49,7 +60,7 @@ export function createMcpServer(
     {
       title: "Search documents",
       description:
-        "Hybrid (semantic + keyword) search over the user's Markdown documents. Returns the most relevant sections with file path, line range, heading breadcrumb and cosine similarity (above ~0.8 is usually on topic). Use it before answering anything the documents may cover; follow up with ragdown_read_doc for the surrounding text.",
+        "Hybrid (semantic + keyword) search over the user's Markdown documents. Returns the most relevant sections with file path, line range, heading breadcrumb and cosine similarity (above ~0.8 is usually on topic) and the day the file last changed. A section of a document an agent wrote says so. Use it before answering anything the documents may cover; follow up with ragdown_read_doc for the surrounding text.",
       inputSchema: {
         query: z.string().min(1).describe("What to look for, as a question or keywords"),
         top_k: z.number().int().min(1).max(defaults.maxTopK).default(8),
@@ -65,6 +76,7 @@ export function createMcpServer(
           .describe(
             "Only search documents with this tag (frontmatter tags or inline #tags); 'project' also matches 'project/alpha'",
           ),
+        written_by: writtenBy,
         format: z.enum(["text", "json"]).default("text"),
         max_chars: z
           .number()
@@ -77,7 +89,13 @@ export function createMcpServer(
     },
     (args) =>
       run(ready, async (rag) => {
-        const hits = await rag.recall(args.query, args.top_k, args.path_prefix, args.tag);
+        const hits = await rag.recall(
+          args.query,
+          args.top_k,
+          args.path_prefix,
+          args.tag,
+          args.written_by,
+        );
         return args.format === "json"
           ? { hits: hits.map(hitJson) }
           : formatHits(hits, args.max_chars ?? rag.config.textLimit);
@@ -89,13 +107,25 @@ export function createMcpServer(
     {
       title: "Context for a prompt",
       description:
-        "For hooks that run before a turn: the documents related to a user prompt, as a ready-to-inject <ragdown-context> block, or empty text when nothing is similar enough. Unlike ragdown_recall it filters by min_score, skips short prompts and slash commands, and never returns a section twice for the same session_id.",
+        "For hooks that run before a turn: the documents related to a user prompt, as a ready-to-inject <ragdown-context> block, or empty text when nothing is similar enough. Unlike ragdown_recall it filters by min_score, skips short prompts and slash commands, and never returns a section twice for the same session_id. reset: true first forgets what that session was given; call it with an empty prompt after the client compacts or clears its context. format: 'claude-code' wraps the block as the JSON a Claude Code UserPromptSubmit hook adds to the prompt.",
       inputSchema: {
         prompt: z.string().describe("The user's prompt, verbatim"),
         session_id: z
           .string()
           .optional()
           .describe("Stable id of the conversation; sections already returned for it are skipped"),
+        reset: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Forget the sections already returned for session_id before answering, because the client no longer has them",
+          ),
+        format: z
+          .enum(["text", "claude-code"])
+          .default("text")
+          .describe(
+            "'text' is the block itself. 'claude-code' is the block as a Claude Code hook's additionalContext, for an mcp_tool hook on UserPromptSubmit, which does not pass plain text on to the model",
+          ),
         top_k: z
           .number()
           .int()
@@ -128,13 +158,21 @@ export function createMcpServer(
     },
     (args) =>
       run(ready, async (rag) => {
+        if (args.reset && args.session_id) {
+          rag.forgetSession(args.session_id);
+        }
         const context = await rag.context(args.prompt, args.session_id || undefined, {
           topK: args.top_k,
           minScore: args.min_score,
           minRatio: args.min_ratio,
           maxChars: args.max_chars,
         });
-        return context ?? "";
+        if (!context || args.format === "text") {
+          return context ?? "";
+        }
+        return JSON.stringify({
+          hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: context },
+        });
       }),
   );
 
@@ -178,7 +216,7 @@ export function createMcpServer(
     {
       title: "List documents",
       description:
-        "Browse the documents rather than search them: every document's path, title, tags and last change, optionally under a subfolder or with a tag. sort: 'recent' puts the most recently changed first.",
+        "Browse the documents rather than search them. Returns total and documents: every document's path, title, tags and last change, its description when its frontmatter has one, and for one an agent wrote, created_by and its session. Optionally under a subfolder, with a tag, by who wrote it, or from one session. sort: 'recent' puts the most recently changed first.",
       inputSchema: {
         path_prefix: z
           .string()
@@ -190,6 +228,11 @@ export function createMcpServer(
           .string()
           .optional()
           .describe("Only documents with this tag; 'project' also matches 'project/alpha'"),
+        written_by: writtenBy,
+        session_id: z
+          .string()
+          .optional()
+          .describe("Only documents written in this conversation, as ragdown_remember recorded it"),
         sort: z.enum(["path", "recent"]).default("path"),
         limit: z.number().int().min(1).max(1000).default(100),
       },
@@ -200,6 +243,8 @@ export function createMcpServer(
         rag.listDocuments({
           pathPrefix: args.path_prefix,
           tag: args.tag,
+          writtenBy: args.written_by,
+          sessionId: args.session_id || undefined,
           sort: args.sort,
           limit: args.limit,
         }),
@@ -265,7 +310,7 @@ export function createMcpServer(
       {
         title: "Edit a document",
         description:
-          "Change an existing document, or create one at a path you choose. By default text replaces the whole file (frontmatter included), which for an existing document needs base_hash: the hash ragdown_read_doc returned, so you never overwrite a version you have not read. append: true adds text at the end of the document, or with heading at the end of that section, leaving the rest as it is. If the file changed since base_hash, nothing is written: read it again and redo the edit.",
+          "Change an existing document, or create one at a path you choose. By default text replaces the whole file (frontmatter included), which for an existing document needs base_hash: the hash ragdown_read_doc returned, so you never overwrite a version you have not read. A document this creates gets created_by: ragdown_edit in its frontmatter, so the hash returned is of the file as written, not of text. append: true adds text at the end of the document, or with heading at the end of that section, leaving the rest as it is. If the file changed since base_hash, nothing is written: read it again and redo the edit.",
         inputSchema: {
           path: z
             .string()
@@ -286,6 +331,12 @@ export function createMcpServer(
             .string()
             .optional()
             .describe("With append: add to the end of the section under this heading"),
+          session_id: z
+            .string()
+            .optional()
+            .describe(
+              "Stable id of the conversation, recorded in the frontmatter of a document this creates",
+            ),
         },
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
@@ -295,6 +346,7 @@ export function createMcpServer(
             append: args.append,
             heading: args.heading,
             baseHash: args.base_hash,
+            sessionId: args.session_id || undefined,
           }),
         ),
     );

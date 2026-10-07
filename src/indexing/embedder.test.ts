@@ -11,7 +11,7 @@ describe("the hook's minimum score", () => {
   const minScore = (env: Record<string, string>) =>
     loadConfig({ RAGDOWN_DOCS_DIR: tmpdir(), ...env }).hook.minScore;
 
-  // Cosine is on each model's own scale: granite scores "tell me a joke" at 0.72 against notes
+  // Cosine is on each model's own scale: granite scores "tell me a joke" at 0.72 against documents
   // on city politics, which bge-small's 0.7 lets through and granite's own 0.8 does not.
   it("defaults to the embedder's own, and to the default model's for one nobody measured", () => {
     expect(minScore({})).toBe(0.8);

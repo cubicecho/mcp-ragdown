@@ -24,4 +24,9 @@ export class SessionMemory {
     this.sessions.set(key, seen);
     return seen;
   }
+
+  /** Forget what a session was given, so the next call may return it again. */
+  forget(key: string): void {
+    this.sessions.delete(key);
+  }
 }

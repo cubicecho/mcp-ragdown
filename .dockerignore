@@ -2,7 +2,7 @@
 node_modules
 **/node_modules
 
-# Runtime state — never bake an index or someone's notes into the image
+# Runtime state — never bake an index or someone's documents into the image
 data
 docs
 .ragdown

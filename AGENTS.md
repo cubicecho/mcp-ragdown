@@ -44,7 +44,8 @@ is a "document" everywhere in the code; a "file" is anything on disk, attachment
     `attachments.ts` find a heading's lines and a folder's non-Markdown files.
   - `scope.ts`: `Scope`, the documents as one endpoint sees them (a folder, or a subfolder of one):
     recall, reading, writing, listing, stats. Paths in and out are scope-relative. It delegates to
-    `remember.ts` (a new document) and `move.ts` (a move and the links it rewrites).
+    `remember.ts` (a new document), `provenance.ts` (the `created_by` an edit records) and `move.ts`
+    (a move and the links it rewrites).
 - `src/indexing/`: the derived index.
   - `embedder.ts`: `granite-small`, `bge-small`, `embeddinggemma`, `openai:<model>` and `hash`. An
     embedder's `name` is recorded in the index, so changing what a name produces means changing the

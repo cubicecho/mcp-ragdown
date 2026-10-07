@@ -57,7 +57,7 @@ describe("Store", () => {
     expect(hits.some((hit) => hit.sources.includes("lexical"))).toBe(true);
   });
 
-  it("builds no vector index for a folder of notes", async () => {
+  it("builds no vector index for a folder of documents", async () => {
     const t = await tempSetup();
     cleanup = t.cleanup;
     const embedder: Embedder = new HashEmbedder();

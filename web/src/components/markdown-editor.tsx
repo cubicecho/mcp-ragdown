@@ -57,13 +57,13 @@ const theme = EditorView.theme({
 });
 
 /**
- * What `[[` offers: each note by the shortest name that finds it, as a wikilink resolves — the
- * file name when no other note shares it, else as much of the path as tells them apart.
+ * What `[[` offers: each document by the shortest name that finds it, as a wikilink resolves — the
+ * file name when no other document shares it, else as much of the path as tells them apart.
  *
- * @param notes paths relative to the folder, with `.md`.
+ * @param documents paths relative to the folder, with `.md`.
  */
-export function wikilinkOptions(notes: readonly string[]): Completion[] {
-  const bare = notes.map((path) => path.replace(/\.md$/i, ""));
+export function wikilinkOptions(documents: readonly string[]): Completion[] {
+  const bare = documents.map((path) => path.replace(/\.md$/i, ""));
   return bare.map((path, index) => {
     const parts = path.split("/");
     let label = path;
@@ -122,24 +122,24 @@ const highlight = HighlightStyle.define([
 
 /**
  * A Markdown source editor: CodeMirror, not a rich-text one, because a rich editor rewrites what
- * it does not understand, and notes are full of wikilinks, embeds and front matter that must
+ * it does not understand, and documents are full of wikilinks, embeds and front matter that must
  * come back byte for byte. Uncontrolled: `value` is read once, and every change is reported.
- * Its own chunk (see `DocEditor`), so reading notes never downloads it.
+ * Its own chunk (see `DocEditor`), so reading documents never downloads it.
  */
 export default function MarkdownEditor({
   value,
   onChange,
   onSave,
   label,
-  notes = [],
+  documents = [],
 }: {
   value: string;
   onChange: (text: string) => void;
   /** Ctrl/Cmd+S, which would otherwise save the web page. */
   onSave: () => void;
   label: string;
-  /** The folder's notes, relative to it, which `[[` offers to link to. */
-  notes?: readonly string[];
+  /** The folder's documents, relative to it, which `[[` offers to link to. */
+  documents?: readonly string[];
 }) {
   const host = useRef<HTMLDivElement>(null);
   // Read through refs: the view is built once, and the callbacks change every render.
@@ -147,8 +147,8 @@ export default function MarkdownEditor({
   callbacks.current = { onChange, onSave };
   const links = useRef<Completion[]>([]);
   useEffect(() => {
-    links.current = wikilinkOptions(notes);
-  }, [notes]);
+    links.current = wikilinkOptions(documents);
+  }, [documents]);
   const initial = useRef(value);
 
   useEffect(() => {
