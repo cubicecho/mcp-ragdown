@@ -211,6 +211,46 @@ describe("MCP server", () => {
     expect(hidden.isError).toBe(true);
   });
 
+  it("records that ragdown_edit created a document, and keeps that when it is replaced", async () => {
+    const t = await connect();
+    const onDisk = (path: string) => readFile(join(t.docsDir, path), "utf8");
+    const edit = async (args: Record<string, unknown>) =>
+      JSON.parse((await t.call("ragdown_edit", args)).text) as { hash: string };
+
+    const plain = await edit({ path: "new/plain.md", text: "# Plain\n\nText.", session_id: "s9" });
+    expect(await onDisk("new/plain.md")).toBe(
+      '---\ncreated_by: ragdown_edit\nsession: "s9"\n---\n# Plain\n\nText.',
+    );
+    // The hash is of the file as written, so the next edit can be made against it.
+    const read = JSON.parse((await t.call("ragdown_read_doc", { path: "new/plain.md" })).text);
+    expect(read.hash).toBe(plain.hash);
+
+    await edit({ path: "new/front.md", text: "---\ntitle: Front\n---\nText." });
+    expect(await onDisk("new/front.md")).toBe(
+      "---\ntitle: Front\ncreated_by: ragdown_edit\n---\nText.",
+    );
+    await edit({ path: "new/own.md", text: "---\ncreated_by: importer\n---\nText." });
+    expect(await onDisk("new/own.md")).toBe("---\ncreated_by: importer\n---\nText.");
+
+    // Replaced with text that has no frontmatter, it is still the agent's.
+    await edit({ path: "new/plain.md", text: "# Plain\n\nRewritten.", base_hash: plain.hash });
+    expect(await onDisk("new/plain.md")).toBe(
+      '---\ncreated_by: ragdown_edit\nsession: "s9"\n---\n# Plain\n\nRewritten.',
+    );
+    // The user's own document stays the user's, replaced or appended to.
+    const mine = JSON.parse((await t.call("ragdown_read_doc", { path: "ops/backups.md" })).text);
+    await edit({ path: "ops/backups.md", text: "# Backups\n\nWeekly.", base_hash: mine.hash });
+    await edit({ path: "ops/backups.md", text: "And monthly.", append: true });
+    expect(await onDisk("ops/backups.md")).not.toContain("created_by");
+
+    const listed = JSON.parse((await t.call("ragdown_list", { written_by: "agent" })).text);
+    expect(listed.notes.map((doc: { path: string }) => doc.path)).toEqual([
+      "new/front.md",
+      "new/own.md",
+      "new/plain.md",
+    ]);
+  });
+
   it("appends between sections, keeping the next heading", async () => {
     const t = await connect();
     await t.write("a.md", "# A\n\n## One\n\nfirst\n\n\n## Two\n\nsecond\n");

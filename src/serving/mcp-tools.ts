@@ -290,7 +290,7 @@ export function createMcpServer(
       {
         title: "Edit a document",
         description:
-          "Change an existing document, or create one at a path you choose. By default text replaces the whole file (frontmatter included), which for an existing document needs base_hash: the hash ragdown_read_doc returned, so you never overwrite a version you have not read. append: true adds text at the end of the document, or with heading at the end of that section, leaving the rest as it is. If the file changed since base_hash, nothing is written: read it again and redo the edit.",
+          "Change an existing document, or create one at a path you choose. By default text replaces the whole file (frontmatter included), which for an existing document needs base_hash: the hash ragdown_read_doc returned, so you never overwrite a version you have not read. A document this creates gets created_by: ragdown_edit in its frontmatter, so the hash returned is of the file as written, not of text. append: true adds text at the end of the document, or with heading at the end of that section, leaving the rest as it is. If the file changed since base_hash, nothing is written: read it again and redo the edit.",
         inputSchema: {
           path: z
             .string()
@@ -311,6 +311,12 @@ export function createMcpServer(
             .string()
             .optional()
             .describe("With append: add to the end of the section under this heading"),
+          session_id: z
+            .string()
+            .optional()
+            .describe(
+              "Stable id of the conversation, recorded in the frontmatter of a document this creates",
+            ),
         },
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
@@ -320,6 +326,7 @@ export function createMcpServer(
             append: args.append,
             heading: args.heading,
             baseHash: args.base_hash,
+            sessionId: args.session_id || undefined,
           }),
         ),
     );

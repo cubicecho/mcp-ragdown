@@ -210,7 +210,7 @@ middle. A hook that fails or takes longer than min-agent's 3 seconds only loses 
 | `ragdown_list` | Browses rather than searches: each document's path, title, tags, last change, `created_by` and `session` if an agent wrote it, and `superseded_by` if it has been replaced. Takes `path_prefix`, `tag`, `written_by: agent\|user`, `session_id`, `sort: path\|recent` and `limit`. |
 | `ragdown_stats` | Folder, index size, embedder, role (primary or reader), whether a sync is running, and the last sync. |
 | `ragdown_remember` | Writes a new document (with frontmatter) under `RAGDOWN_NOTES_DIR` and indexes it before returning. Never overwrites a file. `supersedes` lists the documents this one replaces, which search then skips; `session_id` is recorded as provenance. |
-| `ragdown_edit` | Changes a document at a `path`, or creates one. `text` replaces the whole file, which for an existing document needs `base_hash` — the `hash` `ragdown_read_doc` gave — so an agent never overwrites a version it has not read. `append: true` adds `text` at the end instead, or with `heading` at the end of that section. A file that changed since `base_hash` is not written. |
+| `ragdown_edit` | Changes a document at a `path`, or creates one, which gets `created_by: ragdown_edit` (and the `session_id`) in its frontmatter. `text` replaces the whole file, which for an existing document needs `base_hash` — the `hash` `ragdown_read_doc` gave — so an agent never overwrites a version it has not read. `append: true` adds `text` at the end instead, or with `heading` at the end of that section. A file that changed since `base_hash` is not written. |
 | `ragdown_move` | Renames or moves a document, or a subfolder with everything in it, from `from` to `to`, and rewrites every wikilink and relative Markdown link that pointed at what moved. Returns the documents it `updated`. Never overwrites what is already at `to`. |
 | `ragdown_delete` | Deletes a document or a subfolder at `path`, for good: there is no trash. A subfolder that holds anything needs `recursive: true`, and then goes with its attachments too. Links to a deleted document are left as they are. With `base_hash` (the `hash` `ragdown_read_doc` gave), a document is deleted only if it has not changed since. |
 | `ragdown_reindex` | Syncs now; `full: true` re-embeds everything. |
@@ -405,6 +405,8 @@ from a document with `created_by` says an agent wrote it, in `ragdown_recall` an
 own. `written_by: agent` or `user` limits `ragdown_recall` and `ragdown_list` to one or the other,
 and `ragdown_list`'s `session_id` finds what one conversation wrote. Both fields are frontmatter:
 what a file says about itself, which anyone who can edit the file can change, not proof.
+`ragdown_remember` and `ragdown_edit` write them on a document they create, and `ragdown_edit` keeps
+them when it replaces one. A document the user wrote stays the user's however an agent edits it.
 
 **The index is derived data.** `meta.json` records the embedder and chunker version, and a
 mismatch drops and rebuilds the index instead of migrating it. Syncs are diffs:

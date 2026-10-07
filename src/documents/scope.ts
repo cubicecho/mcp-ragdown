@@ -20,6 +20,7 @@ import { hasCode } from "../shared/errors.ts";
 import { Refusal } from "../shared/refusal.ts";
 import { writeAtomic } from "../shared/write-atomic.ts";
 import { listAttachments } from "./attachments.ts";
+import { readDocumentMeta } from "./chunk.ts";
 import { isIndexedName, isInside, MARKDOWN, toPosix } from "./document-paths.ts";
 import { headingRange } from "./headings.ts";
 import {
@@ -30,6 +31,7 @@ import {
   resolveRef,
 } from "./links.ts";
 import { moveInFolder } from "./move.ts";
+import { stampProvenance } from "./provenance.ts";
 import { writeRemembered } from "./remember.ts";
 import { resolvePath } from "./resolve-path.ts";
 
@@ -401,12 +403,18 @@ export class Scope {
    *   so an agent never overwrites a version it has not read; an append checks it when given.
    *   Either way the write fails with `code: "changed"` if the file changed after the version
    *   edited was read.
+   * @param sessionId - recorded in the frontmatter of a document this creates.
+   *
+   * A document this creates gets `created_by: ragdown_edit` in its frontmatter, as `remember`
+   * records its own, and replacing a document that had a `created_by` keeps it: whole-file text
+   * from an agent rarely repeats frontmatter it did not write. A document the user wrote stays
+   * theirs however an agent edits it.
    * @throws with `status: 404` to append to a missing document or under a missing heading.
    */
   async editDocument(
     path: string,
     text: string,
-    options: { append?: boolean; heading?: string; baseHash?: string } = {},
+    options: { append?: boolean; heading?: string; baseHash?: string; sessionId?: string } = {},
   ) {
     if (options.heading !== undefined && !options.append) {
       throw new Refusal(400, "heading is for append: true");
@@ -425,7 +433,16 @@ export class Scope {
           `${relPath} exists: pass the hash ragdown_read_doc returned as base_hash to replace it`,
         );
       }
-      return this.writeDocument(relPath, text, false, options.baseHash);
+      const before = current ? readDocumentMeta(current.toString("utf8")) : undefined;
+      const provenance = before
+        ? before.createdBy && { createdBy: before.createdBy, session: before.session }
+        : { createdBy: "ragdown_edit", session: options.sessionId };
+      return this.writeDocument(
+        relPath,
+        provenance ? stampProvenance(text, provenance) : text,
+        false,
+        options.baseHash,
+      );
     }
     if (!current) {
       throw new Refusal(404, `no such document: ${path}`);
