@@ -15,7 +15,7 @@ import { hookContext } from "../hook/hook-context.ts";
 import { type ContextOptions, resolveHook } from "../hook/hook-settings.ts";
 import { type Hit, supersededBy, type WrittenBy } from "../indexing/store.ts";
 import type { Ragdown } from "../serving/engine.ts";
-import { contentHash, isVersion } from "../shared/content-hash.ts";
+import { checkBaseHash, contentHash, isVersion, shortHash } from "../shared/content-hash.ts";
 import { hasCode } from "../shared/errors.ts";
 import { Refusal } from "../shared/refusal.ts";
 import { writeAtomic } from "../shared/write-atomic.ts";
@@ -364,9 +364,13 @@ export class Scope {
    *   wrote meanwhile, and it keeps that version's CRLF line endings if it had them.
    * @throws with `status: 400` for a path the indexer would not index (see `resolvePath`), and
    *   `409` for an existing file without `overwrite`, a folder where the file would go, or a file
-   *   that is no longer `baseHash` (with `code: "changed"`).
+   *   that is no longer `baseHash` (with `code: "changed"`); `400` too for a `baseHash` that is
+   *   not a hash at all (see `checkBaseHash`).
    */
   async writeDocument(path: string, text: string, overwrite = false, baseHash?: string) {
+    if (baseHash !== undefined) {
+      checkBaseHash(baseHash);
+    }
     const { full, relPath } = await resolvePath(this.root, path, {
       create: true,
       markdownOnly: true,
@@ -381,8 +385,10 @@ export class Scope {
     if (baseHash !== undefined) {
       const current = existing ? await readFile(full) : undefined;
       if (!current || !isVersion(contentHash(current), baseHash)) {
-        const what = current ? "changed on disk" : "deleted";
-        throw new Refusal(409, `${path} was ${what} since it was opened`, "changed");
+        const what = current
+          ? `changed on disk since it was opened: base_hash ${shortHash(baseHash)} is the hash of an earlier version, so nothing was written`
+          : "deleted since it was opened, so nothing was written";
+        throw new Refusal(409, `${path} was ${what}`, "changed");
       }
       if (current.includes("\r\n")) {
         text = text.replace(/\r?\n/g, "\r\n");
@@ -509,6 +515,9 @@ export class Scope {
    *   that is no longer `baseHash`.
    */
   private async readForChange(path: string, baseHash?: string) {
+    if (baseHash !== undefined) {
+      checkBaseHash(baseHash);
+    }
     const { full, relPath } = await resolvePath(this.root, path, {
       create: false,
       markdownOnly: true,
@@ -519,7 +528,11 @@ export class Scope {
     const current = await readFile(full);
     const hash = contentHash(current);
     if (baseHash !== undefined && !isVersion(hash, baseHash)) {
-      throw new Refusal(409, `${relPath} was changed on disk since it was opened`, "changed");
+      throw new Refusal(
+        409,
+        `${relPath} was changed on disk since it was opened: base_hash ${shortHash(baseHash)} is the hash of an earlier version, so nothing was written`,
+        "changed",
+      );
     }
     return { relPath, lines: current.toString("utf8").split(/\r?\n/), hash };
   }
@@ -611,6 +624,9 @@ export class Scope {
    *   `409` (with `code: "changed"`) for a file that is no longer `baseHash`.
    */
   async deleteDocument(path: string, baseHash?: string) {
+    if (baseHash !== undefined) {
+      checkBaseHash(baseHash);
+    }
     const { full, relPath } = await resolvePath(this.root, path, {
       create: false,
       markdownOnly: true,
@@ -621,7 +637,7 @@ export class Scope {
     if (baseHash !== undefined && !isVersion(contentHash(await readFile(full)), baseHash)) {
       throw new Refusal(
         409,
-        `${relPath} changed since it was read, so it was not deleted: read it again and decide on what it says now`,
+        `${relPath} changed since it was read (base_hash ${shortHash(baseHash)} is of an earlier version), so it was not deleted: read it again and decide on what it says now`,
         "changed",
       );
     }
