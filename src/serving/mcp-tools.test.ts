@@ -254,7 +254,14 @@ describe("MCP server", () => {
       text: "# Backups",
       base_hash: hash,
     });
-    expect(stale).toMatchObject({ isError: true, text: expect.stringMatching(/changed on disk/) });
+    expect(stale).toMatchObject({
+      isError: true,
+      text: expect.stringMatching(
+        new RegExp(
+          `changed on disk since it was opened: base_hash ${hash} is the hash of an earlier version`,
+        ),
+      ),
+    });
 
     const replaced = await t.call("ragdown_write", {
       path: "ops/backups.md",
@@ -269,7 +276,30 @@ describe("MCP server", () => {
       text: "# Backups\n\nSome.\n",
       base_hash: hashIn(replaced.text).slice(0, 6),
     });
-    expect(tooShort.isError).toBe(true);
+    expect(tooShort).toMatchObject({
+      isError: true,
+      text: expect.stringMatching(
+        /^base_hash "[0-9a-f]{6}" is not a document's hash: it is 6 characters, too few .* Pass the 12 characters after "hash"/,
+      ),
+    });
+    const notHash = await t.call("ragdown_edit", {
+      path: "ops/backups.md",
+      edits: [{ old_text: "None", new_text: "Some" }],
+      base_hash: "the-latest-one",
+    });
+    expect(notHash).toMatchObject({
+      isError: true,
+      text: expect.stringMatching(/only the characters 0-9 and a-f, so nothing was changed/),
+    });
+    const tooLong = await t.call("ragdown_delete", {
+      path: "ops/backups.md",
+      base_hash: "0".repeat(65),
+    });
+    expect(tooLong).toMatchObject({
+      isError: true,
+      text: expect.stringMatching(/it is 65 characters, and a whole hash is 64/),
+    });
+    expect(await readFile(join(t.docsDir, "ops/backups.md"), "utf8")).toBe("# Backups\n\nNone.\n");
     const whole = await t.call("ragdown_write", {
       path: "ops/backups.md",
       text: "# Backups\n\nSome.\n",
