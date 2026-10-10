@@ -3,7 +3,13 @@ import { ActionButton } from "@/components/action-button";
 import { CreateFolder } from "@/components/folder-actions";
 import { EmptyState } from "@/components/page";
 import { QueryState } from "@/components/query-state";
-import { BarNavItem, Sidebar, SidebarNavItem, SidebarSection } from "@/components/sidebar";
+import {
+  BarNavItem,
+  Sidebar,
+  SidebarNavItem,
+  type SidebarNavItemStatus,
+  SidebarSection,
+} from "@/components/sidebar";
 import { SidebarLayout } from "@/components/split-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -113,7 +119,10 @@ function Brand() {
 /** Plug for a folder on MCP, a person for a human-only one: the one fact the rail adds. */
 const markerOf = (mcp: boolean) => (mcp ? <Plug /> : <UserRound />);
 const markerText = (mcp: boolean) => (mcp ? "on MCP" : "human-only");
-const statusOf = (mcp: boolean) => ({ label: markerText(mcp), icon: markerOf(mcp) });
+const statusOf = (mcp: boolean): SidebarNavItemStatus => ({
+  label: markerText(mcp),
+  iconSlot: markerOf(mcp),
+});
 
 function Nav() {
   const matchRoute = useMatchRoute();

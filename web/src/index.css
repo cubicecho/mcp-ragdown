@@ -89,10 +89,12 @@
   color-scheme: light;
   --scrollbar-thumb: oklch(0.145 0 0 / 20%);
   --scrollbar-thumb-hover: oklch(0.145 0 0 / 35%);
-  /* The file tree's selected and hovered rows, in this palette rather than cubeui's tint. */
-  --active: var(--accent);
-  --active-foreground: var(--accent-foreground);
-  --hover: var(--muted);
+  /* What is chosen and what is under the pointer, in this palette rather than cubeui's tint.
+     Chosen is the solid fill, so it reads on the sidebar and the cards, which are `accent`'s own
+     grey; hover is a wash of the foreground, so it shows on any of them and is never the same. */
+  --active: var(--primary);
+  --active-foreground: var(--primary-foreground);
+  --hover: oklch(0.145 0 0 / 8%);
 }
 
 .dark {
@@ -131,10 +133,9 @@
   color-scheme: dark;
   --scrollbar-thumb: oklch(1 0 0 / 18%);
   --scrollbar-thumb-hover: oklch(1 0 0 / 32%);
-  /* The file tree's selected and hovered rows, in this palette rather than cubeui's tint. */
-  --active: var(--accent);
-  --active-foreground: var(--accent-foreground);
-  --hover: var(--muted);
+  --active: var(--primary);
+  --active-foreground: var(--primary-foreground);
+  --hover: oklch(1 0 0 / 10%);
 }
 
 @layer base {
