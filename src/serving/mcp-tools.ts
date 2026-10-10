@@ -4,8 +4,17 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { Scope } from "../documents/scope.ts";
 import { formatHits, hitJson } from "../indexing/format.ts";
+import type { Config } from "../shared/config.ts";
 import { defaults } from "../shared/defaults.ts";
 import { errorMessage } from "../shared/errors.ts";
+import {
+  formatDocument,
+  formatEdited,
+  formatList,
+  formatMoved,
+  formatRemembered,
+  formatWritten,
+} from "./tool-results.ts";
 
 /**
  * The `written_by` filter of the search and list tools. A document is an agent's when its
@@ -29,9 +38,10 @@ export const VERSION: string = (
 
 /**
  * The MCP surface, and the only way an agent or a hook reaches the documents. Tool names are
- * `ragdown_*`, after zeromem's `zeromem_*`: recall, read, list, backlinks, remember, edit, move,
- * delete, stats, plus reindex and context (for hooks). Under `RAGDOWN_READ_ONLY` the write tools
- * are not listed at all — an agent should never see a tool it cannot call.
+ * `ragdown_*`, after zeromem's `zeromem_*`: recall, read, list, backlinks, remember, write, edit,
+ * move, delete, stats, plus reindex and context (for hooks). Under `RAGDOWN_READ_ONLY` the write tools
+ * are not listed at all — an agent should never see a tool it cannot call — and nor is a tool
+ * `RAGDOWN_DISABLED_TOOLS` names, since every tool listed costs each agent its description.
  *
  * @param ready - resolves to the scope — the folder these tools treat as the root — once the model
  *   is loaded. Taking a promise lets the stdio
@@ -42,7 +52,7 @@ export const VERSION: string = (
  */
 export function createMcpServer(
   ready: Promise<Scope>,
-  readOnly: boolean,
+  { readOnly, disabledTools }: Pick<Config, "readOnly" | "disabledTools">,
   folder?: { name: string; title: string },
 ): McpServer {
   const which = folder
@@ -55,7 +65,16 @@ export function createMcpServer(
     },
   );
 
-  server.registerTool(
+  // Registered and then removed, which keeps `registerTool`'s own types for every tool's handler.
+  const register: McpServer["registerTool"] = (name, config, handler) => {
+    const tool = server.registerTool(name, config, handler);
+    if (disabledTools.includes(name)) {
+      tool.remove();
+    }
+    return tool;
+  };
+
+  register(
     "ragdown_recall",
     {
       title: "Search documents",
@@ -102,7 +121,7 @@ export function createMcpServer(
       }),
   );
 
-  server.registerTool(
+  register(
     "ragdown_context",
     {
       title: "Context for a prompt",
@@ -176,12 +195,12 @@ export function createMcpServer(
       }),
   );
 
-  server.registerTool(
+  register(
     "ragdown_read_doc",
     {
       title: "Read a document",
       description:
-        "Read a Markdown file from the documents folder, whole or by line range, straight from disk. Never clipped. Use it to see the context around a ragdown_recall hit, or to follow a [[wikilink]] in a document. The result's hash is the whole file's, for ragdown_edit's base_hash.",
+        "Read a Markdown file from the documents folder, whole or by line range, straight from disk. Never clipped. Use it to see the context around a ragdown_recall hit, or to follow a [[wikilink]] in a document. The first line is 'path:start-end of total_lines (hash …)', the hash being the whole file's, for base_hash; the text follows from the second line, exactly as it is in the file.",
       inputSchema: {
         path: z
           .string()
@@ -194,10 +213,13 @@ export function createMcpServer(
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    (args) => run(ready, (rag) => rag.readDocument(args.path, args.start_line, args.end_line)),
+    (args) =>
+      run(ready, async (rag) =>
+        formatDocument(await rag.readDocument(args.path, args.start_line, args.end_line)),
+      ),
   );
 
-  server.registerTool(
+  register(
     "ragdown_backlinks",
     {
       title: "Documents linking here",
@@ -211,12 +233,12 @@ export function createMcpServer(
     (args) => run(ready, (rag) => rag.backlinks(args.path)),
   );
 
-  server.registerTool(
+  register(
     "ragdown_list",
     {
       title: "List documents",
       description:
-        "Browse the documents rather than search them. Returns total and documents: every document's path, title, tags and last change, its description when its frontmatter has one, and for one an agent wrote, created_by and its session. Optionally under a subfolder, with a tag, by who wrote it, or from one session. sort: 'recent' puts the most recently changed first.",
+        "Browse the documents rather than search them. Returns one line per document: its path, title, tags and last change, who wrote it and in which session when an agent did, and its description when its frontmatter has one. Optionally under a subfolder, with a tag, by who wrote it, or from one session. sort: 'recent' puts the most recently changed first.",
       inputSchema: {
         path_prefix: z
           .string()
@@ -239,19 +261,21 @@ export function createMcpServer(
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     (args) =>
-      run(ready, (rag) =>
-        rag.listDocuments({
-          pathPrefix: args.path_prefix,
-          tag: args.tag,
-          writtenBy: args.written_by,
-          sessionId: args.session_id || undefined,
-          sort: args.sort,
-          limit: args.limit,
-        }),
+      run(ready, async (rag) =>
+        formatList(
+          await rag.listDocuments({
+            pathPrefix: args.path_prefix,
+            tag: args.tag,
+            writtenBy: args.written_by,
+            sessionId: args.session_id || undefined,
+            sort: args.sort,
+            limit: args.limit,
+          }),
+        ),
       ),
   );
 
-  server.registerTool(
+  register(
     "ragdown_stats",
     {
       title: "Index status",
@@ -264,7 +288,7 @@ export function createMcpServer(
   );
 
   if (!readOnly) {
-    server.registerTool(
+    register(
       "ragdown_remember",
       {
         title: "Write a document",
@@ -297,20 +321,22 @@ export function createMcpServer(
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       (args) =>
-        run(ready, (rag) =>
-          rag.remember(args.title, args.content, args.tags, args.name, {
-            supersedes: args.supersedes,
-            sessionId: args.session_id,
-          }),
+        run(ready, async (rag) =>
+          formatRemembered(
+            await rag.remember(args.title, args.content, args.tags, args.name, {
+              supersedes: args.supersedes,
+              sessionId: args.session_id,
+            }),
+          ),
         ),
     );
 
-    server.registerTool(
-      "ragdown_edit",
+    register(
+      "ragdown_write",
       {
-        title: "Edit a document",
+        title: "Rewrite or append to a document",
         description:
-          "Change an existing document, or create one at a path you choose. By default text replaces the whole file (frontmatter included), which for an existing document needs base_hash: the hash ragdown_read_doc returned, so you never overwrite a version you have not read. A document this creates gets created_by: ragdown_edit in its frontmatter, so the hash returned is of the file as written, not of text. append: true adds text at the end of the document, or with heading at the end of that section, leaving the rest as it is. If the file changed since base_hash, nothing is written: read it again and redo the edit.",
+          "Rewrite or append to an existing document, or create one at a path you choose. To change part of a document, use ragdown_edit, which sends only the passages that change. By default text replaces the whole file (frontmatter included), which for an existing document needs base_hash: the hash ragdown_read_doc returned, so you never overwrite a version you have not read. A document this creates gets created_by: ragdown_write in its frontmatter, so the hash returned is of the file as written, not of text. append: true adds text at the end of the document, or with heading at the end of that section, leaving the rest as it is. If the file changed since base_hash, nothing is written: read it again and redo the edit.",
         inputSchema: {
           path: z
             .string()
@@ -341,22 +367,77 @@ export function createMcpServer(
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       (args) =>
-        run(ready, (rag) =>
-          rag.editDocument(args.path, args.text, {
-            append: args.append,
-            heading: args.heading,
-            baseHash: args.base_hash,
-            sessionId: args.session_id || undefined,
-          }),
+        run(ready, async (rag) =>
+          formatWritten(
+            await rag.write(args.path, args.text, {
+              append: args.append,
+              heading: args.heading,
+              baseHash: args.base_hash,
+              sessionId: args.session_id || undefined,
+            }),
+          ),
         ),
     );
 
-    server.registerTool(
+    register(
+      "ragdown_edit",
+      {
+        title: "Edit a document",
+        description:
+          "Change part of an existing document without sending the rest of it: each edit swaps one exact passage (old_text) for another (new_text). old_text must match the document character for character, as ragdown_read_doc returned it, and be there exactly once unless replace_all is true, so include enough of the surrounding text to make it unique. Edits are made in order, each on the result of the one before, and if any of them does not apply nothing is written. An empty new_text deletes the passage. A passage that is not found is answered with the nearest one the document does have.",
+        inputSchema: {
+          path: z
+            .string()
+            .min(1)
+            .describe(
+              "Path of a Markdown file relative to the documents root, e.g. 'projects/alpha.md'",
+            ),
+          edits: z
+            .array(
+              z.object({
+                old_text: z
+                  .string()
+                  .min(1)
+                  .describe("The passage to replace, exactly as it is in the document"),
+                new_text: z.string().describe("What replaces it; empty to delete the passage"),
+                replace_all: z
+                  .boolean()
+                  .default(false)
+                  .describe("Replace every occurrence of old_text rather than require one"),
+              }),
+            )
+            .min(1),
+          base_hash: z
+            .string()
+            .optional()
+            .describe(
+              "The hash from ragdown_read_doc. Optional: if the file changed since, nothing is written",
+            ),
+        },
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      },
+      (args) =>
+        run(ready, async (rag) =>
+          formatEdited(
+            await rag.edit(
+              args.path,
+              args.edits.map((edit) => ({
+                oldText: edit.old_text,
+                newText: edit.new_text,
+                replaceAll: edit.replace_all,
+              })),
+              args.base_hash,
+            ),
+          ),
+        ),
+    );
+
+    register(
       "ragdown_move",
       {
         title: "Move or rename a document or subfolder",
         description:
-          "Rename or move a document, or a subfolder with everything in it, to a new path inside the documents folder. Every link that pointed at what moved ([[wikilinks]] and relative Markdown links, in any document) is rewritten to still point at it, and the result lists the documents that were updated. Never overwrites: if something is already at `to`, nothing moves. Use this rather than ragdown_edit plus a delete, which would break the links.",
+          "Rename or move a document, or a subfolder with everything in it, to a new path inside the documents folder. Every link that pointed at what moved ([[wikilinks]] and relative Markdown links, in any document) is rewritten to still point at it, and the result names the documents that were updated. Never overwrites: if something is already at `to`, nothing moves. Use this rather than ragdown_write plus a delete, which would break the links.",
         inputSchema: {
           from: z
             .string()
@@ -373,10 +454,10 @@ export function createMcpServer(
         },
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
-      (args) => run(ready, (rag) => rag.move(args.from, args.to)),
+      (args) => run(ready, async (rag) => formatMoved(await rag.move(args.from, args.to))),
     );
 
-    server.registerTool(
+    register(
       "ragdown_delete",
       {
         title: "Delete a document or subfolder",
@@ -409,10 +490,14 @@ export function createMcpServer(
           openWorldHint: false,
         },
       },
-      (args) => run(ready, (rag) => rag.remove(args.path, args.recursive, args.base_hash)),
+      (args) =>
+        run(ready, async (rag) => {
+          const removed = await rag.remove(args.path, args.recursive, args.base_hash);
+          return `deleted ${removed.path}`;
+        }),
     );
 
-    server.registerTool(
+    register(
       "ragdown_reindex",
       {
         title: "Reindex documents",
@@ -435,7 +520,7 @@ async function run(
 ): Promise<CallToolResult> {
   try {
     const result = await body(await ready);
-    const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+    const text = typeof result === "string" ? result : JSON.stringify(result);
     return { content: [{ type: "text", text }] };
   } catch (error) {
     return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };

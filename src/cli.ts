@@ -70,7 +70,7 @@ async function stdio(config: Config): Promise<void> {
   // Served whatever its `.ragdown.json` says: running this on a folder is the opt-in.
   const name = basename(config.docsDir);
   const { title } = await readSettings(config.docsDir, name);
-  const server = createMcpServer(scope, config.readOnly, { name, title });
+  const server = createMcpServer(scope, config, { name, title });
   await server.connect(new StdioServerTransport());
   console.error(`[ragdown] stdio ready (docs: ${config.docsDir})`);
 

@@ -44,8 +44,9 @@ is a "document" everywhere in the code; a "file" is anything on disk, attachment
     `attachments.ts` find a heading's lines and a folder's non-Markdown files.
   - `scope.ts`: `Scope`, the documents as one endpoint sees them (a folder, or a subfolder of one):
     recall, reading, writing, listing, stats. Paths in and out are scope-relative. It delegates to
-    `remember.ts` (a new document), `provenance.ts` (the `created_by` an edit records) and `move.ts`
-    (a move and the links it rewrites).
+    `remember.ts` (a new document), `provenance.ts` (the `created_by` a write records),
+    `replacements.ts` (passages of a document swapped for new text) and `move.ts` (a move and the
+    links it rewrites).
 - `src/indexing/`: the derived index.
   - `embedder.ts`: `granite-small`, `bge-small`, `embeddinggemma`, `openai:<model>` and `hash`. An
     embedder's `name` is recorded in the index, so changing what a name produces means changing the
@@ -63,7 +64,8 @@ is a "document" everywhere in the code; a "file" is anything on disk, attachment
 - `src/serving/`: the processes and their endpoints.
   - `engine.ts`: `Ragdown`. Primary/reader roles, the store, syncs, the session memory.
   - `primary.ts`: the unix-socket lock and request protocol (newline-delimited JSON).
-  - `mcp-tools.ts`: the MCP tools, including `ragdown_context` for hooks.
+  - `mcp-tools.ts`: the MCP tools, including `ragdown_context` for hooks. `tool-results.ts` is the
+    text the document tools answer with: an agent pays for every character, so not JSON.
   - `http.ts`: `serve` — the server, bearer auth, `/mcp/<folder>[/<sub...>]` and `/api/status`, and
     the dispatch to one handler per resource: `api-folders.ts` (`/api/folders`, `/api/loose`),
     `api-documents.ts` (`/api/docs`, `/api/doc`, `/api/move`, `/api/search`, `/api/resolve`,
@@ -76,7 +78,8 @@ is a "document" everywhere in the code; a "file" is anything on disk, attachment
     the environment's. `serve` only.
   - `defaults.ts`: every tunable number, frozen, importing nothing. A new one goes here.
   - `refusal.ts`: `Refusal`, the error a caller caused, with its HTTP status. `errors.ts`,
-    `json.ts`, `write-atomic.ts` and `content-hash.ts` are single small helpers.
+    `json.ts`, `write-atomic.ts` and `content-hash.ts` (a document's hash, and the short one an
+    agent is shown) are single small helpers.
   - `testing.ts`: temp dirs and real servers for the tests.
 - `web/`: the web UI (React, TanStack Query/Router, Tailwind, cubeui/shadcn). Its own tsconfig;
   `components/ui` and the cubeui shells are registry-generated, so prefer re-adding to hand edits.

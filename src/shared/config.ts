@@ -31,6 +31,8 @@ export interface Config {
   embeddingUrl: string;
   embeddingApiKey: string | undefined;
   readOnly: boolean;
+  /** `RAGDOWN_DISABLED_TOOLS`: MCP tools this server leaves out, by name. */
+  disabledTools: string[];
   watch: boolean;
   /** Where `ragdown_remember` writes, relative to the folder, `/`-separated; never climbs out of it. */
   notesDir: string;
@@ -135,6 +137,10 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
     embeddingUrl: env.RAGDOWN_EMBEDDING_URL ?? "https://api.openai.com/v1",
     embeddingApiKey: env.RAGDOWN_EMBEDDING_API_KEY,
     readOnly: bool(env, "RAGDOWN_READ_ONLY", false),
+    disabledTools: (env.RAGDOWN_DISABLED_TOOLS ?? "")
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean),
     watch,
     notesDir: notesDir === "." ? "" : notesDir.replace(/\/+$/, ""),
     textLimit,

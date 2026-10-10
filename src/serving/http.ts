@@ -147,7 +147,7 @@ async function handleMcp(
     json(res, 404, { error: NO_MCP_FOLDER });
     return;
   }
-  const server = createMcpServer(Promise.resolve(scope), config.readOnly, folder);
+  const server = createMcpServer(Promise.resolve(scope), config, folder);
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,

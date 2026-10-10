@@ -123,8 +123,8 @@ curl localhost:3300/api/status                  <span class="cmt"># "ready": tru
   --header "Authorization: Bearer $RAGDOWN_TOKEN"</code></pre>
       <p>The same tools as over stdio, with <code>work</code> as the root: search, read, list, backlinks, stats, and
         — unless read-only — <code>ragdown_remember</code>, which writes into <code>work/notes</code>,
-        <code>ragdown_edit</code>, <code>ragdown_move</code>, <code>ragdown_delete</code> and
-        <code>ragdown_reindex</code>. A human-only folder answers <code>/mcp/&lt;folder&gt;</code> with the same 404
+        <code>ragdown_write</code>, <code>ragdown_edit</code>, <code>ragdown_move</code>,
+        <code>ragdown_delete</code> and <code>ragdown_reindex</code>. A human-only folder answers <code>/mcp/&lt;folder&gt;</code> with the same 404
         as one that does not exist.</p>
       <p>The <strong>Server</strong> tab shows how the server is set up: the docs directory, embedder, role,
         read-only and watch flags, the last sync, and the search defaults a hook gets. Those start as environment

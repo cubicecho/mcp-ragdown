@@ -230,18 +230,25 @@ middle. A hook that fails or takes longer than min-agent's 3 seconds only loses 
 | --- | --- |
 | `ragdown_context` | For hooks: the sections related to a `prompt` as a `<ragdown-context>` block, or empty text. Filters by similarity, skips short prompts and slash commands, and never repeats a section for the same `session_id` until `reset: true` forgets what that session was given. `format: claude-code` wraps the block as a Claude Code hook's `additionalContext`. Takes `top_k`, `min_score`, `min_ratio` and `max_chars` to override the folder's `hook` settings and the `RAGDOWN_HOOK_*` defaults. |
 | `ragdown_recall` | Hybrid search. Returns path, line range, heading breadcrumb, tags, similarity and the day the file last changed for each hit, and says when an agent wrote the document. Takes `top_k`, `path_prefix`, `tag`, `written_by: agent\|user`, `format: text\|json` and `max_chars`. |
-| `ragdown_read_doc` | Reads a file, or a line range of one, straight from disk. Never clipped. Also takes a wikilink target (`Note#Heading`); see [Obsidian](#obsidian). Returns the whole file's `hash`, for `ragdown_edit`, and `superseded_by` when another document replaces it. |
+| `ragdown_read_doc` | Reads a file, or a line range of one, straight from disk. Never clipped. Also takes a wikilink target (`Note#Heading`); see [Obsidian](#obsidian). Returns the text as it is in the file, under one line: `path:start-end of total (hash …)`. The hash is the first 12 characters of the file's SHA-256, which is what `base_hash` takes; the line also says when another document supersedes this one. |
 | `ragdown_backlinks` | The documents that link to a `path` — by wikilink, alias or relative Markdown link — with the lines the links are on. Links in code are not links. |
-| `ragdown_list` | Browses rather than searches, returning `total` and `documents`: each document's path, title, tags, last change, frontmatter `description`, `created_by` and `session` if an agent wrote it, and `superseded_by` if it has been replaced. Takes `path_prefix`, `tag`, `written_by: agent\|user`, `session_id`, `sort: path\|recent` and `limit`. |
+| `ragdown_list` | Browses rather than searches. Returns a count, then one line per document: its path, title, tags, the day it last changed, the tool and session that wrote it if an agent did, what supersedes it, and its frontmatter `description`. Takes `path_prefix`, `tag`, `written_by: agent\|user`, `session_id`, `sort: path\|recent` and `limit`. |
 | `ragdown_stats` | Folder, index size, embedder, role (primary or reader), whether a sync is running, and the last sync. |
-| `ragdown_remember` | Writes a new document (with frontmatter) under `RAGDOWN_NOTES_DIR` and indexes it before returning. Never overwrites a file. `supersedes` lists the documents this one replaces, which search then skips; `session_id` is recorded as provenance. |
-| `ragdown_edit` | Changes a document at a `path`, or creates one, which gets `created_by: ragdown_edit` (and the `session_id`) in its frontmatter. `text` replaces the whole file, which for an existing document needs `base_hash` — the `hash` `ragdown_read_doc` gave — so an agent never overwrites a version it has not read. `append: true` adds `text` at the end instead, or with `heading` at the end of that section. A file that changed since `base_hash` is not written. |
-| `ragdown_move` | Renames or moves a document, or a subfolder with everything in it, from `from` to `to`, and rewrites every wikilink and relative Markdown link that pointed at what moved. Returns the documents it `updated`. Never overwrites what is already at `to`. |
+| `ragdown_remember` | Writes a new document (with frontmatter) under `RAGDOWN_NOTES_DIR` and indexes it before returning. Never overwrites a file, and returns the path it chose. `supersedes` lists the documents this one replaces, which search then skips; `session_id` is recorded as provenance. |
+| `ragdown_write` | Rewrites a document at a `path`, or creates one, which gets `created_by: ragdown_write` (and the `session_id`) in its frontmatter. `text` replaces the whole file, which for an existing document needs `base_hash` — the `hash` `ragdown_read_doc` gave — so an agent never overwrites a version it has not read. `append: true` adds `text` at the end instead, or with `heading` at the end of that section. A file that changed since `base_hash` is not written. Returns the new hash, so the next change needs no read. |
+| `ragdown_edit` | Changes part of a document at a `path` without sending the rest: each of `edits` swaps one exact passage (`old_text`) for another (`new_text`). A passage must match exactly, and once unless `replace_all: true`. The edits are made in order, and if any does not apply nothing is written. `base_hash` is optional, since the match already proves the passage is current. A passage that is not found is answered with the nearest one the document does have, to copy from. Returns how many passages were replaced and the new hash. |
+| `ragdown_move` | Renames or moves a document, or a subfolder with everything in it, from `from` to `to`, and rewrites every wikilink and relative Markdown link that pointed at what moved. Returns the documents whose links it updated. Never overwrites what is already at `to`. |
 | `ragdown_delete` | Deletes a document or a subfolder at `path`, for good: there is no trash. A subfolder that holds anything needs `recursive: true`, and then goes with its attachments too. Links to a deleted document are left as they are. With `base_hash` (the `hash` `ragdown_read_doc` gave), a document is deleted only if it has not changed since. |
 | `ragdown_reindex` | Syncs now; `full: true` re-embeds everything. |
 
-The write tools (`ragdown_remember`, `ragdown_edit`, `ragdown_move`, `ragdown_delete`,
-`ragdown_reindex`) are not listed when `RAGDOWN_READ_ONLY=true`.
+The write tools (`ragdown_remember`, `ragdown_write`, `ragdown_edit`, `ragdown_move`,
+`ragdown_delete`, `ragdown_reindex`) are not listed when `RAGDOWN_READ_ONLY=true`.
+
+Every tool an agent is offered costs it context on every turn, used or not: the twelve descriptions
+together are about 15,000 characters. `RAGDOWN_DISABLED_TOOLS` leaves out the ones you name.
+`ragdown_context,ragdown_stats,ragdown_reindex` is a fair set to drop for an agent that only reads
+and writes documents: the first is for hooks, and the other two are for whoever runs the server.
+Keep `ragdown_context` on a server a hook calls.
 
 ## Configuration
 
@@ -257,6 +264,7 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `RAGDOWN_THREADS` | half the cores | ONNX Runtime threads for the local model. |
 | `RAGDOWN_WATCH` | `true` | Watch the folder; without a watcher, sync on start and on `ragdown_reindex` only. |
 | `RAGDOWN_READ_ONLY` | `false` | Hide the write tools, and refuse uploads, deletes and folder changes other than settings. |
+| `RAGDOWN_DISABLED_TOOLS` | none | Tools to leave out, by name and comma-separated, such as `ragdown_stats,ragdown_reindex`. They are neither listed nor callable. See [Tools](#tools). |
 | `RAGDOWN_NOTES_DIR` | `notes` | Where `ragdown_remember` writes, relative to each folder (a subfolder endpoint writes into the subfolder). A relative path inside the folder, not a dot-folder. |
 | `RAGDOWN_TEXT_LIMIT` | `2000` | Characters per hit in text output. Every cut names the `ragdown_read_doc` call that returns the rest. |
 | `RAGDOWN_HOOK_TOP_K` | `4` | `ragdown_context`: most sections per prompt. |
@@ -308,7 +316,7 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 Every `path` in `/api` includes the folder: `work/notes/a.md`. Writes answer after the index has
 synced, so the next `GET /api/docs` already shows them, and uploads, deletes, and creating,
 renaming or deleting a folder, and changing the server settings, are a 403 under `RAGDOWN_READ_ONLY`. They are for the web UI; agents
-write with `ragdown_remember` and `ragdown_edit`.
+write with `ragdown_remember`, `ragdown_write` and `ragdown_edit`.
 
 The web UI asks for the token once and keeps it in the browser's local storage. Its static files
 hold no documents, so they need none; everything it shows comes from the bearer routes. It is built by
@@ -404,7 +412,7 @@ keeps everything an ungated hook found while still cutting a fifth of the inject
 
 **Superseding a document.** A document whose frontmatter lists `supersedes:` hides the documents it names from
 search and from hook context. Nothing is deleted or rewritten — the old file stays on disk and
-`ragdown_read_doc` still opens it, saying which document replaced it (`superseded_by`), and the web UI
+`ragdown_read_doc` still opens it, saying which document replaced it, and the web UI
 marks it superseded and links to the replacement. But a fact that changed stops coming back as
 confident prose next to its replacement.
 
@@ -430,7 +438,7 @@ from a document with `created_by` says an agent wrote it, in `ragdown_recall` an
 own. `written_by: agent` or `user` limits `ragdown_recall` and `ragdown_list` to one or the other,
 and `ragdown_list`'s `session_id` finds what one conversation wrote. Both fields are frontmatter:
 what a file says about itself, which anyone who can edit the file can change, not proof.
-`ragdown_remember` and `ragdown_edit` write them on a document they create, and `ragdown_edit` keeps
+`ragdown_remember` and `ragdown_write` write them on a document they create, and `ragdown_write` keeps
 them when it replaces one. A document the user wrote stays the user's however an agent edits it.
 
 **What a document is, before reading it.** A frontmatter `description` (one line, or a YAML block)
