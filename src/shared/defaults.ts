@@ -56,6 +56,13 @@ export const defaults = Object.freeze({
   /** The most hits one search may ask for, over MCP or `/api/search`. */
   maxTopK: 50,
 
+  /**
+   * Hex characters of a document's hash an agent is shown and sends back as `base_hash`. The hash
+   * only tells one version of a file from the next, so 48 bits is plenty, and it is a fifth of the
+   * tokens of the whole one on every read and write.
+   */
+  shortHashChars: 12,
+
   /** Sessions whose returned chunks are remembered; past this the oldest is forgotten. */
   maxSessions: 200,
   /** A prompt shorter than this (a "yes", a "go on") has nothing to retrieve on. */

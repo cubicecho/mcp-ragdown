@@ -5,6 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { Scope } from "../documents/scope.ts";
+import { contentHash } from "../shared/content-hash.ts";
 import { tempSetup } from "../shared/testing.ts";
 import { Ragdown } from "./engine.ts";
 import { createMcpServer } from "./mcp-tools.ts";
@@ -27,7 +28,7 @@ async function connect(env: Record<string, string> = {}) {
   closers.push(() => rag.close());
   await rag.sync(false);
 
-  const server = createMcpServer(Promise.resolve(new Scope(rag)), t.config.readOnly);
+  const server = createMcpServer(Promise.resolve(new Scope(rag)), t.config);
   const client = new Client({ name: "test", version: "0" });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
@@ -38,8 +39,31 @@ async function connect(env: Record<string, string> = {}) {
     const first = result.content[0];
     return { isError: result.isError === true, text: first?.type === "text" ? first.text : "" };
   };
-  return { ...t, rag, client, call };
+
+  /** A document as `ragdown_read_doc` answers: its header line, the hash in that, and its text. */
+  const read = async (path: string, range: Record<string, number> = {}) => {
+    const { text } = await call("ragdown_read_doc", { path, ...range });
+    const headerEnd = text.indexOf("\n");
+    return {
+      header: text.slice(0, headerEnd),
+      hash: hashIn(text),
+      text: text.slice(headerEnd + 1),
+    };
+  };
+  /** A listing as `ragdown_list` answers: the line that counts it, then a line per document. */
+  const list = async (args: Record<string, unknown> = {}) => {
+    const [count = "", ...lines] = (await call("ragdown_list", args)).text.split("\n");
+    return { count, lines, paths: lines.map((line) => line.split(" — ")[0]) };
+  };
+  return { ...t, rag, client, call, read, list };
 }
+
+/** The short hash a read or a write names in its result. */
+function hashIn(result: string): string {
+  return /hash ([0-9a-f]+)/.exec(result)?.[1] ?? "";
+}
+
+const today = new Date().toISOString().slice(0, 10);
 
 describe("MCP server", () => {
   it("lists the write tools only when writable", async () => {
@@ -56,6 +80,7 @@ describe("MCP server", () => {
       "ragdown_reindex",
       "ragdown_remember",
       "ragdown_stats",
+      "ragdown_write",
     ]);
     const readOnly = await connect({ RAGDOWN_READ_ONLY: "true" });
     expect((await readOnly.client.listTools()).tools.map((t) => t.name).sort()).toEqual([
@@ -68,6 +93,19 @@ describe("MCP server", () => {
     ]);
   });
 
+  it("leaves out the tools it is told to", async () => {
+    const t = await connect({
+      RAGDOWN_DISABLED_TOOLS: "ragdown_context, ragdown_stats,ragdown_reindex",
+      RAGDOWN_READ_ONLY: "true",
+    });
+    expect((await t.client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
+      "ragdown_backlinks",
+      "ragdown_list",
+      "ragdown_read_doc",
+      "ragdown_recall",
+    ]);
+  });
+
   it("recalls in text and json, clipping with a pointer to the rest", async () => {
     const t = await connect();
     const text = await t.call("ragdown_recall", {
@@ -75,7 +113,6 @@ describe("MCP server", () => {
       top_k: 1,
       max_chars: 5,
     });
-    const today = new Date().toISOString().slice(0, 10);
     expect(text.text).toMatch(
       new RegExp(
         `^\\[1\\] ops/backups\\.md:7-7 — Backups › Restore \\(similarity \\d\\.\\d\\d, changed ${today}\\)`,
@@ -139,16 +176,15 @@ describe("MCP server", () => {
 
   it("reads files by line range and refuses paths outside the folder", async () => {
     const t = await connect();
-    const doc = JSON.parse(
-      (await t.call("ragdown_read_doc", { path: "ops/backups.md", start_line: 5, end_line: 7 }))
-        .text,
-    );
-    expect(doc).toMatchObject({
+    // The text is as it is in the file, under one line that says where it is from.
+    const doc = await t.call("ragdown_read_doc", {
+      path: "ops/backups.md",
       start_line: 5,
       end_line: 7,
-      total_lines: 7,
-      text: "## Restore\n\nRun pg_restore twice.",
     });
+    expect(doc.text).toMatch(
+      /^ops\/backups\.md:5-7 of 7 \(hash [0-9a-f]{12}\)\n## Restore\n\nRun pg_restore twice\.$/,
+    );
 
     const outside = await t.call("ragdown_read_doc", { path: "../data/meta.json" });
     expect(outside).toMatchObject({
@@ -167,9 +203,9 @@ describe("MCP server", () => {
       tags: ["ops"],
       name: "kafka",
     };
-    const first = JSON.parse((await t.call("ragdown_remember", args)).text);
-    const second = JSON.parse((await t.call("ragdown_remember", args)).text);
-    expect([first.path, second.path]).toEqual(["notes/kafka.md", "notes/kafka-2.md"]);
+    const first = await t.call("ragdown_remember", args);
+    const second = await t.call("ragdown_remember", args);
+    expect([first.text, second.text]).toEqual(["saved notes/kafka.md", "saved notes/kafka-2.md"]);
 
     const written = await readFile(join(t.docsDir, "notes/kafka.md"), "utf8");
     expect(written).toMatch(
@@ -185,17 +221,16 @@ describe("MCP server", () => {
     expect(outside.isError).toBe(true);
   });
 
-  it("edits a document only over the version it read, and appends under a heading", async () => {
+  it("writes a document only over the version it read, and appends under a heading", async () => {
     const t = await connect();
-    const read = async () =>
-      JSON.parse((await t.call("ragdown_read_doc", { path: "ops/backups.md" })).text);
+    const read = () => t.read("ops/backups.md");
     const { hash } = await read();
-    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(hash).toMatch(/^[0-9a-f]{12}$/);
 
-    const blind = await t.call("ragdown_edit", { path: "ops/backups.md", text: "# Gone" });
+    const blind = await t.call("ragdown_write", { path: "ops/backups.md", text: "# Gone" });
     expect(blind).toMatchObject({ isError: true, text: expect.stringMatching(/base_hash/) });
 
-    const appended = await t.call("ragdown_edit", {
+    const appended = await t.call("ragdown_write", {
       path: "ops/backups.md",
       text: "Check the checksum first.",
       append: true,
@@ -204,7 +239,7 @@ describe("MCP server", () => {
     });
     expect(appended.isError).toBe(false);
     // Nightly snapshots… is under Backups, and Restore is nested in it: the section ends at EOF.
-    await t.call("ragdown_edit", {
+    await t.call("ragdown_write", {
       path: "ops/backups.md",
       text: "## Offsite\n\nS3, weekly.",
       append: true,
@@ -214,68 +249,80 @@ describe("MCP server", () => {
       "# Backups\n\nNightly snapshots.\n\n## Restore\n\nRun pg_restore twice.\n\nCheck the checksum first.\n\n## Offsite\n\nS3, weekly.\n",
     );
 
-    const stale = await t.call("ragdown_edit", {
+    const stale = await t.call("ragdown_write", {
       path: "ops/backups.md",
       text: "# Backups",
       base_hash: hash,
     });
     expect(stale).toMatchObject({ isError: true, text: expect.stringMatching(/changed on disk/) });
 
-    const replaced = await t.call("ragdown_edit", {
+    const replaced = await t.call("ragdown_write", {
       path: "ops/backups.md",
       text: "# Backups\n\nNone.\n",
       base_hash: after.hash,
     });
-    expect(JSON.parse(replaced.text)).toMatchObject({ path: "ops/backups.md", created: false });
+    expect(replaced.text).toMatch(/^wrote ops\/backups\.md \(hash [0-9a-f]{12}\)$/);
     expect(await readFile(join(t.docsDir, "ops/backups.md"), "utf8")).toBe("# Backups\n\nNone.\n");
+    // The whole hash names the version too, and less than the short one names none.
+    const tooShort = await t.call("ragdown_write", {
+      path: "ops/backups.md",
+      text: "# Backups\n\nSome.\n",
+      base_hash: hashIn(replaced.text).slice(0, 6),
+    });
+    expect(tooShort.isError).toBe(true);
+    const whole = await t.call("ragdown_write", {
+      path: "ops/backups.md",
+      text: "# Backups\n\nSome.\n",
+      base_hash: contentHash("# Backups\n\nNone.\n"),
+    });
+    expect(whole.isError).toBe(false);
 
-    const created = await t.call("ragdown_edit", { path: "ops/new.md", text: "# New\n" });
-    expect(JSON.parse(created.text)).toMatchObject({ created: true });
-    const noHeading = await t.call("ragdown_edit", {
+    const created = await t.call("ragdown_write", { path: "ops/new.md", text: "# New\n" });
+    expect(created.text).toMatch(/^created ops\/new\.md \(hash [0-9a-f]{12}\)$/);
+    const noHeading = await t.call("ragdown_write", {
       path: "ops/new.md",
       text: "x",
       append: true,
       heading: "Nope",
     });
     expect(noHeading).toMatchObject({ isError: true, text: expect.stringMatching(/no heading/) });
-    const hidden = await t.call("ragdown_edit", { path: ".obsidian/x.md", text: "x" });
+    const hidden = await t.call("ragdown_write", { path: ".obsidian/x.md", text: "x" });
     expect(hidden.isError).toBe(true);
   });
 
-  it("records that ragdown_edit created a document, and keeps that when it is replaced", async () => {
+  it("records that ragdown_write created a document, and keeps that when it is replaced", async () => {
     const t = await connect();
     const onDisk = (path: string) => readFile(join(t.docsDir, path), "utf8");
-    const edit = async (args: Record<string, unknown>) =>
-      JSON.parse((await t.call("ragdown_edit", args)).text) as { hash: string };
+    const write = async (args: Record<string, unknown>) => ({
+      hash: hashIn((await t.call("ragdown_write", args)).text),
+    });
 
-    const plain = await edit({ path: "new/plain.md", text: "# Plain\n\nText.", session_id: "s9" });
+    const plain = await write({ path: "new/plain.md", text: "# Plain\n\nText.", session_id: "s9" });
     expect(await onDisk("new/plain.md")).toBe(
-      '---\ncreated_by: ragdown_edit\nsession: "s9"\n---\n# Plain\n\nText.',
+      '---\ncreated_by: ragdown_write\nsession: "s9"\n---\n# Plain\n\nText.',
     );
     // The hash is of the file as written, so the next edit can be made against it.
-    const read = JSON.parse((await t.call("ragdown_read_doc", { path: "new/plain.md" })).text);
-    expect(read.hash).toBe(plain.hash);
+    expect((await t.read("new/plain.md")).hash).toBe(plain.hash);
 
-    await edit({ path: "new/front.md", text: "---\ntitle: Front\n---\nText." });
+    await write({ path: "new/front.md", text: "---\ntitle: Front\n---\nText." });
     expect(await onDisk("new/front.md")).toBe(
-      "---\ntitle: Front\ncreated_by: ragdown_edit\n---\nText.",
+      "---\ntitle: Front\ncreated_by: ragdown_write\n---\nText.",
     );
-    await edit({ path: "new/own.md", text: "---\ncreated_by: importer\n---\nText." });
+    await write({ path: "new/own.md", text: "---\ncreated_by: importer\n---\nText." });
     expect(await onDisk("new/own.md")).toBe("---\ncreated_by: importer\n---\nText.");
 
     // Replaced with text that has no frontmatter, it is still the agent's.
-    await edit({ path: "new/plain.md", text: "# Plain\n\nRewritten.", base_hash: plain.hash });
+    await write({ path: "new/plain.md", text: "# Plain\n\nRewritten.", base_hash: plain.hash });
     expect(await onDisk("new/plain.md")).toBe(
-      '---\ncreated_by: ragdown_edit\nsession: "s9"\n---\n# Plain\n\nRewritten.',
+      '---\ncreated_by: ragdown_write\nsession: "s9"\n---\n# Plain\n\nRewritten.',
     );
     // The user's own document stays the user's, replaced or appended to.
-    const mine = JSON.parse((await t.call("ragdown_read_doc", { path: "ops/backups.md" })).text);
-    await edit({ path: "ops/backups.md", text: "# Backups\n\nWeekly.", base_hash: mine.hash });
-    await edit({ path: "ops/backups.md", text: "And monthly.", append: true });
+    const mine = await t.read("ops/backups.md");
+    await write({ path: "ops/backups.md", text: "# Backups\n\nWeekly.", base_hash: mine.hash });
+    await write({ path: "ops/backups.md", text: "And monthly.", append: true });
     expect(await onDisk("ops/backups.md")).not.toContain("created_by");
 
-    const listed = JSON.parse((await t.call("ragdown_list", { written_by: "agent" })).text);
-    expect(listed.documents.map((doc: { path: string }) => doc.path)).toEqual([
+    expect((await t.list({ written_by: "agent" })).paths).toEqual([
       "new/front.md",
       "new/own.md",
       "new/plain.md",
@@ -286,10 +333,85 @@ describe("MCP server", () => {
     const t = await connect();
     await t.write("a.md", "# A\n\n## One\n\nfirst\n\n\n## Two\n\nsecond\n");
     await t.rag.sync(false);
-    await t.call("ragdown_edit", { path: "a.md", text: "more", append: true, heading: "One" });
+    await t.call("ragdown_write", { path: "a.md", text: "more", append: true, heading: "One" });
     expect(await readFile(join(t.docsDir, "a.md"), "utf8")).toBe(
       "# A\n\n## One\n\nfirst\n\nmore\n\n## Two\n\nsecond\n",
     );
+  });
+
+  it("edits passages of a document, all of them or none", async () => {
+    const t = await connect();
+    const onDisk = () => readFile(join(t.docsDir, "ops/backups.md"), "utf8");
+    const { hash } = await t.read("ops/backups.md");
+
+    const replaced = await t.call("ragdown_edit", {
+      path: "ops/backups.md",
+      edits: [
+        { old_text: "Nightly", new_text: "Hourly" },
+        { old_text: "Run pg_restore twice.", new_text: "Run pg_restore once.\n\nThen vacuum." },
+      ],
+      base_hash: hash,
+    });
+    expect(replaced.text).toMatch(/^edited ops\/backups\.md \(replaced 2, hash [0-9a-f]{12}\)$/);
+    // The hash is the one to make the next edit against, with no read in between.
+    expect(hashIn(replaced.text)).toBe((await t.read("ops/backups.md")).hash);
+    const after =
+      "# Backups\n\nHourly snapshots.\n\n## Restore\n\nRun pg_restore once.\n\nThen vacuum.";
+    expect(await onDisk()).toBe(after);
+    // Indexed before returning, like every other write.
+    const hits = JSON.parse(
+      (await t.call("ragdown_recall", { query: "vacuum", format: "json" })).text,
+    ).hits;
+    expect(hits[0]).toMatchObject({ path: "ops/backups.md" });
+
+    // The first edit applies and the second does not, so neither is written.
+    const partial = await t.call("ragdown_edit", {
+      path: "ops/backups.md",
+      edits: [
+        { old_text: "Hourly", new_text: "Daily" },
+        { old_text: "Run pg_restore twice.", new_text: "x" },
+      ],
+    });
+    expect(partial).toMatchObject({
+      isError: true,
+      text: expect.stringMatching(/^edit 2 of 2: old_text is not in the document/),
+    });
+    // A passage that is nearly there is answered with the one that is.
+    const nearly = await t.call("ragdown_edit", {
+      path: "ops/backups.md",
+      edits: [{ old_text: "Hourly  snapshots.", new_text: "Daily snapshots." }],
+    });
+    expect(nearly).toMatchObject({
+      isError: true,
+      text: expect.stringMatching(
+        /The nearest passage \(lines 3-3\) follows; .*:\nHourly snapshots\.$/s,
+      ),
+    });
+    const stale = await t.call("ragdown_edit", {
+      path: "ops/backups.md",
+      edits: [{ old_text: "Hourly", new_text: "Daily" }],
+      base_hash: hash,
+    });
+    expect(stale).toMatchObject({ isError: true, text: expect.stringMatching(/changed on disk/) });
+    const missing = await t.call("ragdown_edit", {
+      path: "ops/nope.md",
+      edits: [{ old_text: "a", new_text: "b" }],
+    });
+    expect(missing).toMatchObject({
+      isError: true,
+      text: expect.stringMatching(/no such document/),
+    });
+    expect(await onDisk()).toBe(after);
+  });
+
+  it("edits a CRLF document, keeping its line endings", async () => {
+    const t = await connect();
+    await t.write("crlf.md", "# A\r\n\r\nfirst\r\nsecond\r\n");
+    await t.call("ragdown_edit", {
+      path: "crlf.md",
+      edits: [{ old_text: "first\nsecond", new_text: "one\ntwo" }],
+    });
+    expect(await readFile(join(t.docsDir, "crlf.md"), "utf8")).toBe("# A\r\n\r\none\r\ntwo\r\n");
   });
 
   it("moves a document and a subfolder, keeping the links to them", async () => {
@@ -301,21 +423,15 @@ describe("MCP server", () => {
       from: "ops/backups.md",
       to: "ops/snapshots.md",
     });
-    expect(JSON.parse(renamed.text)).toMatchObject({
-      from: "ops/backups.md",
-      to: "ops/snapshots.md",
-      updated: ["index.md"],
-    });
+    expect(renamed.text).toBe(
+      "moved ops/backups.md to ops/snapshots.md; links updated in index.md",
+    );
     const folder = await t.call("ragdown_move", { from: "ops", to: "infra/db" });
-    expect(JSON.parse(folder.text)).toMatchObject({ from: "ops", to: "infra/db" });
+    expect(folder.text).toBe("moved ops to infra/db; links updated in index.md");
     expect(await readFile(join(t.docsDir, "index.md"), "utf8")).toBe(
       "# Index\n\nSee [[snapshots#Restore]] and [backups](infra/db/snapshots.md).",
     );
-    const listed = JSON.parse((await t.call("ragdown_list", {})).text);
-    expect(listed.documents.map((doc: { path: string }) => doc.path)).toEqual([
-      "index.md",
-      "infra/db/snapshots.md",
-    ]);
+    expect((await t.list()).paths).toEqual(["index.md", "infra/db/snapshots.md"]);
 
     const taken = await t.call("ragdown_move", { from: "index.md", to: "infra/db/snapshots.md" });
     expect(taken).toMatchObject({ isError: true, text: expect.stringMatching(/already exists/) });
@@ -329,7 +445,7 @@ describe("MCP server", () => {
     await t.write("ops/old/pg.md", "# Postgres");
     await t.rag.sync(false);
 
-    const { hash } = JSON.parse((await t.call("ragdown_read_doc", { path: "ops/old/pg.md" })).text);
+    const { hash } = await t.read("ops/old/pg.md");
     const stale = await t.call("ragdown_delete", {
       path: "ops/old/pg.md",
       base_hash: "0".repeat(64),
@@ -338,7 +454,7 @@ describe("MCP server", () => {
     const folder = await t.call("ragdown_delete", { path: "ops/old", base_hash: hash });
     expect(folder).toMatchObject({ isError: true, text: expect.stringMatching(/subfolder/) });
     const doc = await t.call("ragdown_delete", { path: "ops/old/pg.md", base_hash: hash });
-    expect(JSON.parse(doc.text)).toMatchObject({ path: "ops/old/pg.md", sync: { removed: 1 } });
+    expect(doc).toEqual({ isError: false, text: "deleted ops/old/pg.md" });
     const again = await t.call("ragdown_delete", { path: "ops/old/pg.md" });
     expect(again).toMatchObject({ isError: true, text: expect.stringMatching(/no such/) });
     expect((await t.call("ragdown_delete", { path: "ops/old" })).isError).toBe(false);
@@ -350,8 +466,8 @@ describe("MCP server", () => {
     expect(attachment.isError).toBe(true);
 
     const gone = await t.call("ragdown_delete", { path: "ops", recursive: true });
-    expect(JSON.parse(gone.text)).toMatchObject({ path: "ops", sync: { removed: 1 } });
-    expect(JSON.parse((await t.call("ragdown_list", {})).text).total).toBe(0);
+    expect(gone).toEqual({ isError: false, text: "deleted ops" });
+    expect((await t.call("ragdown_list", {})).text).toBe("No documents.");
     expect((await t.call("ragdown_delete", { path: ".", recursive: true })).isError).toBe(true);
     expect((await t.call("ragdown_delete", { path: "..", recursive: true })).isError).toBe(true);
   });
@@ -361,31 +477,25 @@ describe("MCP server", () => {
     await t.write("notes/a.md", "---\ntitle: Alpha\ntags: [project/alpha]\n---\nA.");
     await t.write("notes/b.md", "# Beta\n\n#ops");
     await t.rag.sync(false);
-    const list = async (args: Record<string, unknown>) =>
-      JSON.parse((await t.call("ragdown_list", args)).text);
 
-    expect((await list({})).documents.map((n: { path: string }) => n.path)).toEqual([
-      "notes/a.md",
-      "notes/b.md",
-      "ops/backups.md",
-    ]);
-    const tagged = await list({ tag: "#project" });
-    expect(tagged).toMatchObject({
-      total: 1,
-      documents: [{ path: "notes/a.md", title: "Alpha", tags: ["project/alpha"] }],
+    expect(await t.list()).toMatchObject({
+      count: "documents: 3",
+      paths: ["notes/a.md", "notes/b.md", "ops/backups.md"],
     });
-    expect((await list({ path_prefix: "notes/", limit: 1 })).total).toBe(2);
-    expect((await list({ path_prefix: "notes/", limit: 1 })).documents).toHaveLength(1);
+    expect((await t.call("ragdown_list", { tag: "#project" })).text).toBe(
+      `documents: 1\nnotes/a.md — Alpha [#project/alpha] (changed ${today})`,
+    );
+    expect(await t.list({ path_prefix: "notes/", limit: 1 })).toMatchObject({
+      count: "documents: 1 of 2",
+      paths: ["notes/a.md"],
+    });
 
     // The index keeps a file's mtime until its content changes, so b is changed, not only touched.
     await new Promise((done) => setTimeout(done, 20));
     await t.write("notes/b.md", "# Beta\n\n#ops, changed");
     await t.rag.sync(false);
-    const recent = await list({ sort: "recent", path_prefix: "notes" });
-    expect(recent.documents.map((n: { path: string }) => n.path)).toEqual([
-      "notes/b.md",
-      "notes/a.md",
-    ]);
+    const recent = await t.list({ sort: "recent", path_prefix: "notes" });
+    expect(recent.paths).toEqual(["notes/b.md", "notes/a.md"]);
   });
 
   it("tells an agent's documents from the user's, when searching and listing", async () => {
@@ -428,23 +538,17 @@ describe("MCP server", () => {
     });
     expect(context.text).toContain("written by an agent with ragdown_remember");
 
-    const list = async (args: Record<string, unknown>) =>
-      JSON.parse((await t.call("ragdown_list", args)).text).documents as Record<string, unknown>[];
-    expect((await list({ written_by: "agent" })).map((doc) => doc.path)).toEqual([
+    expect((await t.list({ written_by: "agent" })).paths).toEqual([
       "notes/drill.md",
       "notes/window.md",
     ]);
-    expect(await list({ written_by: "user" })).toEqual([
-      { path: "ops/backups.md", title: "Backups", modified: expect.any(String) },
+    expect((await t.list({ written_by: "user" })).lines).toEqual([
+      `ops/backups.md — Backups (changed ${today})`,
     ]);
-    expect(await list({ session_id: "s1" })).toEqual([
-      expect.objectContaining({
-        path: "notes/drill.md",
-        created_by: "ragdown_remember",
-        session: "s1",
-      }),
+    expect((await t.list({ session_id: "s1" })).lines).toEqual([
+      `notes/drill.md — Restore drill (changed ${today}, written by an agent with ragdown_remember, session s1)`,
     ]);
-    expect(await list({ session_id: "nobody" })).toEqual([]);
+    expect((await t.call("ragdown_list", { session_id: "nobody" })).text).toBe("No documents.");
   });
 
   it("lists a document's description, which is not searched", async () => {
@@ -452,15 +556,9 @@ describe("MCP server", () => {
     await t.write("ops/dr.md", "---\ndescription: Zebra crossing plan\n---\n# DR\n\nFail over.");
     await t.rag.sync(false);
 
-    const { documents } = JSON.parse((await t.call("ragdown_list", { path_prefix: "ops" })).text);
-    expect(documents).toEqual([
-      { path: "ops/backups.md", title: "Backups", modified: expect.any(String) },
-      {
-        path: "ops/dr.md",
-        title: "DR",
-        description: "Zebra crossing plan",
-        modified: expect.any(String),
-      },
+    expect((await t.list({ path_prefix: "ops" })).lines).toEqual([
+      `ops/backups.md — Backups (changed ${today})`,
+      `ops/dr.md — DR (changed ${today}): Zebra crossing plan`,
     ]);
     // Frontmatter is metadata: it is neither embedded nor in the text the keyword search reads.
     const { hits } = JSON.parse(
@@ -502,15 +600,13 @@ describe("MCP server", () => {
     const t = await connect();
     await t.write("ops/backups-v2.md", "---\nsupersedes: backups.md\n---\n# Backups v2\n");
     await t.rag.sync(false);
-    const read = JSON.parse((await t.call("ragdown_read_doc", { path: "ops/backups.md" })).text);
-    expect(read.superseded_by).toEqual(["ops/backups-v2.md"]);
-    const newer = JSON.parse(
-      (await t.call("ragdown_read_doc", { path: "ops/backups-v2.md" })).text,
+    const read = await t.read("ops/backups.md");
+    expect(read.header).toMatch(
+      /^ops\/backups\.md:1-7 of 7 \(hash \w+, superseded by ops\/backups-v2\.md\)$/,
     );
-    expect(newer).not.toHaveProperty("superseded_by");
-    const listed = JSON.parse((await t.call("ragdown_list", {})).text);
-    expect(listed.documents).toContainEqual(
-      expect.objectContaining({ path: "ops/backups.md", superseded_by: ["ops/backups-v2.md"] }),
+    expect((await t.read("ops/backups-v2.md")).header).not.toContain("superseded");
+    expect((await t.list()).lines).toContain(
+      `ops/backups.md — Backups (changed ${today}, superseded by ops/backups-v2.md)`,
     );
   });
 

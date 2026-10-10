@@ -15,7 +15,7 @@ import { hookContext } from "../hook/hook-context.ts";
 import { type ContextOptions, resolveHook } from "../hook/hook-settings.ts";
 import { type Hit, supersededBy, type WrittenBy } from "../indexing/store.ts";
 import type { Ragdown } from "../serving/engine.ts";
-import { contentHash } from "../shared/content-hash.ts";
+import { contentHash, isVersion } from "../shared/content-hash.ts";
 import { hasCode } from "../shared/errors.ts";
 import { Refusal } from "../shared/refusal.ts";
 import { writeAtomic } from "../shared/write-atomic.ts";
@@ -33,6 +33,7 @@ import {
 import { moveInFolder } from "./move.ts";
 import { stampProvenance } from "./provenance.ts";
 import { writeRemembered } from "./remember.ts";
+import { applyReplacements, type Replacement } from "./replacements.ts";
 import { resolvePath } from "./resolve-path.ts";
 
 /**
@@ -379,7 +380,7 @@ export class Scope {
     }
     if (baseHash !== undefined) {
       const current = existing ? await readFile(full) : undefined;
-      if (!current || contentHash(current) !== baseHash) {
+      if (!current || !isVersion(contentHash(current), baseHash)) {
         const what = current ? "changed on disk" : "deleted";
         throw new Refusal(409, `${path} was ${what} since it was opened`, "changed");
       }
@@ -409,7 +410,7 @@ export class Scope {
   }
 
   /**
-   * An agent's edit (`ragdown_edit`): replace a document's text, or append to it — at the end, or
+   * An agent's write (`ragdown_write`): replace a document's text, or append to it — at the end, or
    * at the end of the section under `heading`. Written through `writeDocument`, so it is atomic and
    * indexed before returning.
    *
@@ -419,13 +420,13 @@ export class Scope {
    *   edited was read.
    * @param sessionId - recorded in the frontmatter of a document this creates.
    *
-   * A document this creates gets `created_by: ragdown_edit` in its frontmatter, as `remember`
+   * A document this creates gets `created_by: ragdown_write` in its frontmatter, as `remember`
    * records its own, and replacing a document that had a `created_by` keeps it: whole-file text
    * from an agent rarely repeats frontmatter it did not write. A document the user wrote stays
    * theirs however an agent edits it.
    * @throws with `status: 404` to append to a missing document or under a missing heading.
    */
-  async editDocument(
+  async write(
     path: string,
     text: string,
     options: { append?: boolean; heading?: string; baseHash?: string; sessionId?: string } = {},
@@ -433,14 +434,14 @@ export class Scope {
     if (options.heading !== undefined && !options.append) {
       throw new Refusal(400, "heading is for append: true");
     }
-    const { full, relPath } = await resolvePath(this.root, path, {
-      create: false,
-      markdownOnly: true,
-    });
-    const current = (await lstat(full).catch(() => undefined))?.isFile()
-      ? await readFile(full)
-      : undefined;
     if (!options.append) {
+      const { full, relPath } = await resolvePath(this.root, path, {
+        create: false,
+        markdownOnly: true,
+      });
+      const current = (await lstat(full).catch(() => undefined))?.isFile()
+        ? await readFile(full)
+        : undefined;
       if (current && options.baseHash === undefined) {
         throw new Refusal(
           409,
@@ -450,7 +451,7 @@ export class Scope {
       const before = current ? readDocumentMeta(current.toString("utf8")) : undefined;
       const provenance = before
         ? before.createdBy && { createdBy: before.createdBy, session: before.session }
-        : { createdBy: "ragdown_edit", session: options.sessionId };
+        : { createdBy: "ragdown_write", session: options.sessionId };
       return this.writeDocument(
         relPath,
         provenance ? stampProvenance(text, provenance) : text,
@@ -458,14 +459,7 @@ export class Scope {
         options.baseHash,
       );
     }
-    if (!current) {
-      throw new Refusal(404, `no such document: ${path}`);
-    }
-    const hash = contentHash(current);
-    if (options.baseHash !== undefined && options.baseHash !== hash) {
-      throw new Refusal(409, `${relPath} was changed on disk since it was opened`, "changed");
-    }
-    const lines = current.toString("utf8").split(/\r?\n/);
+    const { relPath, lines, hash } = await this.readForChange(path, options.baseHash);
     const added = text.trimEnd().split(/\r?\n/);
     let start = 0;
     let end = lines.length;
@@ -489,8 +483,45 @@ export class Scope {
       "",
       ...lines.slice(end),
     ];
-    // Hashed from what was read, so a write since then is a conflict rather than lost.
     return this.writeDocument(relPath, next.join("\n"), false, hash);
+  }
+
+  /**
+   * An agent's edit (`ragdown_edit`): swap exact passages of a document for new text,
+   * leaving the rest, frontmatter included, as it is. All of the replacements are made or none is.
+   *
+   * @param baseHash - checked when given, as an append checks it. A passage that must match is
+   *   already a guard against editing a version the agent has not read.
+   * @returns what `writeDocument` returns, and `replaced`: how many passages were swapped.
+   * @throws with `status: 404` for a missing document, and as `applyReplacements` throws.
+   */
+  async edit(path: string, replacements: Replacement[], baseHash?: string) {
+    const { relPath, lines, hash } = await this.readForChange(path, baseHash);
+    const { text, replaced } = applyReplacements(lines.join("\n"), replacements);
+    return { ...(await this.writeDocument(relPath, text, false, hash)), replaced };
+  }
+
+  /**
+   * An existing document as it is on disk, for a change to part of it. Writing the change against
+   * `hash` makes a write since this read a conflict rather than lost.
+   *
+   * @throws with `status: 404` for a missing document, and `409` (with `code: "changed"`) for one
+   *   that is no longer `baseHash`.
+   */
+  private async readForChange(path: string, baseHash?: string) {
+    const { full, relPath } = await resolvePath(this.root, path, {
+      create: false,
+      markdownOnly: true,
+    });
+    if (!(await lstat(full).catch(() => undefined))?.isFile()) {
+      throw new Refusal(404, `no such document: ${path}`);
+    }
+    const current = await readFile(full);
+    const hash = contentHash(current);
+    if (baseHash !== undefined && !isVersion(hash, baseHash)) {
+      throw new Refusal(409, `${relPath} was changed on disk since it was opened`, "changed");
+    }
+    return { relPath, lines: current.toString("utf8").split(/\r?\n/), hash };
   }
 
   /**
@@ -587,7 +618,7 @@ export class Scope {
     if (!(await lstat(full).catch(() => undefined))?.isFile()) {
       throw new Refusal(404, `no such document: ${path}`);
     }
-    if (baseHash !== undefined && contentHash(await readFile(full)) !== baseHash) {
+    if (baseHash !== undefined && !isVersion(contentHash(await readFile(full)), baseHash)) {
       throw new Refusal(
         409,
         `${relPath} changed since it was read, so it was not deleted: read it again and decide on what it says now`,
