@@ -15,6 +15,7 @@ type Wide<Base, Radix> = Base & Omit<Radix, keyof Base>;
 
 // `delayDuration` defaults to shadcn's `0`, not Radix's 700ms. `ActionButton` renders its own
 // provider and documents shadcn's default; left to Radix, every icon button waited 700ms.
+/** Shares the open delay among the tooltips below it. */
 function TooltipProvider({
   delayDuration = 0,
   skipDelayDuration,
@@ -29,10 +30,12 @@ function TooltipProvider({
   );
 }
 
+/** The root of a tooltip: it holds the open state. */
 function Tooltip(props: Wide<TooltipProps, React.ComponentProps<typeof TooltipPrimitive.Root>>) {
   return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
 }
 
+/** The element the tooltip describes: hovered or focused on the web, long-pressed on device. */
 function TooltipTrigger({
   asChild,
   className,
@@ -48,6 +51,7 @@ function TooltipTrigger({
   );
 }
 
+/** The tooltip's bubble and its text. */
 function TooltipContent({
   side = "top",
   sideOffset = 4,

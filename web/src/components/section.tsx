@@ -56,35 +56,13 @@ const ACTION = "max-w-full shrink-0 flex-row flex-wrap items-center gap-2";
 const ACTION_FIT = "[&>*]:max-w-full";
 
 /**
- * A heading over a group of fields or rows — one source for both platforms.
+ * A heading over a group of fields or rows, with the body in `contentSlot`. The surface is a prop
+ * rather than a wrapper, so an app that puts every section on a card does not rewrite this one.
  *
- * It is here because three projects wrote it separately and got *almost* the same: `text-xs
- * font-semibold uppercase` and a muted foreground in all three, then `tracking-wider` in one and
- * `tracking-wide` in another, and a `border-b pb-1` in the third. Nobody copied anybody — they each
- * typed the same five tokens from memory, which is why the sixth is different. The fourth copy was
- * a React Native one, which is why this is no longer a web-only item.
- *
- * The surface is a prop, not a wrapper. Some apps put every section on a card and some put none
- * on one, and the version that said "wrap it yourself" is the one that got rewritten locally with
- * the card inside, the title in a card header, and a `role="region"` that nobody else had.
- *
- * The semantics, both platforms:
- *
- * - The title is a heading of rank `level`. On device that is `role="heading"`, which VoiceOver and
- *   TalkBack both navigate by. On the web it is `role="heading"` + `aria-level` on the title's
- *   `<span>` rather than an `<h2>`: the rank is a prop, and the compiler writes the tag once, so a
- *   rank known only at runtime keeps its ARIA — which is the same heading to assistive technology.
- * - The root is a `<section>` on the web (`webAs`), named by its title through `aria-labelledby`,
- *   which is what makes it a `region` landmark. An untitled section has no name and so is not a
- *   landmark, which is correct: a landmark nobody can name is noise in the landmark list.
- *
- * **The heading row wraps rather than squeezing.** The action never shrinks, and the row used not
- * to wrap, so a five-button toolbar on a phone left the description one character to a line. Now
- * it is `SettingRow`'s rule: the action sits beside the text while both fit and drops under it,
- * at the start, when they do not — by the width the section is given, not the window's. Plain
- * flex-wrap, so Yoga does the same on device.
- *
- * No state, no data, no `children` — the body is `contentSlot`, like every other shell here.
+ * The title is a heading of rank `level`, and on the web the root is a `<section>` named by it,
+ * which makes it a `region` landmark. An untitled section has no name and is not a landmark. The
+ * heading row wraps: the action sits beside the text while both fit and drops under it when they
+ * do not.
  */
 export function Section({
   contentSlot,

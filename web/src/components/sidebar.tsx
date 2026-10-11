@@ -96,35 +96,13 @@ export type SidebarProps = {
 };
 
 /**
- * The sidebar frame: header, a body that scrolls, footer, on the sidebar palette.
+ * The sidebar frame: header, a body that scrolls, footer, on the sidebar palette, at a fixed
+ * `w-64`. It needs a height from its ancestors (`h-full`), or the body grows instead of scrolling.
  *
- * **Fixed width, `w-64`.** A navigation rail's width is set by the longest name it has to show,
- * not by the window, so it does not grow with the screen — shadcn's own sidebar is the same
- * `16rem`. Inside a `SidebarLayout`, pass `sidebarWidth="auto"` so the pane is as wide as this and
- * no wider; a narrower or wider rail is one `w-*` in `className`, not a width scale of its own.
- *
- * **It draws its own border**, in `sidebar-border`, on the edge that faces the content. That is
- * the one thing `SidebarLayout`'s `divider="line"` warns against — but a sidebar that sits beside
- * the content at every width is not a pane that stacks, and the border is part of the palette the
- * sidebar owns. Under a layout that does stack, use `divider="none"` and `className="border-r-0"`
- * and let the layout draw the rule, or leave the layout at `stackBelow="never"`.
- *
- * It needs a height, like any sticky chassis: `h-full`, so the ancestors up to the viewport have
- * to give it one or the body grows instead of scrolling.
- *
- * **`hideBelow` is its narrow-width answer.** A rail is not a pane that stacks, so under a phone's
- * width it goes rather than landing on top of the page. `hidden md:flex` in `className` did the
- * same only while the root's display came from a class merged before the caller's; these are the
- * same two classes, owned here. Inside a `SidebarLayout` the layout's `sidebarHideBelow` is the
- * same switch one level up — it hides the pane rather than leaving an empty one, and draws the
- * bar that stands in for the rail under the same breakpoint.
- *
- * **`collapsed` folds it to a rail**, `w-14`, without taking a destination away. A split layout's
- * collapsed pane is an absent one, and that is right for a detail pane; a navigation sidebar still
- * has to show every place it goes, so folded it is the rows' icons. The state is here and not on
- * `SidebarLayout`, which only places panes: with `sidebarWidth="auto"` the pane follows this width.
- * The rows and sections fold themselves from context, and `useSidebar` hands the same state to
- * whatever the app put in the header and footer.
+ * It draws its own border on the edge that faces the content, so inside a `SidebarLayout` pass
+ * `sidebarWidth="auto"`, and `divider="none"` where the layout stacks. `hideBelow` removes the
+ * rail under a breakpoint. `collapsed` folds it to a `w-14` rail of the rows' icons, and
+ * `useSidebar` hands that state to the header and footer.
  */
 export function Sidebar({
   contentSlot,
@@ -267,9 +245,12 @@ export function SidebarSection({
   const rows = React.Children.toArray(contentSlot);
   const sectionClassName = cn("min-w-0 gap-1", className);
 
+  // Folded, the action is gone, so only a title is worth a heading row.
+  const headed = Boolean(collapsed ? title : title || actionSlot);
+
   const body = (
     <>
-      {(collapsed ? title : title || actionSlot) ? (
+      {headed ? (
         <div
           data-slot="sidebar-section-heading"
           // Folded, the whole row is clipped: the title is still what names the list.
@@ -292,7 +273,7 @@ export function SidebarSection({
               </span>
             ) : null}
           </div>
-          {actionSlot && !collapsed ? (
+          {actionSlot && collapsed === false ? (
             <div data-slot="sidebar-section-action" className="cube-rn-view shrink-0">
               {actionSlot}
             </div>
@@ -326,10 +307,11 @@ export function SidebarSection({
   // Two roots written out rather than one with a chosen role: the compiler picks the tag from the
   // role, and a role it cannot read is one it refuses.
   if (as === "nav") {
+    const titled = title ? { "aria-labelledby": titleId } : {};
     return (
       <nav
         data-slot="sidebar-section"
-        {...(label ? { "aria-label": label } : title ? { "aria-labelledby": titleId } : {})}
+        {...(label ? { "aria-label": label } : titled)}
         className={cn("cube-rn-view", sectionClassName)}
       >
         {body}
@@ -590,11 +572,8 @@ function SidebarNavItemBody({
 }
 
 /**
- * One row of a sidebar: a link with an optional icon, a label that truncates, an optional
- * `status` and an optional count. The current page is filled with `active`, as every chosen
- * control is; hover fills it with `hover`.
- *
- * Wrap it in the router's own link rather than passing a router to it:
+ * One row of a sidebar: a link with an optional icon, a label that truncates, an optional `status`
+ * and an optional count. Wrap it in the router's own link rather than passing a router to it:
  *
  * ```tsx
  * <Link href={`/projects/${id}`} asChild>
@@ -605,32 +584,10 @@ function SidebarNavItemBody({
  * <SidebarLink to="/" label="Documents" active={isCurrent} />
  * ```
  *
- * `Link asChild` clones its child with the `href` and the press handler, and `createLink` renders
- * it with both; this forwards the ref and every prop it does not name to the `Pressable`, which is
- * what lets them land. So neither passes `href` to the row — the router's is the one destination,
- * and the row is a real `<a href>` all the same. A router that hands out only a click handler —
- * react-router's `useLinkClickHandler` — passes it as `onClick` beside the row's own `href`.
- *
- * `role="link"` is what makes it a link on both platforms: TalkBack and VoiceOver say "link", and
- * the compiler emits an `<a>`. The current page is said twice, for the same reason `segmented`
- * says its pill twice — `accessibilityState` on device, `aria-current="page"` on the web, which is
- * the one spelling a web screen reader reads and the one react-native-web would have dropped.
- *
- * **With `onPress` and no `href` it is a button** — `onClick` on the web, and no `active`.
- * That is the footer's Sign out: drawn like the Settings row above it, but it does something
- * rather than going somewhere, so it is `role="button"` on device and a `<button type="button">`
- * on the web, and never carries `aria-current`. What decides the element is the `href` the row
- * *renders* with, so a router's row is a link however it was written; a row written with neither
- * and no router around it has nowhere to go and nothing to do, and is drawn as an inert button.
- *
- * ```tsx
- * <SidebarNavItem label="Sign out" iconSlot={<LogOut />} onPress={signOut} />
- * ```
- *
- * **In a collapsed `Sidebar` it is its icon**, and the same link or button underneath. The label
- * is its accessible name and its tooltip, the count is a badge on the icon and the status a dot,
- * both still in the name — the way `BarNavItem` draws a place. A row with no `iconSlot` is its
- * first letter.
+ * The row forwards its ref and every prop it does not name to the `Pressable`, which is how the
+ * router's `href` and press handler land on it. With `onPress` and no `href` it is a button and
+ * never carries `aria-current`: the footer's Sign out. In a collapsed `Sidebar` it is its icon,
+ * or its first letter, with the label as its name and tooltip.
  */
 const SidebarNavItem = React.forwardRef<HTMLButtonElement, SidebarNavItemProps>(
   ({ href, label, iconSlot, count, status, active = false, className, ...props }, ref) => {
@@ -758,10 +715,8 @@ export type BarNavItemProps = Omit<PressableProps, "children" | "className" | "s
 
 /**
  * A place in the bar: `SidebarNavItem` with only its icon drawn, for `SidebarLayout`'s `navSlot`
- * (and `TopBarLayout`'s), where a row's label has no room.
- *
- * It takes the row's props — `label`, `iconSlot`, `active`, `count`, `status`, `href` — so an app's
- * list of places is one array rendered twice, once into the rail and once into the bar:
+ * (and `TopBarLayout`'s). It takes the row's props and binds to a router as the row does, so one
+ * array of places renders both:
  *
  * ```tsx
  * const BarLink = createLink(BarNavItem); // beside createLink(SidebarNavItem)
@@ -770,23 +725,9 @@ export type BarNavItemProps = Omit<PressableProps, "children" | "className" | "s
  * ))}
  * ```
  *
- * Every app drew this by hand, as a router link with a class string, and the copies drifted on the
- * three things that matter. **The name**: an icon-only link has none unless it is given one, so
- * `label` is required, and it is also the tooltip, since the icon is all a sighted user has. **The
- * current one**: filled with `active` and `aria-current="page"`, where the copies used the grey
- * that means hover. **The count**: a row's count had nowhere to go on the bar, so the bar dropped
- * it — here it is a badge on the icon, a `status` is a dot, and both are in the name the way the
- * row builds it: "Skills, MCP on, 12".
- *
- * It binds to a router exactly as the row does — it forwards its ref and every prop it does not
- * name to the `Pressable`, so `createLink` and `<Link href asChild>` hand it the `href` and the
- * press handling, and react-router's `useLinkClickHandler` goes in as `onClick` beside an `href`.
- *
- * It is always a link. The bar's buttons — the theme switch, sign out — are `ActionButton`s in the
- * bar's `actionSlot`, not places in its `navSlot`.
- *
- * **The provider.** It renders its own `TooltipProvider`, as `ActionButton` does and for the same
- * reason: an installed component cannot assume the app has one at its root.
+ * `label` is required, because it is the link's only name and its tooltip. The count is a badge on
+ * the icon and a `status` is a dot, and both are in the name: "Skills, MCP on, 12". It is always a
+ * link; the bar's buttons are `ActionButton`s in `actionSlot`.
  */
 const BarNavItem = React.forwardRef<HTMLButtonElement, BarNavItemProps>(
   ({ href, label, iconSlot, count, status, active = false, className, ...props }, ref) => {

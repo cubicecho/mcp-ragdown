@@ -1,4 +1,4 @@
-import type { AnyFieldApi, DeepKeys, DeepValue } from "@tanstack/react-form";
+import type { DeepKeys } from "@tanstack/react-form";
 import { createFormHook, createFormHookContexts, useStore } from "@tanstack/react-form";
 import type { ComponentProps, ComponentType, ReactNode } from "react";
 import { useState } from "react";
@@ -10,7 +10,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { messageOf } from "@/lib/error-message";
+import {
+  type BindableForm,
+  type FormBinding,
+  fieldOf,
+  type NamesOfType,
+  type ValuesOf,
+} from "@/lib/form-binding";
 
+/** TanStack Form's contexts, which the bound fields read their field and form from. */
 export const { fieldContext, formContext, useFieldContext, useFormContext } =
   createFormHookContexts();
 
@@ -59,19 +68,6 @@ export function splitProps<T>(props: FieldProps & T): [FieldProps, T] {
     }
   }
   return [field as FieldProps, control as T];
-}
-
-function messageOf(error: unknown): string | undefined {
-  if (error == null) {
-    return undefined;
-  }
-  if (typeof error === "string") {
-    return error;
-  }
-  if (typeof error === "object" && "message" in error) {
-    return String((error as { message: unknown }).message);
-  }
-  return String(error);
 }
 
 /**
@@ -168,12 +164,8 @@ function BoundNumberField(props: NumberFieldProps) {
   const stored = field.state.value ?? null;
   // `String`, not the raw number: the DOM `<input>` this was written against took either, and
   // `TextInput` takes only a string — so the registry's `Input` does too, on both platforms.
-  const value =
-    draft !== undefined && parseNumber(draft) === stored
-      ? draft
-      : stored === null
-        ? ""
-        : String(stored);
+  const storedText = stored === null ? "" : String(stored);
+  const value = draft !== undefined && parseNumber(draft) === stored ? draft : storedText;
 
   return (
     <FormField
@@ -410,7 +402,7 @@ export function SubmitButton({
       onClick={(event) => {
         onClick?.(event);
         // `button.form` is the form that owns it, by ancestry or by the `form` attribute.
-        if (!event.defaultPrevented && !event.currentTarget.form) {
+        if (event.defaultPrevented === false && !event.currentTarget.form) {
           form.handleSubmit();
         }
       }}
@@ -451,116 +443,6 @@ export const { useAppForm, withForm } = createFormHook({
   },
   formComponents: { SubmitButton },
 });
-
-/**
- * What a bound field needs off a form, and nothing else — structural on purpose, so these work
- * with a plain `useForm` as well as with `useAppForm`.
- */
-type BindableForm = {
-  state: { values: unknown };
-  // Not `=> ReactNode`: a function component may return a promise, and TanStack types `Field`
-  // that way, so narrowing here rejects every real form.
-  Field: (props: never) => ReactNode | Promise<ReactNode>;
-};
-
-/** The shape of a form's values, recovered from the form itself, so `name` can be checked. */
-type ValuesOf<TForm extends BindableForm> = TForm extends { state: { values: infer TValues } }
-  ? TValues
-  : never;
-
-/**
- * A validator, with its `value` already narrowed to the type of the field being validated.
- *
- * Anything falsy passes. A string is the message; TanStack accepts any error shape, and
- * `messageOf` upstream turns an object with a `message` into one, so a schema issue can be
- * returned whole.
- */
-type Validate<TValue> = (context: {
-  value: TValue;
-  fieldApi: AnyFieldApi;
-  signal: AbortSignal;
-}) => unknown;
-
-/**
- * The validators a field call site actually writes, spelled out rather than imported.
- *
- * TanStack's own `FieldValidators` carries twenty-three type parameters that exist to infer each
- * validator's error type from the one before it. Naming them here would mean naming all of them
- * at every use; what a call site wants is `value`, typed, and this gets that from the form and
- * the field name. Anything beyond these seven belongs on `form.AppField`, which has the real
- * type in full.
- */
-type Validators<TValues, TName extends DeepKeys<TValues>> = {
-  onMount?: Validate<DeepValue<TValues, TName>> | undefined;
-  onChange?: Validate<DeepValue<TValues, TName>> | undefined;
-  onChangeAsync?: Validate<DeepValue<TValues, TName>> | undefined;
-  onBlur?: Validate<DeepValue<TValues, TName>> | undefined;
-  onBlurAsync?: Validate<DeepValue<TValues, TName>> | undefined;
-  onSubmit?: Validate<DeepValue<TValues, TName>> | undefined;
-  onSubmitAsync?: Validate<DeepValue<TValues, TName>> | undefined;
-};
-
-type Listen<TValue> = (context: { value: TValue; fieldApi: AnyFieldApi }) => void;
-
-/**
- * What the field should *do* when it changes, spelled out for the same reason
- * {@link Validators} is.
- *
- * A validator answers whether the value is allowed; a listener acts on it having changed —
- * naming a lane after the kind you picked for it, filling a description from a template,
- * clearing the fields the other transport owned. Both are field-level options, both are handed
- * straight to the field, and neither is a reason to fall back to `form.AppField`: the render
- * prop is for a field that needs the `field` object to *render*, not for one that needs a
- * callback the wrapper forgot to pass on.
- *
- * `onGroupSubmit` is the one omitted — it belongs to TanStack's field groups, which nothing in
- * this registry builds.
- */
-type Listeners<TValues, TName extends DeepKeys<TValues>> = {
-  onMount?: Listen<DeepValue<TValues, TName>> | undefined;
-  onUnmount?: Listen<DeepValue<TValues, TName>> | undefined;
-  onChange?: Listen<DeepValue<TValues, TName>> | undefined;
-  /** How long to wait after the last change before running `onChange`, in milliseconds. */
-  onChangeDebounceMs?: number | undefined;
-  onBlur?: Listen<DeepValue<TValues, TName>> | undefined;
-  /** How long to wait after the last blur before running `onBlur`, in milliseconds. */
-  onBlurDebounceMs?: number | undefined;
-  onSubmit?: Listen<DeepValue<TValues, TName>> | undefined;
-};
-
-/**
- * The names of the fields whose value is a `TValue` — the whole reason `NumberField` is a file
- * and not a `type="number"` prop.
- *
- * Rule 2 says a variant prop is not a component, and it is right: a number input differs from a
- * text input by one attribute. What it cannot do is change what `name` is allowed to be. A
- * `<NumberField name="title">` on a string field is a control that writes `42` into a `string`
- * and a form that submits the wrong type, and no prop can make the compiler notice — the
- * constraint on `name` is fixed before the props are read. So the narrowing has to live in the
- * component's own signature, which means the component has to be its own signature.
- *
- * `NonNullable` so a `string | null` column still counts as a string field; nearly every one of
- * these forms is editing a row that can be null.
- *
- * With the default `unknown` this is every key, which is what the unnarrowed fields want.
- */
-type NamesOfType<TValues, TValue> = {
-  [TName in DeepKeys<TValues>]: NonNullable<DeepValue<TValues, TName>> extends TValue
-    ? TName
-    : never;
-  // Intersected back so the result is provably a `DeepKeys`, which `Validators` requires.
-}[DeepKeys<TValues>] &
-  DeepKeys<TValues>;
-
-type FormBinding<TForm extends BindableForm, TName extends DeepKeys<ValuesOf<TForm>>> = {
-  form: TForm;
-  /** A key of the form's values. Checked: `naem` is a type error, not a field that stays empty. */
-  name: TName;
-  validators?: Validators<ValuesOf<TForm>, TName> | undefined;
-  /** How long to wait before running the async validators, in milliseconds. */
-  asyncDebounceMs?: number | undefined;
-  listeners?: Listeners<ValuesOf<TForm>, TName> | undefined;
-};
 
 /**
  * The control's props, minus the two names the binding needs for itself.
@@ -607,16 +489,7 @@ export function bindToForm<TProps extends object, TValue = unknown>(
     listeners,
     ...rest
   }: ControlPropsOf<TProps> & FormBinding<TForm, TName>) {
-    // The generic `Field` cannot be described to TypeScript without repeating twenty-three type
-    // parameters that are already correct on `form`. The cast is here, once, and `name` above is
-    // what it is protecting.
-    const Subscribe = form.Field as ComponentType<{
-      name: unknown;
-      validators?: unknown | undefined;
-      asyncDebounceMs?: number | undefined;
-      listeners?: unknown | undefined;
-      children: (field: AnyFieldApi) => ReactNode;
-    }>;
+    const Subscribe = fieldOf(form);
 
     return (
       <Subscribe
@@ -627,7 +500,7 @@ export function bindToForm<TProps extends object, TValue = unknown>(
       >
         {(field) => (
           <fieldContext.Provider value={field}>
-            <Bound {...(rest as unknown as TProps)} />
+            <Bound {...(rest as TProps)} />
           </fieldContext.Provider>
         )}
       </Subscribe>

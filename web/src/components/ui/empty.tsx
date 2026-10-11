@@ -11,6 +11,7 @@ type TextProps = Omit<React.ComponentPropsWithoutRef<"span">, "className"> & {
   className?: string | undefined;
 };
 
+/** The root of an empty state: a centred column. */
 const Empty = React.forwardRef<HTMLDivElement, ViewProps>(({ className, ...props }, ref) => (
   <div
     ref={ref as React.Ref<HTMLDivElement>}
@@ -25,6 +26,7 @@ const Empty = React.forwardRef<HTMLDivElement, ViewProps>(({ className, ...props
 ));
 Empty.displayName = "Empty";
 
+/** The block holding the media, the title and the description. */
 const EmptyHeader = React.forwardRef<HTMLDivElement, ViewProps>(({ className, ...props }, ref) => (
   <div
     ref={ref as React.Ref<HTMLDivElement>}
@@ -35,6 +37,7 @@ const EmptyHeader = React.forwardRef<HTMLDivElement, ViewProps>(({ className, ..
 ));
 EmptyHeader.displayName = "EmptyHeader";
 
+/** How `EmptyMedia` is drawn: as given, or as an icon in a muted bubble. */
 export type EmptyMediaVariant = "default" | "icon";
 
 /** `icon` is the muted bubble `EmptyState` draws; `default` is a bare box for an avatar or image. */
@@ -48,6 +51,7 @@ type EmptyMediaProps = ViewProps & {
   variant?: EmptyMediaVariant | null | undefined;
 };
 
+/** The icon or image above the title. */
 const EmptyMedia = React.forwardRef<HTMLDivElement, EmptyMediaProps>(
   ({ className, variant, children, ...props }, ref) => {
     const box = cn(
@@ -83,6 +87,7 @@ const EmptyMedia = React.forwardRef<HTMLDivElement, EmptyMediaProps>(
 );
 EmptyMedia.displayName = "EmptyMedia";
 
+/** What is missing, in a few words. */
 const EmptyTitle = React.forwardRef<HTMLSpanElement, TextProps>(({ className, ...props }, ref) => (
   <span
     ref={ref as React.Ref<HTMLSpanElement>}
@@ -93,6 +98,7 @@ const EmptyTitle = React.forwardRef<HTMLSpanElement, TextProps>(({ className, ..
 ));
 EmptyTitle.displayName = "EmptyTitle";
 
+/** The muted line under the title, saying what to do about it. */
 const EmptyDescription = React.forwardRef<HTMLSpanElement, TextProps>(
   ({ className, ...props }, ref) => (
     <span

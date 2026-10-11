@@ -23,6 +23,7 @@ export type CheckboxProps = Omit<
   "aria-label"?: string | undefined;
 };
 
+/** A box that is checked, unchecked or indeterminate. */
 function Checkbox({
   className,
   "aria-label": accessibilityLabel,

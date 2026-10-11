@@ -66,7 +66,9 @@ export function useSettledText(
   return { later, now };
 }
 
+/** The search box's accessible name unless it is given one. */
 export const SEARCH_LABEL = "Search";
+/** The accessible name of the button that clears the search box. */
 export const SEARCH_CLEAR_LABEL = "Clear search";
 
 /**

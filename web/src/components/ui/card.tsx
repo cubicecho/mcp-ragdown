@@ -25,6 +25,7 @@ type CardProps = ViewProps & {
   onClick?: React.ComponentPropsWithoutRef<"button">["onClick"] | undefined;
 };
 
+/** A bordered surface for one thing, pressable when given `onPress`. */
 const Card = React.forwardRef<HTMLDivElement, CardProps>(
   ({ className, accentColor, accentLabel, onClick: onPress, children, ...props }, ref) => {
     const classes = cn(
@@ -69,6 +70,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
 );
 Card.displayName = "Card";
 
+/** The top of a card, holding its title and description. */
 const CardHeader = React.forwardRef<HTMLDivElement, ViewProps>(({ className, ...props }, ref) => (
   <div
     ref={ref as React.Ref<HTMLDivElement>}
@@ -93,6 +95,7 @@ const CARD_TITLE = "text-base font-semibold leading-none text-foreground";
 
 // One arm per level because the compiler emits `<h1>`–`<h3>` from a *literal* `aria-level`; a level
 // held in a variable would be a tag chosen at runtime, which it refuses (see `page-header.tsx`).
+/** The card's title, a heading of rank `level`. */
 const CardTitle = React.forwardRef<HTMLSpanElement, CardTitleProps>(
   ({ className, level = 3, ...props }, ref) => {
     if (level === 1) {
@@ -124,6 +127,7 @@ const CardTitle = React.forwardRef<HTMLSpanElement, CardTitleProps>(
 );
 CardTitle.displayName = "CardTitle";
 
+/** The muted line under the card's title. */
 const CardDescription = React.forwardRef<HTMLSpanElement, TextProps>(
   ({ className, ...props }, ref) => (
     <span
@@ -135,6 +139,7 @@ const CardDescription = React.forwardRef<HTMLSpanElement, TextProps>(
 );
 CardDescription.displayName = "CardDescription";
 
+/** The card's body. */
 const CardContent = React.forwardRef<HTMLDivElement, ViewProps>(({ className, ...props }, ref) => (
   <div
     ref={ref as React.Ref<HTMLDivElement>}
@@ -144,6 +149,7 @@ const CardContent = React.forwardRef<HTMLDivElement, ViewProps>(({ className, ..
 ));
 CardContent.displayName = "CardContent";
 
+/** The row at the bottom of a card, for its actions. */
 const CardFooter = React.forwardRef<HTMLDivElement, ViewProps>(({ className, ...props }, ref) => (
   <div
     ref={ref as React.Ref<HTMLDivElement>}

@@ -1,7 +1,10 @@
 import { cva } from "class-variance-authority";
 
+/** How an `Item`'s surface is drawn. */
 export type ItemVariant = "default" | "outline" | "muted";
+/** How much padding an `Item` has. */
 export type ItemSize = "default" | "sm";
+/** What `ItemMedia` holds, which picks its box. */
 export type ItemMediaVariant = "default" | "icon" | "image";
 
 /**

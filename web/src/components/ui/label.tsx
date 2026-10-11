@@ -7,6 +7,7 @@ type LabelProps = Omit<ComponentPropsWithRef<typeof LabelPrimitive.Root>, "class
   className?: string | undefined;
 };
 
+/** The caption that names a control. */
 function Label({ className, ...props }: LabelProps) {
   return (
     <LabelPrimitive.Root data-slot="label" {...props} className={cn(LABEL_CLASS, className)} />

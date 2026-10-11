@@ -227,7 +227,9 @@ export const INPUT_SLOT_ICON_CLASS = "size-4 shrink-0 text-foreground/60";
 
 /** The text's padding past a slot, so it never runs under the icon. */
 export const INPUT_LEADING_PAD_CLASS = "pl-9";
+/** The text's padding before a trailing slot, so it never runs under the icon. */
 export const INPUT_TRAILING_PAD_CLASS = "pr-9";
 
+/** The input's box: border, background, height and type. */
 export const INPUT_CLASS =
   "border-foreground/15 bg-background text-foreground placeholder:text-foreground/60 focus:border-active flex h-10 w-full rounded-md border px-3 py-2 text-sm focus:outline-none";

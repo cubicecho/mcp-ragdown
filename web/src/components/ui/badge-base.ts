@@ -1,6 +1,7 @@
 import { cva } from "class-variance-authority";
 import { Children, type ReactNode } from "react";
 
+/** The meanings a badge can carry, which pick its colours. */
 export type BadgeVariant =
   | "default"
   | "secondary"

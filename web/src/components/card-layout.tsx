@@ -143,7 +143,8 @@ export function CardLayout({
   // `Children.count` rather than a truth test: `{items.map(…)}` on an empty array is an empty
   // array, not null, and it is the shape a card is nearly always handed.
   const isEmpty = Children.count(contentSlot) === 0;
-  const body = loading ? <CardLayoutSkeleton /> : isEmpty && emptySlot ? emptySlot : contentSlot;
+  const settled = isEmpty && emptySlot ? emptySlot : contentSlot;
+  const body = loading ? <CardLayoutSkeleton /> : settled;
 
   const hasText = Boolean(title || description);
   const hasHeader = Boolean(hasText || actionSlot);

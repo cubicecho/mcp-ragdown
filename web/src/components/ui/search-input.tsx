@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 export type SearchInputProps = Omit<InputProps, "type" | "leadingSlot" | "trailingSlot"> &
   SearchInputOwnProps;
 
+/** A search box with a leading icon and a button that clears it. */
 export function SearchInput({
   label,
   clearLabel = SEARCH_CLEAR_LABEL,
@@ -100,7 +101,7 @@ export function SearchInput({
       className={cn(SEARCH_INPUT_CLASS, className)}
       leadingSlot={<Search />}
       trailingSlot={
-        clearable && filled && !disabled ? (
+        clearable && filled && disabled !== true ? (
           <button
             type="button"
             data-slot="search-input-clear"

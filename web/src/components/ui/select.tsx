@@ -25,6 +25,7 @@ type RootProps = ComponentPropsWithRef<typeof SelectPrimitive.Root>;
  */
 type SelectProps = { [K in keyof RootProps]?: RootProps[K] | undefined };
 
+/** The root of a select: it holds the chosen value and the open state. */
 function Select(props: SelectProps) {
   // An explicit `undefined` is dropped rather than passed on: radix reads the presence of `open`
   // and `value` as the switch between controlled and uncontrolled, and a caller forwarding an
@@ -48,14 +49,17 @@ function Select(props: SelectProps) {
   return <SelectPrimitive.Root data-slot="select" {...defined} />;
 }
 
+/** A set of options under a `SelectLabel`. */
 function SelectGroup(props: Props<typeof SelectPrimitive.Group>) {
   return <SelectPrimitive.Group data-slot="select-group" {...props} />;
 }
 
+/** The chosen option's label, or the placeholder, inside the trigger. */
 function SelectValue(props: Props<typeof SelectPrimitive.Value>) {
   return <SelectPrimitive.Value data-slot="select-value" {...props} />;
 }
 
+/** The button that shows the chosen value and opens the options. */
 function SelectTrigger({
   className,
   size = "default",
@@ -85,6 +89,7 @@ function SelectTrigger({
   );
 }
 
+/** The list of options. */
 function SelectContent({
   className,
   children,
@@ -122,6 +127,7 @@ function SelectContent({
   );
 }
 
+/** One option. */
 function SelectItem({ className, children, ...props }: Props<typeof SelectPrimitive.Item>) {
   return (
     <SelectPrimitive.Item
@@ -144,6 +150,7 @@ function SelectItem({ className, children, ...props }: Props<typeof SelectPrimit
   );
 }
 
+/** The heading over a group of options. */
 function SelectLabel({ className, ...props }: Props<typeof SelectPrimitive.Label>) {
   return (
     <SelectPrimitive.Label
@@ -154,6 +161,7 @@ function SelectLabel({ className, ...props }: Props<typeof SelectPrimitive.Label
   );
 }
 
+/** A rule between groups of options. */
 function SelectSeparator({ className, ...props }: Props<typeof SelectPrimitive.Separator>) {
   return (
     <SelectPrimitive.Separator
@@ -164,6 +172,7 @@ function SelectSeparator({ className, ...props }: Props<typeof SelectPrimitive.S
   );
 }
 
+/** The arrow shown at the top of a list that has scrolled. */
 function SelectScrollUpButton({
   className,
   ...props
@@ -179,6 +188,7 @@ function SelectScrollUpButton({
   );
 }
 
+/** The arrow shown at the bottom of a list with more below. */
 function SelectScrollDownButton({
   className,
   ...props

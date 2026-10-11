@@ -66,7 +66,7 @@ export function useCopy(
     onCopied?.();
     // The write is async, so the button can be gone by the time it lands, and a timer started
     // then would outlive the cleanup above.
-    if (!mounted.current) {
+    if (mounted.current === false) {
       return;
     }
     setCopied(true);

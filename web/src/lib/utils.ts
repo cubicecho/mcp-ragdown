@@ -2,6 +2,12 @@ import { type ClassValue, clsx } from "clsx";
 import type { ReactElement } from "react";
 import { twMerge } from "tailwind-merge";
 
+/**
+ * Joins class names and lets the later of two conflicting Tailwind classes win.
+ *
+ * @param inputs - Class names, and the arrays and objects of them `clsx` takes.
+ * @returns The one class string.
+ */
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }

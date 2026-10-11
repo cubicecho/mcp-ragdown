@@ -35,6 +35,7 @@ function ItemGroup({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+/** A rule between two items. */
 function ItemSeparator({
   className,
   orientation = "horizontal",
@@ -60,6 +61,7 @@ function ItemSeparator({
 const ITEM_WEB =
   "group/item flex text-sm transition-colors duration-100 outline-none [a]:transition-colors [a]:hover:bg-hover [a]:focus-visible:bg-hover";
 
+/** One row: media, content and actions side by side. */
 function Item({
   className,
   variant = "default",
@@ -102,6 +104,7 @@ const ITEM_MEDIA_WEB = {
   image: "[&_img]:size-full [&_img]:object-cover",
 } as const;
 
+/** The icon or image at the start of an item. */
 function ItemMedia({
   className,
   variant = "default",
@@ -122,6 +125,7 @@ function ItemMedia({
   );
 }
 
+/** The middle of an item, holding its title and description. */
 function ItemContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -136,6 +140,7 @@ function ItemContent({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+/** The item's title. */
 function ItemTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -146,6 +151,7 @@ function ItemTitle({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+/** The muted line under the item's title. */
 function ItemDescription({ className, ...props }: React.ComponentProps<"p">) {
   return (
     <p
@@ -160,6 +166,7 @@ function ItemDescription({ className, ...props }: React.ComponentProps<"p">) {
   );
 }
 
+/** The buttons at the far end of an item. */
 function ItemActions({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -170,6 +177,7 @@ function ItemActions({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+/** A full-width line above the item's row. */
 function ItemHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -180,6 +188,7 @@ function ItemHeader({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+/** A full-width line below the item's row. */
 function ItemFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div

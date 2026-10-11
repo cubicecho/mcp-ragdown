@@ -305,7 +305,8 @@ function fromBase(basePath: string, url: string): string | undefined {
   const path = cut < 0 ? url : url.slice(0, cut);
   const rooted = basePath.startsWith("/");
   const floor = rooted ? 1 : 0;
-  const parts = path.startsWith("/") ? (rooted ? [""] : []) : basePath.split("/").slice(0, -1);
+  const fromRoot = rooted ? [""] : [];
+  const parts = path.startsWith("/") ? fromRoot : basePath.split("/").slice(0, -1);
   for (const part of path.split("/")) {
     if (part === "" || part === ".") {
       continue;
@@ -468,6 +469,7 @@ function ImagePlaceholder({
   reason?: string | undefined;
 }) {
   const Icon = missing ? ImageOff : ImageIcon;
+  const missingText = label ? `Missing image: ${label}` : "Missing image";
   return (
     <span
       data-slot={missing ? "markdown-missing-image" : "markdown-pending-image"}
@@ -479,7 +481,7 @@ function ImagePlaceholder({
       )}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-      {missing ? (label ? `Missing image: ${label}` : "Missing image") : label || "Image"}
+      {missing ? missingText : label || "Image"}
     </span>
   );
 }
@@ -693,31 +695,14 @@ export type MarkdownProps = {
 };
 
 /**
- * A Markdown string, rendered: the reader of a note, a README, a skill, a model's answer.
+ * A Markdown string, rendered with GitHub-flavoured Markdown on. Every element is drawn from the
+ * registry's own primitives (`CodeBlock`, `Code`, `Table`, `Separator`, `Checkbox`), so a rendered
+ * document matches the page around it.
  *
- * It is the element map, and the link handling every app with a set of documents needs the same
- * way. Every element is drawn from the theme's tokens and from
- * the primitives the rest of an app already uses — a fenced block is a `CodeBlock`, a code span a
- * `Code`, a table the registry's `Table`, a rule a `Separator`, a task item a `Checkbox` — so a
- * rendered document cannot drift from the page around it. That drift is the whole reason this is a
- * component: each app's hand-kept map chose its own blockquote rule and its own heading scale.
- *
- * GitHub-flavoured Markdown is on: tables, task lists, strikethrough, bare links.
- *
- * **Raw HTML is never rendered.** Markdown may hold HTML, and here it is shown as the text it is.
- * There is no prop that turns it on, because the content is as often someone else's as the
- * caller's — a file from a repository, text a model wrote — and HTML from there is script
- * injection. An app that must render trusted HTML is using react-markdown directly, with
- * `rehype-raw` and a sanitiser it chose.
- *
- * **URLs are filtered** by {@link MarkdownProps.urlTransform}, which blanks anything that is not a
- * web, mail or relative URL unless the caller says otherwise.
- *
- * **Links between documents** are `wikilinks`, `resolveLink` and `basePath`. What a name points at
- * is the app's to say, so the resolver is its own; what a link that is still being looked up, or
- * that points at nothing, looks like is drawn here, so it is the same in every app.
- *
- * There is no syntax highlighting, which `CodeBlock` does not have either.
+ * Raw HTML is never rendered and no prop turns it on, because the content is as often someone
+ * else's as the caller's. URLs are filtered by {@link MarkdownProps.urlTransform}. Links between
+ * documents are `wikilinks`, `resolveLink` and `basePath`: the app says what a name points at, and
+ * a pending or broken link is drawn here.
  */
 export function Markdown({
   content,
@@ -743,7 +728,7 @@ export function Markdown({
   // a document cannot reach them by spelling one out.
   const policy = useMemo<UrlTransform>(() => {
     const given = urlTransform ?? defaultUrlTransform;
-    if (!wikilinks) {
+    if (wikilinks === false) {
       return given;
     }
     return (url, key, node) =>

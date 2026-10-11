@@ -70,10 +70,15 @@ export type MenuSeparatorProps = {
   className?: string | undefined;
 };
 
+/** The menu's box: its minimum width and padding. */
 export const MENU_CONTENT_CLASS = "min-w-[8rem] p-1";
+/** One menu row's layout. */
 export const MENU_ITEM_CLASS = "w-full flex-row items-center gap-2 rounded-sm px-2 py-1.5";
+/** The type of a menu row's label. */
 export const MENU_ITEM_TEXT_CLASS = "flex-1 text-sm";
+/** What sits at the far end of a menu row, such as a shortcut. */
 export const MENU_TRAILING_CLASS = "ml-auto text-xs text-foreground/60";
+/** The rule between groups of menu rows. */
 export const MENU_SEPARATOR_CLASS = "-mx-1 my-1 h-px bg-foreground/10";
 
 /**

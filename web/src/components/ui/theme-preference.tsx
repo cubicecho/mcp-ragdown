@@ -62,7 +62,7 @@ function apply(theme = read(), palette = readPalette()) {
     "dark",
     darkOnly || theme === "dark" || (theme === "system" && prefersDark()),
   );
-  html.classList.toggle("light", !darkOnly && theme === "light");
+  html.classList.toggle("light", darkOnly === false && theme === "light");
   if (palette === "default") {
     html.removeAttribute("data-palette");
   } else {

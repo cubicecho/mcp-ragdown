@@ -102,7 +102,9 @@ export type CommandDialogProps = DialogProps & {
 
 /** cmdk's own default name for its list. */
 export const COMMAND_LIST_LABEL = "Suggestions";
+/** The accessible name `CommandDialog` has unless it is given one. */
 export const COMMAND_DIALOG_TITLE = "Command Palette";
+/** The accessible description `CommandDialog` has unless it is given one. */
 export const COMMAND_DIALOG_DESCRIPTION = "Search for a command to run...";
 
 /**

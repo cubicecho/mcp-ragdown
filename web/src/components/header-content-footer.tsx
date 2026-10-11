@@ -188,7 +188,7 @@ function Body({
       // The chassis's own ref type is the device's scroller; on the web both are a `<div>`.
       ref={(node) => {
         scroller.current = node;
-        assign(contentRef as unknown as Ref<HTMLDivElement>, node);
+        assign(contentRef as Ref<HTMLDivElement>, node);
       }}
       // A scrolling region a keyboard cannot reach is a region a keyboard user cannot read:
       // the mouse wheel moves it and nothing else does, which axe reports as

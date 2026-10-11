@@ -64,4 +64,5 @@ export const TABS_LIST_INSET = 4;
 /** A row, so an icon sits beside the label. `gap-1.5` is shadcn's own. */
 export const TABS_TRIGGER_CLASS =
   "flex-row items-center justify-center gap-1.5 rounded-sm px-3 py-1.5";
+/** The type of a tab's label. */
 export const TABS_TRIGGER_TEXT_CLASS = "text-sm font-medium";
