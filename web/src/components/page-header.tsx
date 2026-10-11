@@ -2,25 +2,12 @@ import type { ReactNode } from "react";
 import { cn, type SlotNode } from "@/lib/utils";
 
 /**
- * How each heading level is drawn.
+ * How each heading level is drawn. The level is a prop because only the caller knows whether the
+ * block names a page or sits inside a card under one.
  *
- * The level is a prop rather than a hardcoded tag because this block is the same shape at three
- * depths and only the caller knows which one it is in: `<h1>` is right for the page it names and
- * wrong inside a card that already sits under one, and `<h2>` is the reverse. A shell that picks
- * for you is wrong on half the screens, and a shell that takes `title={<h1 className="…">…}` has
- * handed the size back to the caller — which is the drift, not the fix. The same page `<h1>` is
- * `text-lg`, `text-xl`, `text-2xl` and `text-3xl` in four of these projects, and two headers in
- * *one* project disagree with each other. This map is what ends that.
- *
- * - `row` is the floor under the title row. It holds the row to one height whether or not the
- *   page has an action and whether or not it has a description, so `contentSlot` beneath it starts
- *   at the same place on every page.
- * - `bar` is the height of one line of `title`, so a loading header is exactly as tall as the
- *   header it becomes.
- *
- * A literal map, per rule 3 — every class here is a class Tailwind can find in this file. The tag
- * is not in it: the compiler emits `<h1>`–`<h3>` from a literal `aria-level`, so {@link Heading}
- * spells each one out.
+ * `row` is the floor under the title row, so `contentSlot` starts at the same place on every
+ * page. `bar` is the height of one line of `title`, so a loading header is as tall as the header
+ * it becomes. The tag is not in the map: {@link Heading} spells each one out for the compiler.
  */
 const LEVELS = {
   1: {
@@ -199,41 +186,14 @@ function Heading({
 }
 
 /**
- * The title block a page wears in a header slot.
+ * The title block a page wears in a header slot: a name, a line under it, the page's buttons at
+ * the far end, and `contentSlot` beneath.
  *
- * Every list page in these apps writes this out: a name, a line under it, the page's buttons at
- * the far end, and a search or filter row beneath. Written out each time, they disagree about
- * all of it — the same `<h1>` is four different sizes across four projects and two different
- * sizes inside one of them, it is `font-semibold` in three and `font-bold` in the fourth, the
- * description truncates on the detail pages and wraps everywhere else, and "what happens to a
- * long title next to three buttons" has four answers, one of which is "nothing".
- *
- * **The padding seam.** `HeaderContentFooter` deliberately leaves its header slot unpadded
- * and gives the body `px-4`, because the page header carries its own inset — this component is
- * the one that comment means. So the inset lives here, exactly once, and the two edges line up
- * beneath a `width="page"` chassis.
- *
- * The other model, where a `<main>` owns the inset and the header inherits it, is what the rest
- * of these apps do, and it is why one route in one of them is inset 12px while every other page
- * is 16px: the page shell merged a caller's `className` over its own padding and nobody saw.
- * Dropped into a chassis that already pads, this header passes `className="px-0"` and the seam
- * stays owned by exactly one of the two.
- *
- * The *cap* does not live here. The prior art applied `PAGE_COLUMN` in both places so a header
- * dropped somewhere else still read as a page header, but that makes a header inside a
- * `width="full"` chassis cap itself while the body under it does not — the header contradicting
- * the chassis it was handed. The chassis owns the column, the header owns the inset, and each
- * seam is decided in one file.
- *
- * **Narrow widths.** The title row wraps rather than stacking at a breakpoint: the title block
- * asks for 16rem, and when that plus the action will not fit on one line, the action drops to
- * its own. A breakpoint is the wrong instrument, because the variable is how wide the *action*
- * is, not how wide the window is — one header here has a search field and two buttons in its
- * action and was squeezing its title at 1100px, which no phone breakpoint would have caught,
- * and another is a pane inside a split, narrow on a wide screen.
- *
- * The title wraps; it does not truncate. A card title truncates because it is one of many on a
- * screen that gives it context — a page title *is* the context, and half of one names nothing.
+ * The header owns its inset and the chassis owns the column cap, so each is decided in one file.
+ * `HeaderContentFooter` leaves its header slot unpadded for this; inside a chassis that already
+ * pads, pass `className="px-0"`. The title row wraps when the title and the action do not fit on
+ * one line, because the variable is how wide the action is, not the window. The title wraps and
+ * never truncates.
  */
 export function PageHeader({
   contentSlot,
@@ -260,6 +220,18 @@ export function PageHeader({
   // Level 1 only. A section heading inside a card sits above a body the card has already fenced,
   // and not one of the section headings in these apps draws a second line.
   const rule = level === 1 && !contentSlot ? "border-b border-foreground/10" : undefined;
+
+  const descriptionLine = loading ? (
+    <div
+      data-slot="page-header-description"
+      aria-hidden
+      className={cn("cube-rn-view", BAR, "h-5 w-72")}
+    />
+  ) : (
+    <p data-slot="page-header-description" className="cube-rn-text text-foreground/60 text-sm">
+      {description}
+    </p>
+  );
 
   return (
     // `px-4` is the seam: the body of a `width="page"` chassis carries the same, and nothing else
@@ -328,22 +300,7 @@ export function PageHeader({
             )}
           </div>
 
-          {description ? (
-            loading ? (
-              <div
-                data-slot="page-header-description"
-                aria-hidden
-                className={cn("cube-rn-view", BAR, "h-5 w-72")}
-              />
-            ) : (
-              <p
-                data-slot="page-header-description"
-                className="cube-rn-text text-foreground/60 text-sm"
-              >
-                {description}
-              </p>
-            )
-          ) : null}
+          {description ? descriptionLine : null}
         </div>
 
         {actionSlot ? (

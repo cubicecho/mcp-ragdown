@@ -3,6 +3,7 @@ import { CircleAlert, Info, TriangleAlert } from "@/components/ui/icons";
 import { IconClassContext } from "@/components/ui/icons-base";
 import { cn, type SlotNode } from "@/lib/utils";
 
+/** The kinds of callout, which pick its tint, icon and role. */
 export type AlertVariant = "default" | "info" | "warning" | "destructive";
 
 export type AlertProps = {
@@ -109,6 +110,7 @@ function isTextPart(child: ReactNode): boolean {
   return isValidElement(child) && (child.type === AlertTitle || child.type === AlertDescription);
 }
 
+/** A callout: a tinted box with an icon, a title, a description and an optional action. */
 export function Alert({
   variant = "default",
   iconSlot,
@@ -128,7 +130,8 @@ export function Alert({
   );
   const textParts = parts.filter(isTextPart);
   const iconParts = parts.filter((child) => isTextPart(child) === false);
-  const glyph = iconSlot !== undefined ? iconSlot : parts.length > 0 ? null : defaultIcon(variant);
+  const ownIcon = parts.length > 0 ? null : defaultIcon(variant);
+  const glyph = iconSlot !== undefined ? iconSlot : ownIcon;
   const ink = ALERT_ICON_INK[variant];
 
   return (

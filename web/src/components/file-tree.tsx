@@ -95,37 +95,13 @@ function folderPaths<T extends TreeEntry>(nodes: readonly TreeNode<T>[]): string
 
 /**
  * A nested list of files and folders, as they sit on disk: folders first, each one a button that
- * folds what is under it, each file a link or a button. One source for both platforms.
+ * folds what is under it, each file a link (`linkSlot`) or a button (`onSelect`). The nesting is
+ * `buildTree`'s, from `@/lib/tree`.
  *
- * It is here because mcp-skills-manager drew a skill's files this way by hand — its own indent,
- * selected and hover colours, icon, monospace name and hover row actions on raw `<li>` and
- * `<button>` — and mcp-ragdown then copied it for its notes. Neither could fold a folder, because
- * that was not worth building for one app.
- *
- * What it settles, since the two copies disagreed or left it out:
- *
- * - **A folder folds.** Its row is one button with `aria-expanded` and a turning chevron, and what
- *   is under it is not mounted while it is shut. Every folder starts open, which is what both
- *   copies drew; `defaultOpen` starts it otherwise and `open`/`onOpenChange` hand it to the caller.
- * - **A file's row is a link or a button, never both.** `linkSlot` for an app whose open file is in
- *   the URL, `onSelect` for one that holds it in state. With neither, the row is only a row.
- * - **Row actions are siblings of the pressed part**, as `ListItem`'s are: a button in a button is
- *   invalid, and its click would also open the file. They are hidden until the row is hovered or
- *   holds focus only where there *is* a hover, so a touch screen is not left with buttons nobody
- *   can reach.
- * - **It is a list of lists, not a `role="tree"`.** Every row is reached with Tab and pressed with
- *   Enter or Space, which is what a list of links already does, and a tree role would promise
- *   arrow keys and typeahead on both platforms.
- * - **A row is dragged onto a folder, and the tree only says so.** With `onMove`, a row is picked
- *   up and the folder under the pointer — a file's row counts as the folder it is in, the tree's
- *   own blank space as the top level — is tinted and takes the drop. A drop on itself, into its own
- *   descendants or into the folder it is already in is refused before `canMove` is asked. Pinned
- *   rows stay put. HTML drag and drop has no touch or keyboard form, so this is the web half with
- *   a pointer, and the caller keeps a "Move to…" row action as the way in for everyone else.
- *
- * The nesting is `buildTree`'s, which ships beside it in `@/lib/tree` for a caller that wants the
- * nodes without the look. A view with no folders to nest under — "recently changed" — is not a
- * tree: draw that one as a list of `ListItem`s.
+ * It is a list of lists and not a `role="tree"`, which would promise arrow keys and typeahead.
+ * Row actions are siblings of the pressed part, because a button in a button is invalid. With
+ * `onMove` a row is dragged onto a folder; HTML drag and drop has no touch or keyboard form, so
+ * the caller keeps a "Move to…" row action as well.
  */
 export function FileTree<T extends TreeEntry>({
   label,
@@ -159,7 +135,7 @@ export function FileTree<T extends TreeEntry>({
     if (openProp === undefined) {
       setToggled((before) => {
         const after = new Set(before);
-        if (!after.delete(path)) {
+        if (after.delete(path) === false) {
           after.add(path);
         }
         return after;
@@ -221,7 +197,7 @@ export function FileTree<T extends TreeEntry>({
       }
       event.stopPropagation();
       setOver(into);
-      if (!droppable(dragged, into)) {
+      if (droppable(dragged, into) === false) {
         return;
       }
       event.preventDefault();
@@ -254,7 +230,7 @@ export function FileTree<T extends TreeEntry>({
 
   const leaveTree = (event: React.DragEvent) => {
     const next = event.relatedTarget as Node | null;
-    if (!event.currentTarget.contains(next)) {
+    if (event.currentTarget.contains(next) === false) {
       setOver(null);
     }
   };

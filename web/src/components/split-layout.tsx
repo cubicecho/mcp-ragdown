@@ -160,17 +160,10 @@ type SplitLayoutProps = {
    */
   stackBelow?: keyof typeof STACK_BELOW | undefined;
   /**
-   * What separates the panes.
-   *
-   * - `space` — a gap. Two surfaces on a page, which is what most content splits are.
-   * - `line` — flush, with a hairline rule between them. The app shell: a navigation column
-   *   against a working surface. Every hand-written one draws this as a `border-r` on one pane,
-   *   which is right until the layout stacks and the border becomes a line down one side of the
-   *   screen instead of a line between the two panes.
-   * - `none` — flush, nothing drawn. The panes carry their own edges.
-   *
-   * One prop rather than a `gap` and a `bordered`, because they are the same decision: a rule
-   * with a gap on both sides is a line floating in the middle of nothing.
+   * What separates the panes: `space` is a gap, `line` is flush with a hairline rule between them,
+   * and `none` is flush with nothing drawn. One prop rather than a gap and a border, because a rule
+   * with a gap on both sides floats in the middle of nothing. The rule stays between the panes when
+   * they stack, which a `border-r` on one pane does not.
    */
   divider?: keyof typeof DIVIDERS | undefined;
   className?: string | undefined;
@@ -179,61 +172,14 @@ type SplitLayoutProps = {
 } & SplitWidths;
 
 /**
- * Two surfaces side by side, as equals.
+ * Two surfaces side by side, as equals. The slots are numbered because a role pair is wrong for an
+ * even split and a side pair is wrong once the panes stack or the page is RTL.
  *
- * The slots are numbered rather than named for a role or a side, because neither survives what
- * this component already does. A role pair (`content`/`sidebar`) is a lie about a genuinely even
- * split, and a side pair (`left`/`right`) is a lie below `stackBelow`, where the panes are above
- * and below, and again under RTL. `firstSlot` and `secondSlot` are true in every one of those:
- * first in reading order, wherever reading is going.
- *
- * {@link SidebarLayout} is this component with the roles put back, for the common case where one
- * pane is the screen and the other is beside it.
- *
- * The floors are the reason this is a component rather than a class string. A flex item's
- * `min-width` is `auto`, so one wide child — a table, a long unbroken string — grows its pane
- * and pushes the other pane off the screen instead of scrolling inside its own. `min-h-0` /
- * `min-w-0` on both panes is what makes a nested scroll container work at all, and it is the same
- * failure `HeaderContentFooter` guards in the other axis: there a wide child pushes the
- * chrome out of the column, here it pushes the neighbouring pane out of the row. Half the panes
- * this replaces are missing one or both.
- *
- * **It is not resizable, and that is a decision rather than a gap.** A draggable divider needs a
- * pointer handler and a stored width, and a stored width is state, which rule 8 keeps out of a
- * shell. The two ways to keep it out both fail on their own terms: expressing the drag in CSS
- * (`resize: horizontal`) gives a handle only a mouse can reach, and lifting the width out to
- * `firstWidth`/`onFirstWidthChange` still leaves the drag itself — behaviour — in here, to be
- * re-derived worse than `react-resizable-panels`, which shadcn already ships as `resizable`.
- * Rule 3 says do not wrap what shadcn ships; this is its other half, do not rebuild it either. A
- * screen that genuinely needs a draggable split is a screen for that primitive. None of the
- * eleven call sites this replaces has one.
- *
- * Because nothing drags, the divider is a rule and not a control: `aria-hidden`, no role, no tab
- * stop. A focus stop that does nothing when you press an arrow key is worse than no focus stop —
- * axe is satisfied and the keyboard user is standing in a dead end. The contrast is
- * `HeaderContentFooter`'s scrolling body, which takes a tab stop precisely because it
- * *does* something once you are there. Scrolling stays there too: a pane that needs to scroll is
- * a `StickyHeaderContentFooter` passed as `firstSlot` or `secondSlot`, so this shell adds no scroll
- * container of its own and no keyboard trap to go with it.
- *
- * **A collapsed pane is an absent one.** Every second pane eventually wants to close, and the
- * whole of that is `secondSlot={open ? nav : undefined}` — the caller already holds the toggle, and
- * the un-split layout is the full-width column that was needed anyway for the inspector with
- * nothing selected. A `collapsed` prop would buy a second way to say it and a piece of state to
- * keep in step with the first.
- *
- * **No `loading`.** `CardLayout` has one because a card has a single body and a precedence to
- * own (`loading` outranks `emptySlot`). A split has neither: it has two panes that arrive at
- * different times, and one boolean across both has to either skeleton a pane that was never
- * waiting or pick one, which is a second prop. The prior art shows the failure directly — the
- * layout this is drawn from had a `loading` that replaced the entire chassis with a bare
- * skeleton, so chrome already on the screen blinked out and came back. Each pane's content owns
- * its own loading state, and a pane that is a `CardLayout` already has the word for it.
- *
- * **Horizontal only.** Stacking below `stackBelow` is the vertical arrangement, and a split that
- * is vertical at every width is two zones in a column with floors between them — which is
- * `HeaderContentFooter`, already. A vertical orientation here would be rule 7's exact bug:
- * a second implementation of a shape another shell owns.
+ * Both panes carry `min-h-0`/`min-w-0`, so a wide child scrolls inside its pane instead of pushing
+ * the other one off the screen. The divider is a rule and not a control, because nothing drags: a
+ * draggable split is shadcn's `resizable`. A collapsed pane is an absent one
+ * (`secondSlot={open ? nav : undefined}`), each pane owns its own loading state, and a split that
+ * is vertical at every width is `HeaderContentFooter`.
  */
 export function SplitLayout({
   firstSlot,
@@ -426,37 +372,14 @@ type SidebarLayoutProps = {
 } & SidebarLayoutNarrow;
 
 /**
- * {@link SplitLayout} with the roles put back: a main surface, and a sidebar beside it.
+ * {@link SplitLayout} with the roles put back: a main surface, and a sidebar beside it. A preset
+ * rather than a second implementation; for two comparable panes use `SplitLayout` and its numbered
+ * slots.
  *
- * This is the common case and it is worth its own name — most splits are not even. `contentSlot` is
- * the main surface in every shell in this set (rule 2), and it keeps that meaning here, so the
- * pair reads the way it does everywhere else and the width is named for the pane a caller
- * actually thinks about: the sidebar.
- *
- * A preset rather than a second implementation, exactly as `StickyHeaderContentFooter` presets
- * `HeaderContentFooter`. When the two panes are genuinely comparable — a diff, two lists side by
- * side, a form beside its preview — reach for `SplitLayout` directly and its numbered slots,
- * rather than calling one of two equals the "sidebar".
- *
- * **`sidebarHideBelow` is the app shell's narrow width.** Six apps drew the same thing by hand: a
- * rail hidden under `md`, and over the page an `md:hidden` bar with the brand, the places as icon
- * links and the rail's footer buttons in a row. The two halves were two class strings that had to
- * name the same breakpoint, and the bar's `<nav>` had a name in some copies and not in others.
- * Here the breakpoint is said once and both halves read it, and the bar is a `header` — the
- * banner — with the navigation landmark inside it, named. The places in it are `BarNavItem`s
- * (`sidebar.tsx`), the rail's rows with only the icon drawn.
- *
- * **`status` is the bar's one line of words**, and the part that yields. The brand, the places and
- * the actions keep their width; the status takes what is left between the `navSlot` and the
- * `actionSlot`, so on a 390px phone it shortens, and on a narrower bar still it is gone, rather
- * than pushing an action off the edge. Without the slot an app put the line in `actionSlot`, which
- * never shrinks.
- *
- * It holds no state: nothing opens, nothing is remembered, and which of the two is drawn is a
- * media query in the stylesheet rather than a width read in JavaScript. On device NativeWind reads
- * the same breakpoint off the window, so a phone draws the bar and a tablet the rail — the answer
- * `Sidebar`'s `hideBelow` already gives there. A drawer that slides the rail in over the page is a
- * different component, with an open state, and not this one.
+ * `sidebarHideBelow` is the app shell's narrow width: under it the rail is hidden and a `header`
+ * bar holding the brand, the `navSlot` and the `actionSlot` is drawn over the page, both from the
+ * one breakpoint. `status` is the bar's one line of words and the part that yields, so an action
+ * is never pushed off the edge. Which of the two is drawn is a media query, not state.
  */
 export function SidebarLayout({
   contentSlot,

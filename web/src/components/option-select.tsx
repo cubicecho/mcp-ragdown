@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
+/** One choice in an `OptionSelect`. */
 export type SelectOption = {
   label: ReactNode;
   value: string;
@@ -264,7 +265,7 @@ function SearchableMenu({
     setUncontrolledOpen(next);
     onOpenChange?.(next);
     // A menu reopened on the last search hides the row the reader came back for.
-    if (!next) {
+    if (next === false) {
       setSearch("");
     }
   };
@@ -360,20 +361,10 @@ function SearchableMenu({
 }
 
 /**
- * A select taking a list of options, rather than seven primitives to assemble. On both halves:
- * radix's listbox under the trigger on the web, the `Select` sheet on device.
- *
- * The other four pickers in this set ship twice — a control taking `value` and `onValueChange`,
- * and a bound field wrapping it. Select shipped once, as `SelectField`, so the only way to get
- * one was through a TanStack form: a filter bar, a search box or a `useState` screen had to
- * hand-write the trigger, the value, the content and the mapped items, and there are ten of
- * those across these projects.
- *
- * They are hand-written wrong in the same place every time. **The `Select` root renders
- * nothing** — radix's draws no DOM and the device's is a context — so an `id` or an
- * `aria-invalid` put on it goes nowhere; both belong on the trigger. Which is why this takes the
- * rest of the trigger's props and spreads them there — the shape
- * `FormField`'s function form hands its control, so this drops into one without a wrapper:
+ * A select taking a list of options, rather than seven primitives to assemble: radix's listbox on
+ * the web, the `Select` sheet on device. The rest of the props are the trigger's and are spread
+ * there, because the `Select` root renders nothing and an `id` or `aria-invalid` on it goes
+ * nowhere. That is the shape `FormField`'s function form hands its control:
  *
  * ```tsx
  * <FormField
@@ -384,14 +375,8 @@ function SearchableMenu({
  * />
  * ```
  *
- * **The name is `OptionSelect` because `Select` did not survive an install.** This shipped as
- * `Select`, on the reasoning that the import path tells it apart from the primitive at
- * `ui/select` the way it does for shadcn itself. It does not: the shadcn CLI resolves a
- * cross-item import by the source file's *basename*, so with `control/select.tsx` and
- * `ui/select.tsx` both in one install it rewrote `app-form`'s import to the primitive. That
- * compiles as far as the import and fails on the members, three files from the cause — see #36.
- * A name a human disambiguates by path is not one the CLI does, so no item here may share a
- * basename with a shadcn primitive.
+ * It is not named `Select` because the shadcn CLI resolves a cross-item import by basename (#36).
+ * No item here may share a basename with a shadcn primitive.
  */
 export function OptionSelect({
   options,

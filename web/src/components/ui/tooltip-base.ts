@@ -27,8 +27,10 @@ export type TooltipContentProps = {
   children: ReactNode;
 };
 
+/** The tooltip's bubble. */
 export const TOOLTIP_CONTENT_CLASS =
   "overflow-hidden rounded-md border border-foreground/10 bg-secondary px-3 py-1.5";
+/** The type of the tooltip's text. */
 export const TOOLTIP_TEXT_CLASS = "text-sm text-foreground";
 
 /**

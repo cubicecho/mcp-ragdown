@@ -14,6 +14,7 @@ export type SwitchProps = Omit<ComponentPropsWithRef<typeof SwitchPrimitive.Root
   "aria-label"?: string | undefined;
 };
 
+/** A control that is on or off. */
 function Switch({
   className,
   size = "default",

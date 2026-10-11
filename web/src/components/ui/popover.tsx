@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 /** The shared contract, widened to what the radix part (or element) underneath accepts. */
 type Wide<Base, Radix> = Base & Omit<Radix, keyof Base>;
 
+/** The root of a popover: it holds the open state. */
 function Popover({
   open,
   onOpenChange,
@@ -33,6 +34,7 @@ function Popover({
   );
 }
 
+/** The element that opens the popover. */
 function PopoverTrigger({
   asChild,
   ...props
@@ -42,6 +44,7 @@ function PopoverTrigger({
   );
 }
 
+/** The popover's card. */
 function PopoverContent({
   className,
   align = "center",
@@ -64,6 +67,7 @@ function PopoverContent({
   );
 }
 
+/** An element the popover is placed against instead of its trigger. */
 function PopoverAnchor({
   asChild,
   ...props
@@ -73,6 +77,7 @@ function PopoverAnchor({
   );
 }
 
+/** An element that closes the popover when pressed. */
 function PopoverClose({
   asChild,
   className,
@@ -88,6 +93,7 @@ function PopoverClose({
   );
 }
 
+/** The block holding the popover's title and description. */
 function PopoverHeader({
   className,
   ...props
@@ -101,6 +107,7 @@ function PopoverHeader({
   );
 }
 
+/** The popover's title. */
 function PopoverTitle({
   className,
   ...props
@@ -108,6 +115,7 @@ function PopoverTitle({
   return <div data-slot="popover-title" className={cn("font-medium", className)} {...props} />;
 }
 
+/** The muted line under the popover's title. */
 function PopoverDescription({
   className,
   ...props

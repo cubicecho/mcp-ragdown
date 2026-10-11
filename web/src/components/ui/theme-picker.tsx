@@ -181,6 +181,7 @@ function BoundPaletteSection({ onPaletteChange, ...props }: PaletteSectionProps)
   );
 }
 
+/** The choice of Light, Dark or System, and optionally of palette. */
 function ThemePicker(props: ThemePickerProps) {
   const { palettes } = props;
   if (!palettes) {

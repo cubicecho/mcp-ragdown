@@ -150,7 +150,7 @@ function ConfirmDialogBody({
             value={typed}
             onChangeText={setTyped}
             onSubmitEditing={() => {
-              if (!locked) {
+              if (locked === false) {
                 onConfirm();
               }
             }}

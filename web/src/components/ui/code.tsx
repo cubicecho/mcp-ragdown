@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { cn, type SlotNode } from "@/lib/utils";
 
+/** Monospaced text inline in a sentence. */
 export function Code({
   className,
   children,

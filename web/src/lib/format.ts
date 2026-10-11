@@ -118,6 +118,7 @@ const AGO_STEPS = [
   ["minute", MINUTE, "m"],
 ] as const;
 
+/** How `formatAgo` words an age. */
 export type FormatAgoOptions = {
   /**
    * `long`, the default, writes `5 minutes ago`. `narrow` writes `5m ago`, for a column where the

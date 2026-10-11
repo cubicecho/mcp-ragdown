@@ -79,6 +79,7 @@ const fieldVariants = cva("w-full gap-2", {
   defaultVariants: { orientation: "vertical" },
 });
 
+/** One field's column: its label, control, description and error. */
 function Field({
   className,
   orientation = "vertical",
@@ -95,12 +96,14 @@ function Field({
   );
 }
 
+/** The label that names the field's control. */
 function FieldLabel({ className, ...props }: React.ComponentProps<typeof Label>) {
   // `data-slot` rather than `testID`: `Label`'s shared contract has no `testID`, the native half
   // ignores an attribute it does not know, and the web half spreads it over its own `label`.
   return <Label data-slot="field-label" className={className} {...props} />;
 }
 
+/** The muted help text for the field. */
 function FieldDescription({ className, ...props }: TextProps) {
   return (
     <span

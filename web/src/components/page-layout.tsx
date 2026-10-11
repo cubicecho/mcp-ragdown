@@ -56,24 +56,12 @@ export type PageLayoutProps = {
 };
 
 /**
- * A whole page: its title block pinned above a body that scrolls under it.
+ * A whole page: its title block pinned above a body that scrolls under it. This is
+ * `HeaderContentFooter` filling its parent, with a `PageHeader` in its header slot.
  *
- * This is `HeaderContentFooter`, filling its parent, with a `PageHeader` in its header slot, and
- * it exists because that is the sentence two apps here wrote out for themselves rather than the
- * component they reached for. `kanban_server/web/components/app-shell.tsx:282` and
- * `task_server/web/components/app-shell.tsx:46` are the same forty lines twice — the same
- * `title`, `description`, `actions`, the same `min-h-0 flex-1 overflow-y-auto`, the same
- * centred column — and having written it twice they disagree on the only prop that varies:
- * `wide` means `max-w-5xl` in one and `max-w-none` in the other, over a `max-w-3xl` default that
- * neither of them named. Across these projects there are 51 capped page columns in 10 widths.
- *
- * So the contribution is not the composition, which is four lines. It is that `width` is a word
- * — `page`, `prose`, `full` — instead of a number the next page picks again.
- *
- * **What it does not do.** It does not own the sidebar, the theme toggle or the route: those
- * belong to an app shell, and shadcn ships `sidebar` for the drawing. It does not scroll the
- * header away with the rows — that is the whole point of the chassis under it. And it takes no
- * `children`; the page is `contentSlot`, like every other slot in this set.
+ * What it adds is that `width` is a word (`page`, `prose`, `full`) instead of a number each page
+ * picks again. It does not own the sidebar, the theme toggle or the route, which belong to an app
+ * shell.
  */
 export function PageLayout({
   contentSlot,

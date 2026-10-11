@@ -53,9 +53,12 @@ export function buildTree<T extends TreeEntry>(entries: readonly T[]): TreeNode<
     ensure(entry.path, entry.type, entry);
   }
   const sort = (nodes: TreeNode<T>[]): void => {
-    nodes.sort((a, b) =>
-      a.type !== b.type ? (a.type === "dir" ? -1 : 1) : a.name.localeCompare(b.name),
-    );
+    nodes.sort((a, b) => {
+      if (a.type !== b.type) {
+        return a.type === "dir" ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
     for (const node of nodes) {
       sort(node.children);
     }

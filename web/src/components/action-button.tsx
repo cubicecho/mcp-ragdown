@@ -51,6 +51,7 @@ type ActionButtonProps = Omit<ComponentProps<typeof Button>, "aria-label"> & {
   "aria-describedby"?: string | undefined;
 };
 
+/** A named button with a tooltip, whose `hint` can still be read while it is disabled. */
 export function ActionButton({
   label,
   hint,
@@ -102,7 +103,7 @@ export function ActionButton({
 
   // `tooltip={false}` drops the tooltip, not the explanation: the hint is still the reason the
   // control is the way it is, and it is still the only place a screen reader can get it.
-  if (!tooltip) {
+  if (tooltip === false) {
     return (
       <>
         {button}

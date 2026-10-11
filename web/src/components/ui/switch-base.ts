@@ -30,4 +30,5 @@ export type SwitchProps = {
 /** Shared between the two files so the track cannot drift between platforms. */
 export const SWITCH_TRACK_CLASS =
   "h-5 w-9 shrink-0 flex-row items-center rounded-full border-2 border-transparent";
+/** The switch's thumb: the circle that slides along the track. */
 export const SWITCH_THUMB_CLASS = "h-4 w-4 rounded-full bg-background";

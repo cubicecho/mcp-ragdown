@@ -134,28 +134,12 @@ export type DialogLayoutProps = {
 };
 
 /**
- * A dialog with its slots already placed, and a body that scrolls under a header that does not.
+ * A dialog with its slots already placed, and a body that scrolls under a header and above a
+ * footer that do not. The scrolling shape is {@link HeaderContentFooter}'s, composed here.
  *
- * The scroll is the reason this exists rather than a snippet. Every hand-written dialog in these
- * apps caps itself with `max-h-[85vh] overflow-y-auto` on the content, which scrolls the *whole*
- * dialog: on a long form the title leaves the screen first and the save button is somewhere past
- * the end of the fields.
- *
- * That shape — chrome that stays, a middle that moves, floors that let it — is
- * {@link HeaderContentFooter}, so the dialog composes it rather than owning a second copy. What
- * is left here is the part that is about dialogs: the primitive's own header and footer, the
- * title an assistive technology needs, and the two classes that turn `DialogContent` into a
- * column that can be divided.
- *
- * **`hasUnsavedChanges` is a prop and not a hook, and that is the whole point.** Seven dialogs in
- * kanban_server closed through a `useDiscardGuard`; six called it and the seventh wired
- * `onOpenChange` straight into its `onClose` and quietly lost what had been typed. A hook is a
- * thing a caller can forget. A shell is not, because a caller cannot see it.
- *
- * **Padding stays with the primitive.** `DialogContent` carries it (`p-6` in new-york, `p-4` in
- * others) and so do the footers that bleed to its edge with a negative margin. A shell that set
- * its own would be a shell that only fits one style, so this one overrides `display` and
- * `overflow` and nothing else.
+ * `hasUnsavedChanges` is a prop and not a hook, because a hook is a thing a caller can forget to
+ * wire into closing. Padding stays with `DialogContent`, which differs between shadcn styles, so
+ * this overrides only `display` and `overflow`.
  */
 export function DialogLayout({
   contentSlot,
@@ -203,7 +187,7 @@ export function DialogLayout({
     // a child without subscribing to either.
     const unsaved =
       typeof hasUnsavedChanges === "function" ? hasUnsavedChanges() : hasUnsavedChanges;
-    if (!next && unsaved) {
+    if (next === false && unsaved) {
       setAskingToDiscard(true);
       return;
     }
