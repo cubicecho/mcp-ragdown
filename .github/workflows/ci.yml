@@ -36,9 +36,20 @@ jobs:
         run: npm test
 
   # The image is only pushed from main, so without this a broken Dockerfile
-  # would first be noticed by a release. Builds, does not push.
+  # would first be noticed by a release. Builds, does not push. Once per
+  # architecture the release publishes, each on a runner of that architecture:
+  # the image holds native binaries, so one booting says nothing of the other.
   docker:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    name: docker (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
@@ -48,8 +59,8 @@ jobs:
           push: false
           load: true
           tags: mcp-ragdown:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
       # Boots on a one-file folder and waits for `ready: true`, which checks that
       # the baked-in model loads offline, that LanceDB's native binary runs, and

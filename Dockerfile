@@ -34,7 +34,8 @@ RUN node --input-type=module -e ' \
 
 # ── Stage 2: web UI ───────────────────────────────────────────────────────────
 # Needs the dev dependencies (Vite, React, Tailwind); only the built files leave this stage.
-FROM node:26-slim AS web
+# They are the same files for every architecture, so this stage runs on the builder's own.
+FROM --platform=$BUILDPLATFORM node:26-slim AS web
 
 WORKDIR /app
 
