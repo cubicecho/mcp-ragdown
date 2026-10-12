@@ -1,4 +1,10 @@
-# Tags a release and pushes the image to GHCR and Docker Hub.
+# Tags a release and pushes the image to GHCR and Docker Hub, for amd64 and arm64.
+#
+# Three jobs: `release` decides whether there is a version to publish, `build`
+# builds the image once per architecture on a runner of that architecture, and
+# `publish` joins the two under the tags people pull. Each architecture builds
+# natively because the image holds native binaries (LanceDB, ONNX Runtime, Node
+# itself) and emulating arm64 on an amd64 runner took several times longer.
 #
 # ghcr.io needs no setup at all: the GITHUB_TOKEN this workflow already has can
 # push to it. Docker Hub is optional — set DOCKERHUB_USERNAME (the account that
@@ -29,6 +35,12 @@ on:
         description: 'Version to publish as, e.g. 0.1.0 (no tag or release notes are created)'
         required: true
 
+# One release at a time, in order: a second run waits rather than cancelling the
+# first between its builds and its tags.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write
   packages: write
@@ -40,6 +52,10 @@ jobs:
     # A red CI run must not become a published image.
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.publish.outputs.go }}
+      version: ${{ steps.publish.outputs.version }}
+      ref: ${{ steps.publish.outputs.ref }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -58,20 +74,89 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # One answer for both triggers, so every step below gates on one thing.
+      # One answer for both triggers, so every job below gates on one thing.
       - name: Decide whether to publish
         id: publish
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+          RELEASED: ${{ steps.semantic.outputs.new_release_published }}
+          RELEASED_VERSION: ${{ steps.semantic.outputs.new_release_version }}
         run: |
-          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+          if [ "$GITHUB_EVENT_NAME" = 'workflow_dispatch' ]; then
             echo "go=true" >> "$GITHUB_OUTPUT"
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "version=$DISPATCH_VERSION" >> "$GITHUB_OUTPUT"
+            echo "ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
           else
-            echo "go=${{ steps.semantic.outputs.new_release_published }}" >> "$GITHUB_OUTPUT"
-            echo "version=${{ steps.semantic.outputs.new_release_version }}" >> "$GITHUB_OUTPUT"
+            echo "go=$RELEASED" >> "$GITHUB_OUTPUT"
+            echo "version=$RELEASED_VERSION" >> "$GITHUB_OUTPUT"
+            # The release commit, not the one CI tested: it is that commit plus
+            # the version semantic-release wrote into package.json, which the
+            # image copies and /api/status reports.
+            echo "ref=v$RELEASED_VERSION" >> "$GITHUB_OUTPUT"
           fi
 
+  build:
+    needs: release
+    if: needs.release.outputs.go == 'true'
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    # One output per architecture: each leg of the matrix fills in its own.
+    outputs:
+      amd64: ${{ steps.digest.outputs.amd64 }}
+      arm64: ${{ steps.digest.outputs.arm64 }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.ref }}
+
       - name: Log in to GitHub Container Registry
-        if: steps.publish.outputs.go == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Worked out in each job rather than handed over by `release`: a job
+      # output that happens to contain a secret's value (the Docker Hub
+      # username can be the organisation's name) is dropped by the runner.
+      # ghcr.io rejects an uppercase path, so the name is lowercased.
+      - name: Name the image
+        id: image
+        run: echo "name=ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      # Pushed to GHCR by digest, with no tag: a tag here would point at one
+      # architecture until `publish` replaced it.
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=true
+          # Shares a cache with the CI build of the same Dockerfile and architecture.
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      - name: Hand the digest to publish
+        id: digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "${{ matrix.arch }}=$DIGEST" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: [release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -85,18 +170,17 @@ jobs:
       # needed no setup at all.
       - name: Work out where the image can go
         id: targets
-        if: steps.publish.outputs.go == 'true'
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          VERSION: ${{ steps.publish.outputs.version }}
+          VERSION: ${{ needs.release.outputs.version }}
         run: |
-          # ghcr.io rejects an uppercase path; the owner half of the repo name is
-          # free to have one, so it is lowercased here rather than assumed.
-          repo=$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          # The same name `build` pushed to; see the note there.
+          IMAGE="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           {
             echo 'tags<<TAGS_EOF'
-            echo "ghcr.io/${repo}:latest"
-            echo "ghcr.io/${repo}:${VERSION}"
+            echo "${IMAGE}:latest"
+            echo "${IMAGE}:${VERSION}"
             if [ -n "$DOCKERHUB_USERNAME" ]; then
               echo "${DOCKERHUB_USERNAME}/mcp-ragdown:latest"
               echo "${DOCKERHUB_USERNAME}/mcp-ragdown:${VERSION}"
@@ -119,19 +203,24 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        if: steps.publish.outputs.go == 'true'
         uses: docker/setup-buildx-action@v4
 
-      - name: Build and push
-        if: steps.publish.outputs.go == 'true'
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          # amd64 only for now: arm64 needs QEMU on these runners and takes several
-          # times longer. Tracked in #2.
-          platforms: linux/amd64
-          tags: ${{ steps.targets.outputs.tags }}
-          # Shares a cache with the CI build of the same Dockerfile.
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      # Each tag becomes a list of both images, so a pull gets the host's own
+      # architecture. The Docker Hub tags are copied from GHCR in the same step.
+      - name: Tag both architectures as one image
+        env:
+          IMAGE: ${{ steps.targets.outputs.image }}
+          TAGS: ${{ steps.targets.outputs.tags }}
+          AMD64: ${{ needs.build.outputs.amd64 }}
+          ARM64: ${{ needs.build.outputs.arm64 }}
+        run: |
+          if [ -z "$AMD64" ] || [ -z "$ARM64" ]; then
+            echo "::error::a build reported no digest (amd64: '$AMD64', arm64: '$ARM64')"
+            exit 1
+          fi
+          args=()
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && args+=(--tag "$tag")
+          done <<< "$TAGS"
+          docker buildx imagetools create "${args[@]}" "${IMAGE}@${AMD64}" "${IMAGE}@${ARM64}"
+          docker buildx imagetools inspect "${IMAGE}:latest"

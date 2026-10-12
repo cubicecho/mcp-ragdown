@@ -57,7 +57,7 @@ claude mcp add --transport http ragdown-work http://localhost:3300/mcp/work \
 The first index of a large folder takes minutes; searches answer from what is indexed so far. The
 web UI lists each folder's files, renders them with their wikilinks and images, and searches them.
 To add documents to every turn automatically, see [Hooks in min-agent](#hooks-in-min-agent). Images
-are published for `linux/amd64` to Docker Hub and `ghcr.io/cubicecho/mcp-ragdown`.
+are published for `linux/amd64` and `linux/arm64` to Docker Hub and `ghcr.io/cubicecho/mcp-ragdown`.
 
 ### Without Docker
 
