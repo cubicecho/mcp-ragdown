@@ -356,6 +356,61 @@ describe("HTTP server", () => {
     expect(await recall("/mcp/private")).toEqual(["kafka.md"]);
   });
 
+  it("serves every MCP-enabled folder at /mcp once the root is turned on", async () => {
+    const t = await serve({ SECURE_LOCAL_NET: "true" });
+    await t.write("private/kafka.md", "# Kafka\n\nRetention on postgres is seven days.");
+    await t.rag.sync(false);
+    const patch = (body: unknown) =>
+      fetch(`${t.url}/api/settings`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    expect((await patch({ root_mcp: "yes" })).status).toBe(400);
+    const saved = (await (await patch({ root_mcp: true })).json()) as { settings: unknown };
+    expect(saved.settings).toMatchObject({
+      root_mcp: true,
+      saved: { root_mcp: true },
+      env: { root_mcp: false },
+    });
+
+    const client = new Client({ name: "test", version: "0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(`${t.url}/mcp`)));
+    closers.push(() => client.close());
+    expect(client.getServerVersion()?.name).toBe("ragdown");
+    const result = (await client.callTool({
+      name: "ragdown_recall",
+      arguments: { query: "postgres", format: "json" },
+    })) as CallToolResult;
+    const first = result.content[0];
+    const hits = JSON.parse(first?.type === "text" ? first.text : "{}").hits;
+    expect(hits.map((hit: { folder: string; path: string }) => [hit.folder, hit.path])).toEqual([
+      ["ops", "backups.md"],
+    ]);
+    // A folder's own endpoint is as it was.
+    const post = (path: string) =>
+      fetch(`${t.url}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+    expect((await post("/mcp/private")).status).toBe(404);
+
+    // Given back to its variable, which leaves it off.
+    await patch({ root_mcp: null });
+    const off = await post("/mcp");
+    expect(off.status).toBe(404);
+    expect(await off.json()).toEqual({ error: "Pick a folder: /mcp/<folder>" });
+  });
+
+  it("starts with the root served when RAGDOWN_ROOT_MCP says so", async () => {
+    const t = await serve({ SECURE_LOCAL_NET: "true", RAGDOWN_ROOT_MCP: "true" });
+    const client = new Client({ name: "test", version: "0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(`${t.url}/mcp`)));
+    closers.push(() => client.close());
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("ragdown_folders");
+  });
+
   it("lists, creates, renames and deletes folders, and never indexes loose files", async () => {
     const t = await serve({ SECURE_LOCAL_NET: "true" });
     await t.write("loose.md", "# Loose\n\nAt the top, in no folder.");

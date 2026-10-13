@@ -20,6 +20,7 @@ export function publicSettings(config: Config) {
   return {
     embedder: config.embedder,
     watch: config.watch,
+    root_mcp: config.rootMcp,
     text_limit: config.textLimit,
     hook: {
       top_k: config.hook.topK,
@@ -34,6 +35,7 @@ export function publicSettings(config: Config) {
     env: {
       embedder: config.env.embedder,
       watch: config.env.watch,
+      root_mcp: config.env.rootMcp,
       text_limit: config.env.textLimit,
       hook: {
         top_k: config.env.hook.topK,

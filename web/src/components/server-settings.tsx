@@ -96,6 +96,12 @@ export function EditServerSettings({
             label="Watch for changes"
             description="Off, the index syncs at start and on ragdown_reindex only."
           />
+          <SwitchField
+            form={form}
+            name="root_mcp"
+            label="Serve every folder at /mcp"
+            description="One MCP server over every folder with MCP on, where an agent names the folder in each call and can make new folders. Off, each folder has only its own address."
+          />
           <Section
             title="Search defaults"
             level={3}

@@ -4,6 +4,7 @@ import { getToken, requireAuth } from "@/lib/auth";
 export interface ServerSettings {
   embedder?: string;
   watch?: boolean;
+  root_mcp?: boolean;
   text_limit?: number;
   hook?: HookOverrides;
 }
@@ -12,6 +13,7 @@ export interface ServerSettings {
 export interface ServerSettingsPatch {
   embedder?: string | null;
   watch?: boolean | null;
+  root_mcp?: boolean | null;
   text_limit?: number | null;
   hook?: { [K in keyof HookOverrides]?: number | null };
 }
@@ -27,6 +29,8 @@ export interface Status {
     /** The embedder's name as a setting takes it (`granite-small`), not the model's. */
     embedder: string;
     watch: boolean;
+    /** On, `/mcp` serves every folder with MCP on as one server. */
+    root_mcp: boolean;
     text_limit: number;
     /** `ragdown_context`'s defaults, which a hook's own arguments override. */
     hook: {
@@ -43,6 +47,7 @@ export interface Status {
     env: {
       embedder: string;
       watch: boolean;
+      root_mcp: boolean;
       text_limit: number;
       hook: { top_k: number; min_score: number | null; min_ratio: number; max_chars: number };
     };
@@ -74,6 +79,8 @@ export interface Folder {
   mcp_path: string;
   files: number;
   chunks: number;
+  /** The tool an agent made the folder with; absent on one a person made. */
+  created_by?: string;
 }
 
 /** `ragdown_context`'s defaults as a folder's `.ragdown.json` may set them. */

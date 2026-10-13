@@ -1,6 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { Root } from "../documents/root.ts";
 import { openScope } from "../documents/scope.ts";
 import { getFolder } from "../folders/folder-settings.ts";
 import type { Config } from "../shared/config.ts";
@@ -15,8 +17,8 @@ import { createMcpServer, SERVER_NAME, VERSION } from "./mcp-tools.ts";
 import { serveWeb, WEB_DIR } from "./web-ui.ts";
 
 /**
- * The HTTP face of the server, for running it in a container: `/mcp/<folder>` for agents and
- * hooks, `/api` for the web UI and the health check, and the built UI for every other `GET`. The
+ * The HTTP face of the server, for running it in a container: `/mcp/<folder>` (and `/mcp`, when
+ * the root is served) for agents and hooks, `/api` for the web UI and the health check, and the built UI for every other `GET`. The
  * README's "Commands and HTTP" lists every route and what it answers. Plain `node:http` rather than
  * Express: a handful of routes do not need a framework.
  */
@@ -121,10 +123,14 @@ const API_ROUTES = new Set([
 /** The same answer for a missing folder and a human-only one, so neither gives the other away. */
 const NO_MCP_FOLDER = "Not found: no folder with MCP turned on at this path";
 
+/** What bare `/mcp` answers until the root is turned on. */
+const NO_ROOT = "Pick a folder: /mcp/<folder>";
+
 /**
  * Streamable HTTP MCP for one folder, or a subfolder of one, whose tools treat it as the root.
  * Stateless: a fresh `McpServer` per request, since every piece of state lives in the shared
- * `Ragdown`. Bare `/mcp` is a 404 that says to pick a folder: no endpoint spans every folder.
+ * `Ragdown`. Bare `/mcp` spans every folder with MCP on when `root_mcp` is set, and is otherwise a
+ * 404 that says to pick a folder.
  */
 async function handleMcp(
   rag: Ragdown,
@@ -135,19 +141,19 @@ async function handleMcp(
 ): Promise<void> {
   const dir = scopeDir(path);
   const name = dir.split("/").find(Boolean);
-  if (!name) {
-    json(res, 404, { error: "Pick a folder: /mcp/<folder>" });
+  if (!name && !config.rootMcp) {
+    json(res, 404, { error: NO_ROOT });
     return;
   }
   // Every method, not only POST: clients open a GET for the SSE stream and send DELETE to end a
   // session, and a 404 for those looks like a broken server.
-  const folder = await getFolder(config.docsDir, name);
-  const scope = folder?.mcp ? await openScope(rag, dir) : undefined;
-  if (!folder || !scope) {
+  const server = name
+    ? await folderServer(rag, config, dir, name)
+    : createMcpServer(new Root(rag), config);
+  if (!server) {
     json(res, 404, { error: NO_MCP_FOLDER });
     return;
   }
-  const server = createMcpServer(Promise.resolve(scope), config, folder);
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
@@ -158,6 +164,21 @@ async function handleMcp(
   });
   await server.connect(transport);
   await transport.handleRequest(req, res, req.method === "POST" ? await readJson(req) : undefined);
+}
+
+/**
+ * The MCP server of the folder `name`, with `dir` (the folder, or a subfolder of it) as its root.
+ * Nothing for a missing folder, a human-only one, or a subfolder that is not there.
+ */
+async function folderServer(
+  rag: Ragdown,
+  config: Config,
+  dir: string,
+  name: string,
+): Promise<McpServer | undefined> {
+  const folder = await getFolder(config.docsDir, name);
+  const scope = folder?.mcp ? await openScope(rag, dir) : undefined;
+  return folder && scope ? createMcpServer(Promise.resolve(scope), config, folder) : undefined;
 }
 
 /** An authorized `/api` request, handed to the resource its path names. */

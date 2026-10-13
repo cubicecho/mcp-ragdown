@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { Root } from "../documents/root.ts";
 import type { Scope } from "../documents/scope.ts";
 import { formatHits, hitJson } from "../indexing/format.ts";
 import type { Config } from "../shared/config.ts";
@@ -10,6 +11,7 @@ import { errorMessage } from "../shared/errors.ts";
 import {
   formatDocument,
   formatEdited,
+  formatFolders,
   formatList,
   formatMoved,
   formatRemembered,
@@ -36,6 +38,19 @@ export const VERSION: string = (
   }
 ).version;
 
+/** The folder a single-document tool acts in, at the root: there is no document without one. */
+const inFolder = z
+  .string()
+  .min(1)
+  .describe("The folder the document is in, by its name in ragdown_folders");
+
+/** The folder a search or listing is narrowed to, at the root. */
+const onlyFolder = z
+  .string()
+  .min(1)
+  .optional()
+  .describe("Only this folder, by its name in ragdown_folders. Left out: every folder");
+
 /**
  * The MCP surface, and the only way an agent or a hook reaches the documents. Tool names are
  * `ragdown_*`, after zeromem's `zeromem_*`: recall, read, list, backlinks, remember, write, edit,
@@ -43,27 +58,53 @@ export const VERSION: string = (
  * are not listed at all — an agent should never see a tool it cannot call — and nor is a tool
  * `RAGDOWN_DISABLED_TOOLS` names, since every tool listed costs each agent its description.
  *
- * @param ready - resolves to the scope — the folder these tools treat as the root — once the model
- *   is loaded. Taking a promise lets the stdio
- *   transport connect first, so a client's handshake never waits on the model; a call made before
- *   then waits instead.
+ * Given the `Root`, the same tools each take a `folder`, and `ragdown_folders` and
+ * `ragdown_create_folder` are added. Given a scope, `folder` is not an argument at all: the
+ * endpoint is the folder.
+ *
+ * @param target - the `Root`, or a promise of the scope — the folder these tools treat as the root
+ *   — that resolves once the model is loaded. Taking a promise lets the stdio transport connect
+ *   first, so a client's handshake never waits on the model; a call made before then waits instead.
  * @param folder - names the server after its folder (`ragdown-<name>`) and tells the model which
  *   documents these are, since one client may connect to several folders' servers at once.
  */
 export function createMcpServer(
-  ready: Promise<Scope>,
+  target: Promise<Scope> | Root,
   { readOnly, disabledTools }: Pick<Config, "readOnly" | "disabledTools">,
   folder?: { name: string; title: string },
 ): McpServer {
+  const root = target instanceof Root ? target : undefined;
   const which = folder
     ? `the "${folder.title}" folder of the user's Markdown documents`
     : "the user's folder of Markdown documents";
+  const recallFirst =
+    "Call ragdown_recall before answering a question the documents might cover (project decisions, how-tos, runbooks, personal notes), then ragdown_read_doc to read around a hit before relying on it.";
   const server = new McpServer(
     { name: folder ? `${SERVER_NAME}-${folder.name}` : SERVER_NAME, version: VERSION },
     {
-      instructions: `Search ${which}. Call ragdown_recall before answering a question the documents might cover (project decisions, how-tos, runbooks, personal notes), then ragdown_read_doc to read around a hit before relying on it.`,
+      instructions: root
+        ? `Search the user's folders of Markdown documents. ragdown_folders names the folders. ragdown_recall and ragdown_list cover every folder unless given one, and a tool that reads or changes a document takes the folder it is in and a path inside that folder. ${recallFirst}`
+        : `Search ${which}. ${recallFirst}`,
     },
   );
+  /** What a path argument is relative to. */
+  const base = root ? "the folder" : "the documents root";
+
+  /** A tool's arguments, with `folder` in front of them at the root and left out anywhere else. */
+  const fields = <T extends z.ZodRawShape>(folderField: z.ZodTypeAny, rest: T): T =>
+    root ? { folder: folderField, ...rest } : rest;
+
+  /** The one folder a call is about: the one it names, or the endpoint's own. */
+  const scopeOf = async (args: object): Promise<Scope> =>
+    target instanceof Root ? target.scope(folderOf(args) ?? "") : target;
+
+  /** Run a tool on the one folder its call is about. */
+  const inScope = (args: object, body: (rag: Scope) => Promise<unknown>) =>
+    run(async () => body(await scopeOf(args)));
+
+  /** Run a tool that may span folders: on the root itself when its call names no folder. */
+  const inDocuments = (args: object, body: (rag: Scope | Root) => Promise<unknown>) =>
+    run(async () => body(root && folderOf(args) === undefined ? root : await scopeOf(args)));
 
   // Registered and then removed, which keeps `registerTool`'s own types for every tool's handler.
   const register: McpServer["registerTool"] = (name, config, handler) => {
@@ -80,14 +121,14 @@ export function createMcpServer(
       title: "Search documents",
       description:
         "Hybrid (semantic + keyword) search over the user's Markdown documents. Returns the most relevant sections with file path, line range, heading breadcrumb and cosine similarity (above ~0.8 is usually on topic) and the day the file last changed. A section of a document an agent wrote says so. Use it before answering anything the documents may cover; follow up with ragdown_read_doc for the surrounding text.",
-      inputSchema: {
+      inputSchema: fields(onlyFolder, {
         query: z.string().min(1).describe("What to look for, as a question or keywords"),
         top_k: z.number().int().min(1).max(defaults.maxTopK).default(8),
         path_prefix: z
           .string()
           .optional()
           .describe(
-            "Only search files under this subfolder, relative to the documents root, e.g. 'projects/'",
+            `Only search files under this subfolder, relative to ${base}, e.g. 'projects/'`,
           ),
         tag: z
           .string()
@@ -103,11 +144,11 @@ export function createMcpServer(
           .min(0)
           .optional()
           .describe("text format: characters per hit before it is clipped (0 = never)"),
-      },
+      }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     (args) =>
-      run(ready, async (rag) => {
+      inDocuments(args, async (rag) => {
         const hits = await rag.recall(
           args.query,
           args.top_k,
@@ -127,7 +168,7 @@ export function createMcpServer(
       title: "Context for a prompt",
       description:
         "For hooks that run before a turn: the documents related to a user prompt, as a ready-to-inject <ragdown-context> block, or empty text when nothing is similar enough. Unlike ragdown_recall it filters by min_score, skips short prompts and slash commands, and never returns a section twice for the same session_id. reset: true first forgets what that session was given; call it with an empty prompt after the client compacts or clears its context. format: 'claude-code' wraps the block as the JSON a Claude Code UserPromptSubmit hook adds to the prompt.",
-      inputSchema: {
+      inputSchema: fields(onlyFolder, {
         prompt: z.string().describe("The user's prompt, verbatim"),
         session_id: z
           .string()
@@ -172,11 +213,11 @@ export function createMcpServer(
           .min(1)
           .optional()
           .describe("Most characters in the block. Default RAGDOWN_HOOK_MAX_CHARS"),
-      },
+      }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     (args) =>
-      run(ready, async (rag) => {
+      inDocuments(args, async (rag) => {
         if (args.reset && args.session_id) {
           rag.forgetSession(args.session_id);
         }
@@ -201,20 +242,20 @@ export function createMcpServer(
       title: "Read a document",
       description:
         "Read a Markdown file from the documents folder, whole or by line range, straight from disk. Never clipped. Use it to see the context around a ragdown_recall hit, or to follow a [[wikilink]] in a document. The first line is 'path:start-end of total_lines (hash …)', the hash being the whole file's, for base_hash; the text follows from the second line, exactly as it is in the file.",
-      inputSchema: {
+      inputSchema: fields(inFolder, {
         path: z
           .string()
           .min(1)
           .describe(
-            "Path relative to the documents root, as returned by ragdown_recall, or a wikilink target as written inside [[...]] ('Note', 'Note#Heading', 'sub/Note'); a heading narrows the text to that section",
+            `Path relative to ${base}, as returned by ragdown_recall, or a wikilink target as written inside [[...]] ('Note', 'Note#Heading', 'sub/Note'); a heading narrows the text to that section`,
           ),
         start_line: z.number().int().min(1).optional(),
         end_line: z.number().int().min(1).optional(),
-      },
+      }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     (args) =>
-      run(ready, async (rag) =>
+      inScope(args, async (rag) =>
         formatDocument(await rag.readDocument(args.path, args.start_line, args.end_line)),
       ),
   );
@@ -225,12 +266,12 @@ export function createMcpServer(
       title: "Documents linking here",
       description:
         "The documents that link to a document — by [[wikilink]], alias, or relative Markdown link — each with the lines the links are on. Use it to find what depends on or refers to a document, e.g. before changing or superseding it.",
-      inputSchema: {
-        path: z.string().min(1).describe("Path of the document relative to the documents root"),
-      },
+      inputSchema: fields(inFolder, {
+        path: z.string().min(1).describe(`Path of the document relative to ${base}`),
+      }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    (args) => run(ready, (rag) => rag.backlinks(args.path)),
+    (args) => inScope(args, (rag) => rag.backlinks(args.path)),
   );
 
   register(
@@ -239,13 +280,11 @@ export function createMcpServer(
       title: "List documents",
       description:
         "Browse the documents rather than search them. Returns one line per document: its path, title, tags and last change, who wrote it and in which session when an agent did, and its description when its frontmatter has one. Optionally under a subfolder, with a tag, by who wrote it, or from one session. sort: 'recent' puts the most recently changed first.",
-      inputSchema: {
+      inputSchema: fields(onlyFolder, {
         path_prefix: z
           .string()
           .optional()
-          .describe(
-            "Only documents under this subfolder, relative to the documents root, e.g. 'projects/'",
-          ),
+          .describe(`Only documents under this subfolder, relative to ${base}, e.g. 'projects/'`),
         tag: z
           .string()
           .optional()
@@ -257,11 +296,11 @@ export function createMcpServer(
           .describe("Only documents written in this conversation, as ragdown_remember recorded it"),
         sort: z.enum(["path", "recent"]).default("path"),
         limit: z.number().int().min(1).max(1000).default(100),
-      },
+      }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     (args) =>
-      run(ready, async (rag) =>
+      inDocuments(args, async (rag) =>
         formatList(
           await rag.listDocuments({
             pathPrefix: args.path_prefix,
@@ -281,11 +320,25 @@ export function createMcpServer(
       title: "Index status",
       description:
         "The documents folder, index size (files, chunks), embedder, whether this process is the indexing primary, and the last sync. include_files lists every indexed file.",
-      inputSchema: { include_files: z.boolean().default(false) },
+      inputSchema: fields(onlyFolder, { include_files: z.boolean().default(false) }),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    (args) => run(ready, (rag) => rag.stats(args.include_files)),
+    (args) => inDocuments(args, (rag) => rag.stats(args.include_files)),
   );
+
+  if (root) {
+    register(
+      "ragdown_folders",
+      {
+        title: "List folders",
+        description:
+          "The folders the user's documents are kept in, one line each: its name, which is the folder argument of every other tool, its title, and how many documents it holds. Call it to choose where to search or where a new document belongs.",
+        inputSchema: {},
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      () => run(async () => formatFolders(await root.folders())),
+    );
+  }
 
   if (!readOnly) {
     register(
@@ -294,7 +347,7 @@ export function createMcpServer(
         title: "Write a document",
         description:
           "Save something worth keeping (a decision, a fix, a how-to) as a new Markdown document in the documents folder, indexed immediately so later searches find it. Never overwrites an existing file. When this document replaces an earlier one, pass that document's path as supersedes so searches stop returning the old version.",
-        inputSchema: {
+        inputSchema: fields(inFolder, {
           title: z.string().min(1),
           content: z
             .string()
@@ -317,11 +370,11 @@ export function createMcpServer(
             .string()
             .optional()
             .describe("Stable id of the conversation, recorded in the document's frontmatter"),
-        },
+        }),
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       (args) =>
-        run(ready, async (rag) =>
+        inScope(args, async (rag) =>
           formatRemembered(
             await rag.remember(args.title, args.content, args.tags, args.name, {
               supersedes: args.supersedes,
@@ -337,13 +390,11 @@ export function createMcpServer(
         title: "Rewrite or append to a document",
         description:
           "Rewrite or append to an existing document, or create one at a path you choose. To change part of a document, use ragdown_edit, which sends only the passages that change. By default text replaces the whole file (frontmatter included), which for an existing document needs base_hash: the hash ragdown_read_doc returned, so you never overwrite a version you have not read. A document this creates gets created_by: ragdown_write in its frontmatter, so the hash returned is of the file as written, not of text. append: true adds text at the end of the document, or with heading at the end of that section, leaving the rest as it is. If the file changed since base_hash, nothing is written: read it again and redo the edit.",
-        inputSchema: {
+        inputSchema: fields(inFolder, {
           path: z
             .string()
             .min(1)
-            .describe(
-              "Path of a Markdown file relative to the documents root, e.g. 'projects/alpha.md'",
-            ),
+            .describe(`Path of a Markdown file relative to ${base}, e.g. 'projects/alpha.md'`),
           text: z
             .string()
             .min(1)
@@ -363,11 +414,11 @@ export function createMcpServer(
             .describe(
               "Stable id of the conversation, recorded in the frontmatter of a document this creates",
             ),
-        },
+        }),
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       (args) =>
-        run(ready, async (rag) =>
+        inScope(args, async (rag) =>
           formatWritten(
             await rag.write(args.path, args.text, {
               append: args.append,
@@ -385,13 +436,11 @@ export function createMcpServer(
         title: "Edit a document",
         description:
           "Change part of an existing document without sending the rest of it: each edit swaps one exact passage (old_text) for another (new_text). old_text must match the document character for character, as ragdown_read_doc returned it, and be there exactly once unless replace_all is true, so include enough of the surrounding text to make it unique. Edits are made in order, each on the result of the one before, and if any of them does not apply nothing is written. An empty new_text deletes the passage. A passage that is not found is answered with the nearest one the document does have.",
-        inputSchema: {
+        inputSchema: fields(inFolder, {
           path: z
             .string()
             .min(1)
-            .describe(
-              "Path of a Markdown file relative to the documents root, e.g. 'projects/alpha.md'",
-            ),
+            .describe(`Path of a Markdown file relative to ${base}, e.g. 'projects/alpha.md'`),
           edits: z
             .array(
               z.object({
@@ -413,11 +462,11 @@ export function createMcpServer(
             .describe(
               "The hash from ragdown_read_doc. Optional: if the file changed since, nothing is written",
             ),
-        },
+        }),
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       (args) =>
-        run(ready, async (rag) =>
+        inScope(args, async (rag) =>
           formatEdited(
             await rag.edit(
               args.path,
@@ -438,12 +487,12 @@ export function createMcpServer(
         title: "Move or rename a document or subfolder",
         description:
           "Rename or move a document, or a subfolder with everything in it, to a new path inside the documents folder. Every link that pointed at what moved ([[wikilinks]] and relative Markdown links, in any document) is rewritten to still point at it, and the result names the documents that were updated. Never overwrites: if something is already at `to`, nothing moves. Use this rather than ragdown_write plus a delete, which would break the links.",
-        inputSchema: {
+        inputSchema: fields(inFolder, {
           from: z
             .string()
             .min(1)
             .describe(
-              "Path of the document or subfolder relative to the documents root, e.g. 'ops/pg.md' or 'ops'",
+              `Path of the document or subfolder relative to ${base}, e.g. 'ops/pg.md' or 'ops'`,
             ),
           to: z
             .string()
@@ -451,10 +500,10 @@ export function createMcpServer(
             .describe(
               "Its whole new path, name included: 'db/postgres.md', not 'db/'. Missing subfolders on the way are created. A document keeps a Markdown extension",
             ),
-        },
+        }),
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
-      (args) => run(ready, async (rag) => formatMoved(await rag.move(args.from, args.to))),
+      (args) => inScope(args, async (rag) => formatMoved(await rag.move(args.from, args.to))),
     );
 
     register(
@@ -463,12 +512,12 @@ export function createMcpServer(
         title: "Delete a document or subfolder",
         description:
           "Permanently delete a document, or a subfolder, from the documents folder and the index. There is no trash and no undo. Call ragdown_backlinks first: links to a deleted document are left as they are, pointing at nothing. When a document is out of date rather than unwanted, prefer ragdown_remember with supersedes, which keeps the old text readable. A subfolder that holds anything is deleted only with recursive: true. Pass base_hash to delete a document only if it is still the version you read.",
-        inputSchema: {
+        inputSchema: fields(inFolder, {
           path: z
             .string()
             .min(1)
             .describe(
-              "Path of the document or subfolder relative to the documents root, e.g. 'ops/pg.md' or 'ops'",
+              `Path of the document or subfolder relative to ${base}, e.g. 'ops/pg.md' or 'ops'`,
             ),
           recursive: z
             .boolean()
@@ -482,7 +531,7 @@ export function createMcpServer(
             .describe(
               "For a document: the hash ragdown_read_doc returned. If the file changed since, nothing is deleted",
             ),
-        },
+        }),
         annotations: {
           readOnlyHint: false,
           destructiveHint: true,
@@ -491,7 +540,7 @@ export function createMcpServer(
         },
       },
       (args) =>
-        run(ready, async (rag) => {
+        inScope(args, async (rag) => {
           const removed = await rag.remove(args.path, args.recursive, args.base_hash);
           return `deleted ${removed.path}`;
         }),
@@ -506,20 +555,51 @@ export function createMcpServer(
         inputSchema: { full: z.boolean().default(false) },
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
-      (args) => run(ready, (rag) => rag.sync(args.full)),
+      (args) => inDocuments(args, (rag) => rag.sync(args.full)),
     );
+
+    if (root) {
+      register(
+        "ragdown_create_folder",
+        {
+          title: "Create a folder",
+          description:
+            "Make a new, empty folder for documents on a subject no existing folder covers. Call ragdown_folders first: a document that fits a folder that is already there belongs in it. Never overwrites: a name that is taken is refused. Folders are renamed and deleted by the user, not here.",
+          inputSchema: {
+            name: z
+              .string()
+              .min(1)
+              .describe(
+                "The folder's name, and its directory's: letters, digits, space, _ . -; up to 64 characters",
+              ),
+            title: z
+              .string()
+              .optional()
+              .describe("What the folder is shown as, when its name alone does not say"),
+          },
+          annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+        },
+        (args) =>
+          run(async () => {
+            const made = await root.createFolder(args.name, args.title);
+            return `created folder ${made.name}`;
+          }),
+      );
+    }
   }
 
   return server;
 }
 
+/** The `folder` a call named. Only the root's schemas have one, so anywhere else there is none. */
+function folderOf(args: object): string | undefined {
+  return "folder" in args && typeof args.folder === "string" ? args.folder : undefined;
+}
+
 /** A tool failure is a result the model can read, never a transport error. */
-async function run(
-  ready: Promise<Scope>,
-  body: (rag: Scope) => Promise<unknown>,
-): Promise<CallToolResult> {
+async function run(body: () => Promise<unknown>): Promise<CallToolResult> {
   try {
-    const result = await body(await ready);
+    const result = await body();
     const text = typeof result === "string" ? result : JSON.stringify(result);
     return { content: [{ type: "text", text }] };
   } catch (error) {

@@ -1,3 +1,4 @@
+import type { Root } from "../documents/root.ts";
 import type { Scope } from "../documents/scope.ts";
 import { shortHash } from "../shared/content-hash.ts";
 
@@ -7,6 +8,7 @@ type Edited = Awaited<ReturnType<Scope["edit"]>>;
 type Remembered = Awaited<ReturnType<Scope["remember"]>>;
 type Moved = Awaited<ReturnType<Scope["move"]>>;
 type Listed = Awaited<ReturnType<Scope["listDocuments"]>>;
+type Folders = Awaited<ReturnType<Root["folders"]>>;
 
 /**
  * What the document tools answer an agent with: text, since a model reads it and pays for every
@@ -70,5 +72,23 @@ function formatListed(doc: Listed["documents"][number]): string {
     ...(doc.superseded_by ? [`superseded by ${doc.superseded_by.join(", ")}`] : []),
   ];
   const description = doc.description ? `: ${doc.description}` : "";
-  return `${doc.path} — ${doc.title}${tags} (${notes.join(", ")})${description}`;
+  const folder = doc.folder ? `[${doc.folder}] ` : "";
+  return `${folder}${doc.path} — ${doc.title}${tags} (${notes.join(", ")})${description}`;
+}
+
+/** The folders the root endpoint serves, one to a line, under a line that counts them. */
+export function formatFolders(folders: Folders): string {
+  if (folders.length === 0) {
+    return "No folders.";
+  }
+  return [`folders: ${folders.length}`, ...folders.map(formatFolder)].join("\n");
+}
+
+function formatFolder(folder: Folders[number]): string {
+  const title = folder.title === folder.name ? "" : ` — ${folder.title}`;
+  const notes = [
+    `${folder.files} ${folder.files === 1 ? "document" : "documents"}`,
+    ...(folder.created_by ? [`made by an agent with ${folder.created_by}`] : []),
+  ];
+  return `${folder.name}${title} (${notes.join(", ")})`;
 }

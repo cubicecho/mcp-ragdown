@@ -4,7 +4,8 @@ mcp-ragdown is an MCP server over folders of Markdown files. It chunks the
 files by heading, embeds the chunks into a local LanceDB index (granite-small on ONNX Runtime by
 default), keeps that index in sync with the files, and serves hybrid search. Under `serve`, each
 top-level directory is a folder with its own `/mcp/<folder>` server, human-only until its
-`.ragdown.json` says `"mcp": true`; `stdio` serves the docs dir as one folder. The Markdown files
+`.ragdown.json` says `"mcp": true`, and with `RAGDOWN_ROOT_MCP` bare `/mcp` serves all of those at
+once, each tool taking a `folder`; `stdio` serves the docs dir as one folder. The Markdown files
 are the source of truth; the index is derived and disposable. Agents and hooks reach it only through
 MCP tools (`ragdown_context` is the one a hook calls); the `/api` routes serve the web UI alone.
 
@@ -42,6 +43,9 @@ is a "document" everywhere in the code; a "file" is anything on disk, attachment
     a client's path to them before a write, a delete or a download.
   - `links.ts`: Obsidian wikilink parsing and resolution within one folder. `headings.ts` and
     `attachments.ts` find a heading's lines and a folder's non-Markdown files.
+  - `root.ts`: `Root`, the documents as bare `/mcp` sees them: every folder with MCP on. A call
+    that names a folder is answered by that folder's `Scope`; search, listing, context and stats
+    with no folder are answered across them.
   - `scope.ts`: `Scope`, the documents as one endpoint sees them (a folder, or a subfolder of one):
     recall, reading, writing, listing, stats. Paths in and out are scope-relative. It delegates to
     `remember.ts` (a new document), `provenance.ts` (the `created_by` a write records),
@@ -64,9 +68,11 @@ is a "document" everywhere in the code; a "file" is anything on disk, attachment
 - `src/serving/`: the processes and their endpoints.
   - `engine.ts`: `Ragdown`. Primary/reader roles, the store, syncs, the session memory.
   - `primary.ts`: the unix-socket lock and request protocol (newline-delimited JSON).
-  - `mcp-tools.ts`: the MCP tools, including `ragdown_context` for hooks. `tool-results.ts` is the
+  - `mcp-tools.ts`: the MCP tools, including `ragdown_context` for hooks, over a `Scope` or the
+    `Root`: at the root each takes a `folder`, and `ragdown_folders` and `ragdown_create_folder`
+    exist. A folder endpoint's schemas must not change when the root's do. `tool-results.ts` is the
     text the document tools answer with: an agent pays for every character, so not JSON.
-  - `http.ts`: `serve` — the server, bearer auth, `/mcp/<folder>[/<sub...>]` and `/api/status`, and
+  - `http.ts`: `serve` — the server, bearer auth, `/mcp/<folder>[/<sub...>]`, bare `/mcp` when `root_mcp` is on, and `/api/status`, and
     the dispatch to one handler per resource: `api-folders.ts` (`/api/folders`, `/api/loose`),
     `api-documents.ts` (`/api/docs`, `/api/doc`, `/api/move`, `/api/search`, `/api/resolve`,
     `/api/backlinks`, `/api/file`) and `api-settings.ts` (`/api/settings`). `http-io.ts` is what

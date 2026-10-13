@@ -19,8 +19,13 @@ export const SETTINGS_FILE = ".ragdown.json";
 export interface FolderSettings {
   /** Shown in the UI and the MCP instructions; the directory name when unset. */
   title: string;
-  /** Whether `/mcp/<folder>` serves it. Off until someone turns it on: a new folder is human-only. */
+  /**
+   * Whether agents reach it, at `/mcp/<folder>` and through the root endpoint. Off until someone
+   * turns it on: a folder a person makes is human-only.
+   */
   mcp: boolean;
+  /** The tool an agent made the folder with (`created_by` in the file); empty when a person did. */
+  createdBy: string;
   /** The folder's own `ragdown_context` defaults: only the ones it sets, over `RAGDOWN_HOOK_*`. */
   hook: HookOverrides;
 }
@@ -61,6 +66,7 @@ export async function readSettings(dir: string, name: string): Promise<FolderSet
   return {
     title: typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : name,
     mcp: raw.mcp === true,
+    createdBy: typeof raw.created_by === "string" ? raw.created_by : "",
     hook: readHookOverrides(raw.hook),
   };
 }
@@ -233,6 +239,9 @@ async function writeSettings(
   }
   if (changes.mcp !== undefined) {
     next.mcp = changes.mcp;
+  }
+  if (changes.createdBy) {
+    next.created_by = changes.createdBy;
   }
   if (changes.hook !== undefined) {
     const hook = mergeHookChanges(isRecord(next.hook) ? next.hook : {}, changes.hook);

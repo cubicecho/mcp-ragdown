@@ -106,7 +106,7 @@ async function serve(config: Config): Promise<void> {
   // Listening before the model loads: /api/status answers `ready: false` rather than refusing.
   await new Promise<void>((done) => server.listen(config.http.port, done));
   console.error(
-    `[ragdown] http on :${config.http.port}/mcp/<folder> (docs: ${config.docsDir}, auth: ${config.http.secureLocalNet ? "off" : "bearer"})`,
+    `[ragdown] http on :${config.http.port}/mcp/<folder>${config.rootMcp ? " and /mcp" : ""} (docs: ${config.docsDir}, auth: ${config.http.secureLocalNet ? "off" : "bearer"})`,
   );
 
   const shutdown = async () => {

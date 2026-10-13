@@ -91,6 +91,11 @@ export interface Hit {
   createdBy: string;
   /** When the document's file last changed, as the index saw it. */
   mtimeMs: number;
+  /**
+   * The folder `path` is relative to, on a hit the root endpoint returns: there the caller names
+   * the folder again to read the document. Unset where the endpoint itself is the folder.
+   */
+  folder?: string;
 }
 
 interface Meta {
@@ -440,7 +445,8 @@ export class Store {
    * dense search is what finds the paragraph that answers a question in other words. A document
    * another document's frontmatter supersedes is left out, though `readDocument` still opens it.
    *
-   * @param pathPrefix - limits both retrievers to files under this relative path.
+   * @param pathPrefixes - limits both retrievers to files under any of these relative paths; an
+   *   empty list is nowhere to search, so it finds nothing.
    * @param tag - limits both to documents with this tag or one nested under it (`project` takes in
    *   `project/alpha`).
    * @param writtenBy - limits both to documents an agent wrote, or to the ones the user did.
@@ -448,10 +454,13 @@ export class Store {
   async search(
     query: string,
     limit: number,
-    pathPrefix?: string,
+    pathPrefixes?: string[],
     tag?: string,
     writtenBy?: WrittenBy,
   ): Promise<Hit[]> {
+    if (pathPrefixes?.length === 0) {
+      return [];
+    }
     const [queryVector] = await this.embedder.embed([query], "query");
     if (!queryVector) {
       return [];
@@ -463,7 +472,11 @@ export class Store {
     const superseded = await this.supersededPaths();
     const wantedTag = tag?.trim().replace(/^#+/, "").replace(/\/+$/, "").toLowerCase();
     const clauses = [
-      ...(pathPrefix ? [`starts_with(path, ${sqlString(pathPrefix)})`] : []),
+      ...(pathPrefixes
+        ? [
+            `(${pathPrefixes.map((prefix) => `starts_with(path, ${sqlString(prefix)})`).join(" OR ")})`,
+          ]
+        : []),
       ...(wantedTag
         ? [
             `(strpos(tags, ${sqlString(` ${wantedTag} `)}) > 0 OR strpos(tags, ${sqlString(` ${wantedTag}/`)}) > 0)`,

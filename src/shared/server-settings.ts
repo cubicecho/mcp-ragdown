@@ -24,6 +24,7 @@ export const SERVER_SETTINGS_FILE = ".ragdown-server.json";
 export interface ServerSettings {
   embedder?: string;
   watch?: boolean;
+  root_mcp?: boolean;
   text_limit?: number;
   hook?: HookOverrides;
 }
@@ -32,6 +33,7 @@ export interface ServerSettings {
 export interface SettingsChanges {
   embedder?: string | null;
   watch?: boolean | null;
+  root_mcp?: boolean | null;
   text_limit?: number | null;
   hook?: HookChanges;
 }
@@ -99,6 +101,12 @@ export function parseChanges(body: Record<string, unknown> | undefined): Setting
     }
     out.watch = body.watch;
   }
+  if (body?.root_mcp !== undefined) {
+    if (body.root_mcp !== null && typeof body.root_mcp !== "boolean") {
+      throw invalid("root_mcp must be true or false");
+    }
+    out.root_mcp = body.root_mcp;
+  }
   if (body?.text_limit !== undefined) {
     if (body.text_limit !== null && !isCount(body.text_limit)) {
       throw invalid("text_limit must be a non-negative integer");
@@ -123,6 +131,11 @@ export function applyChanges(saved: ServerSettings, changes: SettingsChanges): S
     delete out.watch;
   } else if (changes.watch !== undefined) {
     out.watch = changes.watch;
+  }
+  if (changes.root_mcp === null) {
+    delete out.root_mcp;
+  } else if (changes.root_mcp !== undefined) {
+    out.root_mcp = changes.root_mcp;
   }
   if (changes.text_limit === null) {
     delete out.text_limit;
@@ -150,6 +163,7 @@ export function applySettings(config: Config, saved: ServerSettings): void {
   config.saved = saved;
   config.embedder = saved.embedder ?? env.embedder;
   config.watch = saved.watch ?? env.watch;
+  config.rootMcp = saved.root_mcp ?? env.rootMcp;
   config.textLimit = saved.text_limit ?? env.textLimit;
   config.hook = resolveHook({}, saved.hook ?? {}, {
     ...env.hook,

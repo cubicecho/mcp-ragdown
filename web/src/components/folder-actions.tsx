@@ -12,14 +12,17 @@ import { useToast } from "@/components/ui/toast";
 import type { Folder } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import {
+  folderEndpoint,
   folderForm,
   folderNameError,
   folderPatch,
   getLastFolder,
   hookValueError,
+  type McpEndpoint,
   mcpAddCommand,
   mcpJsonEntry,
   mcpOffEverywhere,
+  ROOT_ENDPOINT,
   setLastFolder,
 } from "@/lib/folders";
 import { errorMessage, serverError } from "@/lib/form-errors";
@@ -393,23 +396,56 @@ export function DeleteFolder({ folder, onClose }: FolderDialogProps) {
  * the stored token in both when the server asks for one.
  */
 export function McpConfig({ folder, onClose }: FolderDialogProps) {
-  const status = useStatus();
-  const origin = window.location.origin;
-  const token = status.data?.auth_required ? getToken() : null;
-  const command = mcpAddCommand(folder, origin, token);
-  const json = mcpJsonEntry(folder, origin, token);
-
   return (
-    <DialogLayout
-      open
-      onOpenChange={closing(onClose)}
-      size="lg"
+    <ConnectAgent
+      endpoint={folderEndpoint(folder)}
       title={`Connect an agent to ${folder.title}`}
       description={
         folder.mcp
           ? "Either one adds this folder as its own MCP server."
           : "MCP is off for this folder, so its address answers 404 until you turn it on."
       }
+      onClose={onClose}
+    />
+  );
+}
+
+/** The same for the endpoint over every folder with MCP on, which one agent setup then covers. */
+export function RootMcpConfig({ onClose }: { onClose: () => void }) {
+  return (
+    <ConnectAgent
+      endpoint={ROOT_ENDPOINT}
+      title="Connect an agent to every folder"
+      description="Either one adds every folder with MCP on as one MCP server. The agent names a folder in each call, and can make new ones."
+      onClose={onClose}
+    />
+  );
+}
+
+function ConnectAgent({
+  endpoint,
+  title,
+  description,
+  onClose,
+}: {
+  endpoint: McpEndpoint;
+  title: string;
+  description: string;
+  onClose: () => void;
+}) {
+  const status = useStatus();
+  const origin = window.location.origin;
+  const token = status.data?.auth_required ? getToken() : null;
+  const command = mcpAddCommand(endpoint, origin, token);
+  const json = mcpJsonEntry(endpoint, origin, token);
+
+  return (
+    <DialogLayout
+      open
+      onOpenChange={closing(onClose)}
+      size="lg"
+      title={title}
+      description={description}
       contentSlot={
         <div className="flex flex-col gap-4">
           <Snippet label="Claude Code" text={command} />

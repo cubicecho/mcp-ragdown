@@ -62,9 +62,12 @@ describe("Indexer", () => {
     expect(hits[0]?.sources).toEqual(["dense", "lexical"]);
     expect(hits[0]?.similarity).toBeGreaterThan(0.3);
 
-    const scoped = await t.store.search("postgres", 5, "dev/");
+    const scoped = await t.store.search("postgres", 5, ["dev/"]);
     expect(scoped.map((h) => h.path)).toEqual(["dev/style.md"]);
-    expect(await t.store.search("postgres", 5, "it's/")).toEqual([]);
+    expect(await t.store.search("postgres", 5, ["it's/"])).toEqual([]);
+    const either = await t.store.search("postgres", 5, ["dev/", "ops/db"]);
+    expect(either.map((h) => h.path).sort()).toEqual(["dev/style.md", "ops/db.md"]);
+    expect(await t.store.search("postgres", 5, [])).toEqual([]);
   });
 
   it("shares one follow-up sync between callers that arrive mid-sync", async () => {
