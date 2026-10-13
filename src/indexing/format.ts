@@ -22,13 +22,14 @@ export function formatHit(hit: Hit, maxChars: number): string {
   const where = breadcrumb(hit.title, hit.heading);
   const tags = hit.tags.length > 0 ? ` [${hit.tags.map((tag) => `#${tag}`).join(" ")}]` : "";
   const author = hit.createdBy ? `, written by an agent with ${hit.createdBy}` : "";
-  const header = `${hit.path}:${hit.lineStart}-${hit.lineEnd} — ${where}${tags} (similarity ${hit.similarity.toFixed(2)}, changed ${day(hit.mtimeMs)}${author})`;
+  const header = `${place(hit)}:${hit.lineStart}-${hit.lineEnd} — ${where}${tags} (similarity ${hit.similarity.toFixed(2)}, changed ${day(hit.mtimeMs)}${author})`;
   return `${header}\n${clip(hit, maxChars)}`;
 }
 
 /** The JSON shape of a hit: snake_case, rounded, and without the internal id. */
 export function hitJson(hit: Hit) {
   return {
+    ...(hit.folder ? { folder: hit.folder } : {}),
     path: hit.path,
     title: hit.title,
     heading: hit.heading,
@@ -44,6 +45,11 @@ export function hitJson(hit: Hit) {
   };
 }
 
+/** Where a hit's document is: its path, after its folder's name when the search spanned folders. */
+function place(hit: Hit): string {
+  return hit.folder ? `[${hit.folder}] ${hit.path}` : hit.path;
+}
+
 /** The UTC day of a time, as `2026-09-15`. */
 function day(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
@@ -53,6 +59,7 @@ function clip(hit: Hit, maxChars: number): string {
   if (maxChars <= 0 || hit.text.length <= maxChars) {
     return hit.text;
   }
-  const call = `ragdown_read_doc {path: ${JSON.stringify(hit.path)}, start_line: ${hit.lineStart}, end_line: ${hit.lineEnd}}`;
+  const folder = hit.folder ? `folder: ${JSON.stringify(hit.folder)}, ` : "";
+  const call = `ragdown_read_doc {${folder}path: ${JSON.stringify(hit.path)}, start_line: ${hit.lineStart}, end_line: ${hit.lineEnd}}`;
   return `${hit.text.slice(0, maxChars)}… [clipped: ${maxChars} of ${hit.text.length} characters — ${call}]`;
 }

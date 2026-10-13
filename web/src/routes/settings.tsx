@@ -11,6 +11,7 @@ import {
   McpConfig,
   McpOffHint,
   RenameFolder,
+  RootMcpConfig,
 } from "@/components/folder-actions";
 import { EmptyState } from "@/components/page";
 import { PageLayout } from "@/components/page-layout";
@@ -127,7 +128,7 @@ export function SettingsPage() {
             </TabsContent>
             <TabsContent value="server" className="mt-0">
               <Section
-                description="What the index is doing, then how the server is set up. Each setting starts as an environment variable; the embedder, watching and the search defaults can be changed here, and a value saved here wins over its variable."
+                description="What the index is doing, then how the server is set up. Each setting starts as an environment variable; the embedder, watching, the /mcp address and the search defaults can be changed here, and a value saved here wins over its variable."
                 actionSlot={
                   writable && status.data ? (
                     <Button
@@ -338,9 +339,12 @@ function FolderRow({
         {formatCount(folder.files, "file")} · {formatCount(folder.chunks, "chunk")}
       </TableCell>
       <TableCell>
-        <Badge variant={folder.mcp ? "secondary" : "outline"}>
-          {folder.mcp ? "MCP" : "Human-only"}
-        </Badge>
+        <div className="flex flex-wrap gap-1">
+          <Badge variant={folder.mcp ? "secondary" : "outline"}>
+            {folder.mcp ? "MCP" : "Human-only"}
+          </Badge>
+          {folder.created_by ? <Badge variant="outline">Made by an agent</Badge> : null}
+        </div>
       </TableCell>
       <TableCell>
         <div className="flex justify-end gap-1">
@@ -497,63 +501,93 @@ function IndexStatusCard({ status, loading }: { status: Status | undefined; load
 
 /** How the index is set up: each row names its variable, and says when a saved value overrides it. */
 function IndexSettingsCard({ status, loading }: { status: Status | undefined; loading: boolean }) {
+  const [connecting, setConnecting] = useState(false);
   return (
-    <CardLayout
-      title="Index settings"
-      description="What is indexed, with which model, and how it is kept in sync."
-      loading={loading}
-      contentSlot={
-        status ? (
-          <DescriptionList
-            contentSlot={[
-              <PropertyRow
-                key="docs"
-                label="Docs directory"
-                value={
-                  <code className="break-all text-xs leading-5">{status.docs_dir ?? "—"}</code>
-                }
-                hint={<Env name="RAGDOWN_DOCS_DIR" />}
-              />,
-              <PropertyRow
-                key="embedder"
-                label="Embedder"
-                value={status.embedder ?? "—"}
-                hint={
-                  <>
-                    <Env
-                      name="RAGDOWN_EMBEDDER"
-                      saved={status.settings.saved.embedder !== undefined}
-                    />
-                    . A new one rebuilds the index, and wants its own hook minimum score.
-                  </>
-                }
-              />,
-              <PropertyRow
-                key="read-only"
-                label="Read-only"
-                value={status.read_only === undefined ? "—" : <YesNo value={status.read_only} />}
-                hint={
-                  <>
-                    <Env name="RAGDOWN_READ_ONLY" />. On, the MCP write tools are hidden.
-                  </>
-                }
-              />,
-              <PropertyRow
-                key="watch"
-                label="Watch for changes"
-                value={<YesNo value={status.settings.watch} />}
-                hint={
-                  <>
-                    <Env name="RAGDOWN_WATCH" saved={status.settings.saved.watch !== undefined} />.
-                    Off, the index syncs at start and on <Code>ragdown_reindex</Code> only.
-                  </>
-                }
-              />,
-            ]}
-          />
-        ) : null
-      }
-    />
+    <>
+      <CardLayout
+        title="Index settings"
+        description="What is indexed, with which model, how it is kept in sync, and how agents reach it."
+        loading={loading}
+        contentSlot={
+          status ? (
+            <DescriptionList
+              contentSlot={[
+                <PropertyRow
+                  key="docs"
+                  label="Docs directory"
+                  value={
+                    <code className="break-all text-xs leading-5">{status.docs_dir ?? "—"}</code>
+                  }
+                  hint={<Env name="RAGDOWN_DOCS_DIR" />}
+                />,
+                <PropertyRow
+                  key="embedder"
+                  label="Embedder"
+                  value={status.embedder ?? "—"}
+                  hint={
+                    <>
+                      <Env
+                        name="RAGDOWN_EMBEDDER"
+                        saved={status.settings.saved.embedder !== undefined}
+                      />
+                      . A new one rebuilds the index, and wants its own hook minimum score.
+                    </>
+                  }
+                />,
+                <PropertyRow
+                  key="read-only"
+                  label="Read-only"
+                  value={status.read_only === undefined ? "—" : <YesNo value={status.read_only} />}
+                  hint={
+                    <>
+                      <Env name="RAGDOWN_READ_ONLY" />. On, the MCP write tools are hidden.
+                    </>
+                  }
+                />,
+                <PropertyRow
+                  key="watch"
+                  label="Watch for changes"
+                  value={<YesNo value={status.settings.watch} />}
+                  hint={
+                    <>
+                      <Env name="RAGDOWN_WATCH" saved={status.settings.saved.watch !== undefined} />
+                      . Off, the index syncs at start and on <Code>ragdown_reindex</Code> only.
+                    </>
+                  }
+                />,
+                <PropertyRow
+                  key="root-mcp"
+                  label="Every folder at /mcp"
+                  value={<YesNo value={status.settings.root_mcp} />}
+                  hint={
+                    <>
+                      <Env
+                        name="RAGDOWN_ROOT_MCP"
+                        saved={status.settings.saved.root_mcp !== undefined}
+                      />
+                      . On, one MCP server covers every folder with MCP on, and agents can make
+                      folders.
+                    </>
+                  }
+                  actionSlot={
+                    status.settings.root_mcp ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setConnecting(true)}
+                        iconSlot={<Copy />}
+                        content="Copy MCP config"
+                      />
+                    ) : null
+                  }
+                />,
+              ]}
+            />
+          ) : null
+        }
+      />
+      {connecting ? <RootMcpConfig onClose={() => setConnecting(false)} /> : null}
+    </>
   );
 }
 

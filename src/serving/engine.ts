@@ -81,18 +81,19 @@ export class Ragdown {
    * Search the documents. Never waits for a sync: the first index of a large folder takes minutes,
    * and a partial answer (what is indexed so far) beats a hook that times out.
    *
-   * @param pathPrefix - limits the search to paths starting with this, relative to the docs folder.
+   * @param pathPrefixes - limits the search to paths starting with any of these, relative to the
+   *   docs folder.
    * @param tag - limits it to documents with this tag or one nested under it.
    * @param writtenBy - limits it to documents an agent wrote, or to the ones the user did.
    */
   async recall(
     query: string,
     topK: number,
-    pathPrefix?: string,
+    pathPrefixes?: string[],
     tag?: string,
     writtenBy?: WrittenBy,
   ): Promise<Hit[]> {
-    return this.store.search(query, topK, pathPrefix, tag, writtenBy);
+    return this.store.search(query, topK, pathPrefixes, tag, writtenBy);
   }
 
   /** The files the index knows about, with their titles, sorted by path. */

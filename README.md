@@ -131,8 +131,9 @@ A folder's settings live in `.ragdown.json` at its root, and the web UI edits th
   and `max_chars`. One it leaves out is the server's `RAGDOWN_HOOK_*` value, and an argument on the
   call still wins over both. It is read on each call, so an edit applies without a restart.
 
-There is no endpoint over every folder: bare `/mcp` is a 404 that says to pick one. Markdown loose
-in `RAGDOWN_DOCS_DIR`, outside every folder, is not indexed; the log and the web UI list it.
+Bare `/mcp` is a 404 that says to pick a folder, unless the root is turned on: see
+[Every folder at once](#every-folder-at-once). Markdown loose in `RAGDOWN_DOCS_DIR`, outside every
+folder, is not indexed; the log and the web UI list it.
 
 The web UI creates, edits, renames and deletes folders, and **Copy MCP config** on each one gives the
 `claude mcp add` line and the JSON `mcpServers` entry for it. Under `RAGDOWN_READ_ONLY` a folder's
@@ -152,6 +153,34 @@ the version that was opened: if the file changed on disk meanwhile — in Obsidi
 quietly losing either. Leaving with unsaved changes asks first.
 
 A folder keeps an agent focused, not out: one token opens every folder with MCP on.
+
+### Every folder at once
+
+With `RAGDOWN_ROOT_MCP=true`, or **Serve every folder at /mcp** under **Settings → Server**, bare
+`/mcp` is one MCP server, named `ragdown`, over every folder with MCP on. It saves setting an agent
+up once per folder, and it is the only place an agent can make a folder.
+
+```bash
+claude mcp add --transport http ragdown http://localhost:3300/mcp \
+  --header "Authorization: Bearer $RAGDOWN_TOKEN"
+```
+
+- The tools are the same, each with a `folder` argument, and paths stay relative to that folder
+  (`folder: "work", path: "backups.md"`). `ragdown_read_doc`, `ragdown_backlinks`,
+  `ragdown_remember`, `ragdown_write`, `ragdown_edit`, `ragdown_move` and `ragdown_delete` need
+  one. `ragdown_recall`, `ragdown_list`, `ragdown_context` and `ragdown_stats` cover every folder
+  when it is left out, and each result then names its folder: `[work] backups.md:7-9`.
+- A folder is still its own: wikilinks resolve inside it, a move stays inside it, and its `hook`
+  settings apply to a `ragdown_context` call that names it. A call that names none uses the
+  server's defaults and keeps its own per-session memory.
+- A human-only folder is not there: it is not searched, listed or counted, and naming it answers
+  as a folder that does not exist would.
+- `ragdown_folders` lists the folders. `ragdown_create_folder` makes one, with MCP on and
+  `"created_by": "ragdown_create_folder"` in its `.ragdown.json`, which the web UI shows as
+  **Made by an agent**. Agents cannot rename or delete a folder.
+
+Each folder's own `/mcp/<folder>` endpoint is unchanged, with no `folder` argument: an agent that
+should see one folder is still pointed at that one.
 
 ### Subfolders
 
@@ -240,12 +269,16 @@ middle. A hook that fails or takes longer than min-agent's 3 seconds only loses 
 | `ragdown_move` | Renames or moves a document, or a subfolder with everything in it, from `from` to `to`, and rewrites every wikilink and relative Markdown link that pointed at what moved. Returns the documents whose links it updated. Never overwrites what is already at `to`. |
 | `ragdown_delete` | Deletes a document or a subfolder at `path`, for good: there is no trash. A subfolder that holds anything needs `recursive: true`, and then goes with its attachments too. Links to a deleted document are left as they are. With `base_hash` (the `hash` `ragdown_read_doc` gave), a document is deleted only if it has not changed since. |
 | `ragdown_reindex` | Syncs now; `full: true` re-embeds everything. |
+| `ragdown_folders` | At `/mcp` only: the folders with MCP on, one line each with its name, title and how many documents it holds. |
+| `ragdown_create_folder` | At `/mcp` only: makes an empty folder from a `name` and an optional `title`, with MCP on. Never overwrites, and the name follows the web UI's rules. |
 
 The write tools (`ragdown_remember`, `ragdown_write`, `ragdown_edit`, `ragdown_move`,
-`ragdown_delete`, `ragdown_reindex`) are not listed when `RAGDOWN_READ_ONLY=true`.
+`ragdown_delete`, `ragdown_reindex`, `ragdown_create_folder`) are not listed when
+`RAGDOWN_READ_ONLY=true`. At `/mcp` every tool but `ragdown_reindex` also takes a `folder`: see
+[Every folder at once](#every-folder-at-once).
 
 Every tool an agent is offered costs it context on every turn, used or not: the twelve descriptions
-together are about 15,000 characters. `RAGDOWN_DISABLED_TOOLS` leaves out the ones you name.
+together are about 15,000 characters, and `/mcp` adds two tools and a `folder` argument to those. `RAGDOWN_DISABLED_TOOLS` leaves out the ones you name.
 `ragdown_context,ragdown_stats,ragdown_reindex` is a fair set to drop for an agent that only reads
 and writes documents: the first is for hooks, and the other two are for whoever runs the server.
 Keep `ragdown_context` on a server a hook calls.
@@ -263,6 +296,7 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `RAGDOWN_EMBEDDING_URL` / `_API_KEY` | OpenAI | For `openai:<model>`. |
 | `RAGDOWN_THREADS` | half the cores | ONNX Runtime threads for the local model. |
 | `RAGDOWN_WATCH` | `true` | Watch the folder; without a watcher, sync on start and on `ragdown_reindex` only. |
+| `RAGDOWN_ROOT_MCP` | `false` | `serve` only. Serve every folder with MCP on as one server at `/mcp`, where agents can also make folders. See [Every folder at once](#every-folder-at-once). |
 | `RAGDOWN_READ_ONLY` | `false` | Hide the write tools, and refuse uploads, deletes and folder changes other than settings. |
 | `RAGDOWN_DISABLED_TOOLS` | none | Tools to leave out, by name and comma-separated, such as `ragdown_stats,ragdown_reindex`. They are neither listed nor callable. See [Tools](#tools). |
 | `RAGDOWN_NOTES_DIR` | `notes` | Where `ragdown_remember` writes, relative to each folder (a subfolder endpoint writes into the subfolder). A relative path inside the folder, not a dot-folder. |
@@ -273,10 +307,10 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `RAGDOWN_HOOK_MAX_CHARS` | `6000` | `ragdown_context`: most characters per prompt. |
 | `PORT` | `3000` | `serve` only. The HTTP port. |
 | `HTTP_KEEP_ALIVE_TIMEOUT_MS` | `75000` | `serve` only. How long an idle client connection is kept open. Above the 60 s nginx and ALB hold theirs; raise it behind a proxy that holds longer. `0` never closes one. |
-| `RAGDOWN_TOKEN` | — | `serve` only. The bearer token `/mcp/<folder>` and the web UI's `/api` routes require. |
+| `RAGDOWN_TOKEN` | — | `serve` only. The bearer token `/mcp`, `/mcp/<folder>` and the web UI's `/api` routes require. |
 | `SECURE_LOCAL_NET` | `false` | `serve` only. Skip the token on a trusted network. `serve` refuses to start with neither. |
 
-Under `serve`, the embedder, watching, the characters per hit and the four `ragdown_context`
+Under `serve`, the embedder, watching, the `/mcp` root, the characters per hit and the four `ragdown_context`
 defaults can also be changed while the server runs, under **Settings → Server** in the web UI. What
 is saved there is kept in `.ragdown-server.json` in the docs directory and wins over the variable of
 the same setting, at once and after every restart, until it is cleared there; the variable is the
@@ -294,9 +328,10 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 
 | Route | Auth | |
 | --- | --- | --- |
-| `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. `settings` holds the non-secret tuning values (`RAGDOWN_EMBEDDER`, `RAGDOWN_WATCH`, `RAGDOWN_TEXT_LIMIT`, `RAGDOWN_HOOK_*`) for the web UI's Settings page: the ones in effect, the ones `saved` there, and what the `env` says. |
-| `/mcp/<folder>[/<subfolder...>]` | bearer | Streamable HTTP MCP, stateless, for a folder with MCP on. 404 otherwise, and for bare `/mcp`. See [Folders](#folders). |
-| `GET /api/folders` | bearer | Each folder's `name`, `title`, `mcp`, `mcp_path`, `files` and `chunks`, and `loose_files`: the Markdown outside every folder. |
+| `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. `settings` holds the non-secret tuning values (`RAGDOWN_EMBEDDER`, `RAGDOWN_WATCH`, `RAGDOWN_ROOT_MCP`, `RAGDOWN_TEXT_LIMIT`, `RAGDOWN_HOOK_*`) for the web UI's Settings page: the ones in effect, the ones `saved` there, and what the `env` says. |
+| `/mcp/<folder>[/<subfolder...>]` | bearer | Streamable HTTP MCP, stateless, for a folder with MCP on. 404 otherwise. See [Folders](#folders). |
+| `/mcp` | bearer | The same over every folder with MCP on, while `RAGDOWN_ROOT_MCP` is on. 404 otherwise. See [Every folder at once](#every-folder-at-once). |
+| `GET /api/folders` | bearer | Each folder's `name`, `title`, `mcp`, `mcp_path`, `files` and `chunks`, with `created_by` on one an agent made, and `loose_files`: the Markdown outside every folder. |
 | `POST /api/folders` | bearer | Create a folder: JSON `{ name, title?, mcp? }`. 201; 409 when it exists, 400 for a bad name. |
 | `PATCH /api/folders/<name>` | bearer | JSON `{ title?, mcp?, hook?, name? }`: change its settings, or rename it with `name` (which re-indexes it). `hook` takes any of `top_k`, `min_score`, `min_ratio` and `max_chars`; `null` takes the folder's own value away. Unknown keys in `.ragdown.json` are kept. |
 | `DELETE /api/folders/<name>?confirm=<name>` | bearer | Delete a folder and everything in it. 400 unless `confirm` repeats the name. |
@@ -330,7 +365,8 @@ hold no documents, so they need none; everything it shows comes from the bearer 
    indexed by `serve`; the log and the web UI list them.
 2. **Turn MCP on for each folder** agents should reach, under **Settings → Folders** or with
    `"mcp": true` in its `.ragdown.json`. Every folder starts human-only.
-3. **Point clients at `/mcp/<folder>`.** `/mcp` no longer serves anything. A 4.x scope URL
+3. **Point clients at `/mcp/<folder>`.** `/mcp` serves nothing unless `RAGDOWN_ROOT_MCP` is on (6.2 and
+   later: [Every folder at once](#every-folder-at-once)). A 4.x scope URL
    `/mcp/<folder>/<sub>` keeps working once `<folder>` has MCP on.
 4. **`RAGDOWN_NOTES_DIR` is relative to each folder**: `notes` now means `<folder>/notes`.
 

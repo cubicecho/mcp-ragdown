@@ -142,5 +142,7 @@ function summarize(folder: Folder, files: Map<string, FileState>) {
     mcp_path: `/mcp/${encodeURIComponent(folder.name)}`,
     files: count,
     chunks,
+    // Only on a folder an agent made, with the tool that made it.
+    ...(folder.createdBy ? { created_by: folder.createdBy } : {}),
   };
 }

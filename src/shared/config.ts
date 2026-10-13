@@ -34,6 +34,8 @@ export interface Config {
   /** `RAGDOWN_DISABLED_TOOLS`: MCP tools this server leaves out, by name. */
   disabledTools: string[];
   watch: boolean;
+  /** Whether bare `/mcp` serves every folder with MCP on, each tool taking a `folder`. `serve` only. */
+  rootMcp: boolean;
   /** Where `ragdown_remember` writes, relative to the folder, `/`-separated; never climbs out of it. */
   notesDir: string;
   textLimit: number;
@@ -50,11 +52,13 @@ export interface Config {
   hook: HookSettings;
   /**
    * What the environment said for the settings the web UI can change. `embedder`, `watch`,
-   * `textLimit` and `hook` above are these with `saved` laid over them (`server-settings.ts`).
+   * `rootMcp`, `textLimit` and `hook` above are these with `saved` laid over them
+   * (`server-settings.ts`).
    */
   env: {
     embedder: string;
     watch: boolean;
+    rootMcp: boolean;
     textLimit: number;
     /** `minScore` is null when `RAGDOWN_HOOK_MIN_SCORE` is unset and the embedder's own applies. */
     hook: { topK: number; minScore: number | null; minRatio: number; maxChars: number };
@@ -113,6 +117,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
   }
 
   const watch = bool(env, "RAGDOWN_WATCH", true);
+  const rootMcp = bool(env, "RAGDOWN_ROOT_MCP", false);
   const textLimit = int(env, "RAGDOWN_TEXT_LIMIT", defaults.textLimit);
   const explicitMinScore =
     env.RAGDOWN_HOOK_MIN_SCORE === undefined || env.RAGDOWN_HOOK_MIN_SCORE === ""
@@ -142,6 +147,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
       .map((name) => name.trim())
       .filter(Boolean),
     watch,
+    rootMcp,
     notesDir: notesDir === "." ? "" : notesDir.replace(/\/+$/, ""),
     textLimit,
     http: {
@@ -154,7 +160,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
       ...hook,
       minScore: explicitMinScore ?? embedderMinScore(embedder),
     },
-    env: { embedder, watch, textLimit, hook: { ...hook, minScore: explicitMinScore } },
+    env: { embedder, watch, rootMcp, textLimit, hook: { ...hook, minScore: explicitMinScore } },
     saved: {},
   };
 }

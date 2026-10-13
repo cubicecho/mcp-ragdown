@@ -56,12 +56,18 @@ export class Scope {
    * it.
    */
   readonly folder: string;
+  /**
+   * Whether every hit and listed document carries the folder's name: on for a scope the root
+   * endpoint picked by a `folder` argument, which the caller has to pass again to read a document.
+   */
+  readonly tagged: boolean;
 
-  constructor(rag: Ragdown, dir = "") {
+  constructor(rag: Ragdown, dir = "", tagged = false) {
     this.rag = rag;
     this.dir = dir;
     this.root = resolve(rag.config.docsDir, dir);
     this.folder = rag.config.mode === "folders" ? (dir.split("/")[0] ?? "") : "";
+    this.tagged = tagged;
   }
 
   get config() {
@@ -87,11 +93,11 @@ export class Scope {
     const hits = await this.rag.recall(
       query,
       topK,
-      folder ? `${folder}/` : undefined,
+      folder ? [`${folder}/`] : undefined,
       tag,
       writtenBy,
     );
-    return hits.map((hit) => ({ ...hit, path: this.toScoped(hit.path) }));
+    return hits.map((hit) => ({ ...hit, path: this.toScoped(hit.path), ...this.folderTag() }));
   }
 
   /**
@@ -114,7 +120,7 @@ export class Scope {
       settings: resolveHook(options, own, this.config.hook),
       textLimit: this.config.textLimit,
       seenBy: () =>
-        sessionId ? this.rag.sessions.seen(this.sessionKey(sessionId)) : new Set<string>(),
+        sessionId ? this.rag.sessions.seen(sessionKey(this.dir, sessionId)) : new Set<string>(),
       recall: (query, topK) => this.recall(query, topK),
     });
   }
@@ -125,12 +131,7 @@ export class Scope {
    * returns them again when they are next related.
    */
   forgetSession(sessionId: string): void {
-    this.rag.sessions.forget(this.sessionKey(sessionId));
-  }
-
-  /** A session's key in the shared session memory: each scope remembers its own. */
-  private sessionKey(sessionId: string): string {
-    return `${this.dir}\0${sessionId}`;
+    this.rag.sessions.forget(sessionKey(this.dir, sessionId));
   }
 
   /**
@@ -573,6 +574,7 @@ export class Scope {
     return {
       total: docs.length,
       documents: docs.slice(0, options.limit ?? docs.length).map((doc) => ({
+        ...this.folderTag(),
         path: this.toScoped(doc.path),
         title: doc.title,
         ...(doc.description ? { description: doc.description } : {}),
@@ -707,6 +709,20 @@ export class Scope {
   private toScoped(path: string): string {
     return this.dir ? path.slice(this.dir.length + 1) : path;
   }
+
+  /** `folder` on what a tagged scope returns, and nothing on what any other does. */
+  private folderTag(): { folder?: string } {
+    return this.tagged ? { folder: this.folder } : {};
+  }
+}
+
+/**
+ * A session's key in the shared session memory: each scope remembers its own.
+ *
+ * @param dir - the scope's directory relative to the docs root; empty for every folder at once.
+ */
+export function sessionKey(dir: string, sessionId: string): string {
+  return `${dir}\0${sessionId}`;
 }
 
 /**
@@ -714,8 +730,13 @@ export class Scope {
  * a symlink, or a dot-folder or `node_modules` — anything the indexer would not walk into.
  *
  * @param dir - the folder relative to the docs root, `/`-separated; empty for the root.
+ * @param tagged - as `Scope.tagged`: whether what the scope returns names its folder.
  */
-export async function openScope(rag: Ragdown, dir: string): Promise<Scope | undefined> {
+export async function openScope(
+  rag: Ragdown,
+  dir: string,
+  tagged = false,
+): Promise<Scope | undefined> {
   const segments = dir.split("/").filter(Boolean);
   if (segments.some((segment) => !isIndexedName(segment))) {
     return undefined;
@@ -735,11 +756,11 @@ export async function openScope(rag: Ragdown, dir: string): Promise<Scope | unde
       return undefined;
     }
   }
-  return new Scope(rag, normalized);
+  return new Scope(rag, normalized, tagged);
 }
 
 /** `path_prefix` as a folder: `./projects/` and `projects` both mean files under `projects/`. */
-function normalizeFolder(prefix: string | undefined): string {
+export function normalizeFolder(prefix: string | undefined): string {
   if (!prefix) {
     return "";
   }

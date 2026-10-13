@@ -89,20 +89,29 @@ export function setLastFolder(name: string | null) {
   }
 }
 
-/** The MCP server name an agent sees the folder under, which is also the server's own name. */
-export const mcpServerName = (folder: Folder) => `ragdown-${folder.name}`;
+/** An MCP address an agent can be pointed at: the name the server gives itself, and its path. */
+export type McpEndpoint = { serverName: string; path: string };
+
+/** A folder's own endpoint. */
+export const folderEndpoint = (folder: Folder): McpEndpoint => ({
+  serverName: `ragdown-${folder.name}`,
+  path: folder.mcp_path,
+});
+
+/** The endpoint over every folder with MCP on, served while the `root_mcp` setting is on. */
+export const ROOT_ENDPOINT: McpEndpoint = { serverName: "ragdown", path: "/mcp" };
 
 /** Quoted for a POSIX shell when it has to be. */
 function shellWord(word: string): string {
   return /^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`;
 }
 
-/** `claude mcp add` for the folder's endpoint, with the bearer header when there is one. */
-export function mcpAddCommand(folder: Folder, origin: string, token: string | null): string {
+/** `claude mcp add` for an endpoint, with the bearer header when there is one. */
+export function mcpAddCommand(endpoint: McpEndpoint, origin: string, token: string | null): string {
   const words = [
     "claude mcp add --transport http",
-    shellWord(mcpServerName(folder)),
-    shellWord(`${origin}${folder.mcp_path}`),
+    shellWord(endpoint.serverName),
+    shellWord(`${origin}${endpoint.path}`),
   ];
   if (token) {
     const header = `Authorization: Bearer ${token}`;
@@ -113,13 +122,13 @@ export function mcpAddCommand(folder: Folder, origin: string, token: string | nu
 }
 
 /** The same endpoint as an `mcpServers` entry, for `.mcp.json` and the clients that read one. */
-export function mcpJsonEntry(folder: Folder, origin: string, token: string | null): string {
+export function mcpJsonEntry(endpoint: McpEndpoint, origin: string, token: string | null): string {
   return JSON.stringify(
     {
       mcpServers: {
-        [mcpServerName(folder)]: {
+        [endpoint.serverName]: {
           type: "http",
-          url: `${origin}${folder.mcp_path}`,
+          url: `${origin}${endpoint.path}`,
           ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
         },
       },

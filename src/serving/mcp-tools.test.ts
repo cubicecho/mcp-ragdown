@@ -4,6 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it } from "vitest";
+import { Root } from "../documents/root.ts";
 import { Scope } from "../documents/scope.ts";
 import { contentHash } from "../shared/content-hash.ts";
 import { tempSetup } from "../shared/testing.ts";
@@ -56,6 +57,40 @@ async function connect(env: Record<string, string> = {}) {
     return { count, lines, paths: lines.map((line) => line.split(" — ")[0]) };
   };
   return { ...t, rag, client, call, read, list };
+}
+
+/** The root's tools over three folders: `ops` and `dev` with MCP on, and `private` without. */
+async function connectRoot(env: Record<string, string> = {}) {
+  const t = await tempSetup(env, "folders");
+  closers.push(t.cleanup);
+  await t.write("ops/.ragdown.json", JSON.stringify({ title: "Operations", mcp: true }));
+  await t.write("ops/backups.md", "# Backups\n\nRun pg_restore twice on postgres.");
+  await t.write("dev/.ragdown.json", JSON.stringify({ mcp: true }));
+  await t.write("dev/style.md", "# Style\n\nPostgres names are snake_case. See [[backups]].");
+  await t.write("private/diary.md", "# Diary\n\nPostgres kept me up all night.");
+  const rag = await Ragdown.start(t.config);
+  closers.push(() => rag.close());
+  await rag.sync(false);
+
+  const server = createMcpServer(new Root(rag), t.config);
+  const client = new Client({ name: "test", version: "0" });
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
+  closers.push(() => client.close());
+
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const result = (await client.callTool({ name, arguments: args })) as CallToolResult;
+    const first = result.content[0];
+    return { isError: result.isError === true, text: first?.type === "text" ? first.text : "" };
+  };
+  /** The `[folder] path` of each hit of a search for "postgres". */
+  const found = async (args: Record<string, unknown> = {}) => {
+    const { text } = await call("ragdown_recall", { query: "postgres", format: "json", ...args });
+    return (JSON.parse(text).hits as { folder: string; path: string }[])
+      .map((hit) => `[${hit.folder}] ${hit.path}`)
+      .sort();
+  };
+  return { ...t, rag, client, call, found };
 }
 
 /** The short hash a read or a write names in its result. */
@@ -651,5 +686,186 @@ describe("MCP server", () => {
       syncing: false,
     });
     expect(stats.file_list).toEqual([{ path: "ops/backups.md", chunks: 2 }]);
+  });
+});
+
+describe("MCP server at the root", () => {
+  it("adds the folder tools, and a folder argument to every tool but reindex", async () => {
+    const t = await connectRoot();
+    const tools = (await t.client.listTools()).tools;
+    expect(tools.map((tool) => tool.name).sort()).toEqual([
+      "ragdown_backlinks",
+      "ragdown_context",
+      "ragdown_create_folder",
+      "ragdown_delete",
+      "ragdown_edit",
+      "ragdown_folders",
+      "ragdown_list",
+      "ragdown_move",
+      "ragdown_read_doc",
+      "ragdown_recall",
+      "ragdown_reindex",
+      "ragdown_remember",
+      "ragdown_stats",
+      "ragdown_write",
+    ]);
+    const takesFolder = (required: boolean) =>
+      tools
+        .filter((tool) => "folder" in (tool.inputSchema.properties ?? {}))
+        .filter((tool) => (tool.inputSchema.required ?? []).includes("folder") === required)
+        .map((tool) => tool.name)
+        .sort();
+    expect(takesFolder(true)).toEqual([
+      "ragdown_backlinks",
+      "ragdown_delete",
+      "ragdown_edit",
+      "ragdown_move",
+      "ragdown_read_doc",
+      "ragdown_remember",
+      "ragdown_write",
+    ]);
+    expect(takesFolder(false)).toEqual([
+      "ragdown_context",
+      "ragdown_list",
+      "ragdown_recall",
+      "ragdown_stats",
+    ]);
+    expect(t.client.getServerVersion()?.name).toBe("ragdown");
+    expect(t.client.getInstructions()).toContain("ragdown_folders");
+
+    // A folder's own endpoint has no such argument: the endpoint is the folder.
+    const folder = await connect();
+    for (const tool of (await folder.client.listTools()).tools) {
+      expect(tool.inputSchema.properties ?? {}, tool.name).not.toHaveProperty("folder");
+    }
+
+    const readOnly = await connectRoot({ RAGDOWN_READ_ONLY: "true" });
+    const names = (await readOnly.client.listTools()).tools.map((tool) => tool.name);
+    expect(names).toContain("ragdown_folders");
+    expect(names).not.toContain("ragdown_create_folder");
+    const disabled = await connectRoot({ RAGDOWN_DISABLED_TOOLS: "ragdown_folders" });
+    expect((await disabled.client.listTools()).tools.map((tool) => tool.name)).not.toContain(
+      "ragdown_folders",
+    );
+  });
+
+  it("searches every folder with MCP on, or the one it is given, and never a human-only one", async () => {
+    const t = await connectRoot();
+    expect(await t.found()).toEqual(["[dev] style.md", "[ops] backups.md"]);
+    expect(await t.found({ folder: "ops" })).toEqual(["[ops] backups.md"]);
+    // The human-only folder is not crowded out of a short result: it was never searched.
+    expect(await t.found({ top_k: 2 })).toEqual(["[dev] style.md", "[ops] backups.md"]);
+
+    const text = await t.call("ragdown_recall", { query: "pg_restore", top_k: 1, max_chars: 5 });
+    expect(text.text).toMatch(/^\[1\] \[ops\] backups\.md:3-3 — Backups/);
+    expect(text.text).toContain('ragdown_read_doc {folder: "ops", path: "backups.md", start_line');
+
+    // A human-only folder answers exactly as a missing one does.
+    const hidden = await t.call("ragdown_recall", { query: "postgres", folder: "private" });
+    const missing = await t.call("ragdown_recall", { query: "postgres", folder: "nope" });
+    expect(hidden.isError).toBe(true);
+    expect(hidden.text).toContain("ragdown_folders");
+    expect(hidden.text.replace("private", "nope")).toBe(missing.text);
+  });
+
+  it("lists folders and documents, and counts only what an agent may see", async () => {
+    const t = await connectRoot();
+    expect((await t.call("ragdown_folders")).text).toBe(
+      ["folders: 2", "dev (1 document)", "ops — Operations (1 document)"].join("\n"),
+    );
+    const listed = (await t.call("ragdown_list")).text.split("\n");
+    expect(listed[0]).toBe("documents: 2");
+    expect(listed.slice(1).map((line) => line.split(" — ")[0])).toEqual([
+      "[dev] style.md",
+      "[ops] backups.md",
+    ]);
+    expect((await t.call("ragdown_list", { folder: "ops" })).text).toContain("[ops] backups.md");
+    expect((await t.call("ragdown_list", { limit: 1 })).text).toMatch(/^documents: 1 of 2\n/);
+
+    const stats = JSON.parse((await t.call("ragdown_stats", { include_files: true })).text);
+    expect(stats).toMatchObject({ folders: 2, files: 2, chunks: 2 });
+    expect(stats.file_list).toEqual([
+      { folder: "dev", path: "style.md", chunks: 1 },
+      { folder: "ops", path: "backups.md", chunks: 1 },
+    ]);
+    const one = JSON.parse((await t.call("ragdown_stats", { folder: "ops" })).text);
+    expect(one).toMatchObject({ scope: "ops", files: 1 });
+  });
+
+  it("reads and writes a document in the folder it is given, by a path inside that folder", async () => {
+    const t = await connectRoot();
+    const read = await t.call("ragdown_read_doc", { folder: "ops", path: "backups.md" });
+    expect(read.text).toMatch(/^backups\.md:1-3 of 3 /);
+    // No folder is a schema error, a human-only one a refusal; neither reads anything.
+    expect((await t.call("ragdown_read_doc", { path: "ops/backups.md" })).isError).toBe(true);
+    expect(
+      (await t.call("ragdown_read_doc", { folder: "private", path: "diary.md" })).isError,
+    ).toBe(true);
+    // A link is resolved inside its own folder, so `dev` has no `backups` to link to.
+    expect(
+      (await t.call("ragdown_backlinks", { folder: "ops", path: "backups.md" })).text,
+    ).not.toContain("style.md");
+
+    const written = await t.call("ragdown_write", {
+      folder: "dev",
+      path: "notes/naming.md",
+      text: "# Naming\n\nTables are plural.",
+    });
+    expect(written.isError).toBe(false);
+    expect(await readFile(join(t.docsDir, "dev/notes/naming.md"), "utf8")).toContain("plural");
+    const moved = await t.call("ragdown_move", {
+      folder: "dev",
+      from: "notes/naming.md",
+      to: "naming.md",
+    });
+    expect(moved.isError).toBe(false);
+    expect((await t.call("ragdown_list", { folder: "dev" })).text).toContain("[dev] naming.md");
+    expect((await t.call("ragdown_delete", { folder: "dev", path: "naming.md" })).text).toBe(
+      "deleted naming.md",
+    );
+  });
+
+  it("creates a folder an agent can use at once, and marks it as an agent's", async () => {
+    const t = await connectRoot();
+    expect(
+      (await t.call("ragdown_create_folder", { name: "research", title: "Research" })).text,
+    ).toBe("created folder research");
+    expect(JSON.parse(await readFile(join(t.docsDir, "research/.ragdown.json"), "utf8"))).toEqual({
+      title: "Research",
+      mcp: true,
+      created_by: "ragdown_create_folder",
+    });
+    expect((await t.call("ragdown_folders")).text).toContain(
+      "research — Research (0 documents, made by an agent with ragdown_create_folder)",
+    );
+    const remembered = await t.call("ragdown_remember", {
+      folder: "research",
+      title: "Vector indexes",
+      content: "IVF-PQ suits postgres-sized tables.",
+      name: "vectors",
+    });
+    expect(remembered.isError).toBe(false);
+    expect(await t.found({ folder: "research" })).toEqual(["[research] notes/vectors.md"]);
+
+    for (const name of ["research", "ops", "../up", ".hidden", "a/b"]) {
+      expect((await t.call("ragdown_create_folder", { name })).isError, name).toBe(true);
+    }
+  });
+
+  it("gives hook context from every folder, with a session memory of its own", async () => {
+    const t = await connectRoot();
+    const args = { prompt: "how do I run pg_restore on postgres?", session_id: "claude:1" };
+    const everywhere = await t.call("ragdown_context", args);
+    expect(everywhere.text).toMatch(/^<ragdown-context /);
+    expect(everywhere.text).toContain("[ops] backups.md");
+    expect(everywhere.text).not.toContain("diary.md");
+    // What the session was given across the folders is not what it was given in one of them.
+    expect((await t.call("ragdown_context", args)).text).not.toContain("[ops] backups.md");
+    expect((await t.call("ragdown_context", { ...args, folder: "ops" })).text).toContain(
+      "[ops] backups.md",
+    );
+    expect((await t.call("ragdown_context", { ...args, reset: true })).text).toContain(
+      "[ops] backups.md",
+    );
   });
 });
