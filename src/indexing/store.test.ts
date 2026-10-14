@@ -57,6 +57,40 @@ describe("Store", () => {
     expect(hits.some((hit) => hit.sources.includes("lexical"))).toBe(true);
   });
 
+  it("ranks the chunk that holds a name first when the query names it", async () => {
+    const t = await tempSetup();
+    cleanup = t.cleanup;
+    const embedder: Embedder = new HashEmbedder();
+    const store = await Store.open(t.config.dataDir, embedder, true);
+    const markdown = [
+      "# Scheduler",
+      "",
+      "## Batching",
+      "",
+      "The scheduler batches jobs; batch size and timeouts are tuned per environment.",
+      "",
+      "## Limits",
+      "",
+      "Set sched_max_batch to 500 in staging.",
+      "",
+      "## Timeouts",
+      "",
+      "Jobs in a batch time out after the scheduler's batch timeout.",
+    ].join("\n");
+    const chunks = chunkMarkdown(markdown, "scheduler.md");
+    const vectors = await embedder.embed(chunks.map(embeddingText), "document");
+    await store.apply(
+      [{ path: "scheduler.md", hash: "h", mtimeMs: 0, size: 0, chunks, vectors, supersedes: [] }],
+      [],
+    );
+
+    const hits = await store.search("what is `sched_max_batch` in the scheduler batch?", 5);
+    expect(hits[0]?.text).toContain("sched_max_batch");
+    // Fused by score, not rank: 0–1, where reciprocal rank never reaches 1/60.
+    expect(hits[0]?.score).toBeGreaterThan(0.5);
+    expect(hits[0]?.score).toBeLessThanOrEqual(1);
+  });
+
   it("builds no vector index for a folder of documents", async () => {
     const t = await tempSetup();
     cleanup = t.cleanup;

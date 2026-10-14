@@ -197,26 +197,26 @@ Dense 256→256 with exact GELU, LayerNorm, Dense 256→1) lives in safetensors 
 order in int8. Any shipped version has to do the same.
 
 `fusion.ts` found one change worth making and closed off two. Pool 32, as the hook asks for; three
-corpora (`BENCH_SEED` default, 42, 7); and the bench's own RRF reproduces `store.search`'s top 8 on
-every query, so the variants are compared against the real thing. Identifier probes are a token that
+corpora (`BENCH_SEED` default, 42, 7); and the bench's own routed fusion reproduces `store.search`'s
+top 8 on every query, so the variants are compared against the real thing. Identifier probes are a token that
 occurs in exactly one chunk, asked as "where is \`token\` used?":
 
 ```
                                   questions first         worst type      identifier probes first
                                   def    42     7         def  42   7     def    42     7
-dense only                        73.3  72.6  76.7                         6.9   7.8  12.7
-lexical only                      74.4  71.1  73.3                        79.2  83.5  83.3
-rrf k60 (shipped)                 76.7  74.1  78.1                        24.8  36.9  33.3
-rsf 0.5                           79.3  77.0  79.3      -10  -10  -3      51.5  64.1  60.8
-dbsf                              79.6  77.8  79.3       -7   -3  -3      53.5  62.1  64.7
-routed: rrf, or rsf 0.2           82.2  79.6  82.2        0    0   0      79.2  85.4  84.3
+dense only                        73.3  72.6  76.7                         7.6   8.4  13.7
+lexical only                      74.4  71.1  73.3                        77.2  82.1  82.1
+rrf k60 (before)                  76.7  74.1  78.1                        26.1  35.8  35.8
+rsf 0.5                           79.3  77.0  79.3      -10  -10  -3      55.4  69.5  65.3
+dbsf                              79.6  77.8  79.3       -7   -3  -3      57.6  67.4  69.5
+routed: rrf, or rsf 0.2 (shipped) 82.2  79.6  82.2        0    0   0      77.2  84.2  85.3
 ```
 
 Routing is the change. A query that looks like it holds an identifier (a backtick span, snake_case,
 a dotted, slashed or flag-shaped name, camelCase, a hyphenated name with a digit) is fused by RSF
 weighted 0.2 dense / 0.8 lexical; every other query keeps RRF unchanged. It gains 4–6 points on the
 questions with no type worse on any corpus — all of it from the questions that quote a command — and
-takes the identifier probes from a quarter or a third to above 80%, level with BM25 alone. The shipped
+takes the identifier probes from a quarter or a third to 77–85%, level with BM25 alone. The shipped
 fusion is worse there than either side alone would suggest: an exact identifier BM25 ranks first
 loses to chunks both retrievers half-agree on. The detector fired on every question that quotes a command
 and otherwise only on a version number ("after the 4.2 release"), which routing did not hurt. Real
@@ -229,9 +229,25 @@ The tokenizer is already right. `Index.fts()` with no options ranks identically 
 stop-word removal on every query of every corpus; turning stemming off or keeping stop words is no
 better and usually worse.
 
-None of it reaches the hook as it stands. `hookContext` takes the fused top 8, re-sorts by cosine
-and gates on it, so the right section is injected for 88% of questions under every fusion, and an
-identifier probe's chunk is injected only 6–26% of the time even when the fusion ranks it first:
-a chunk can hold the exact string and still sit below 0.8 cosine, or below 0.95 of the best hit.
-Routing is a `ragdown_recall` and web search change; the hook would need its own rule for exact
-matches.
+Fusion alone barely reaches the hook. `hookContext` takes the fused top 8, re-sorts by cosine and
+gates on it, so the right section is injected for 88% of questions under every fusion, and an
+identifier probe's chunk only 4–10% of the time even when the fusion ranks it first: a chunk can
+hold the exact string and still sit below 0.8 cosine, or below 0.95 of the best hit. So the hook has
+its own rule (`HOOK=1`): the best-ranked candidate holding a name the prompt quotes, whole, is
+injected first whatever its cosine. Gold injected / other chunks per prompt:
+
+```
+                                  questions            identifier probes     off-topic chunks
+                                  def   42    7        def    42     7       def  42   7
+routed, no rule                   88.5  88.5  87.8      6.5   7.4   4.2      0.2  0.1  0.1
+routed, best holder (shipped)     88.5  88.5  87.8    100.0 100.0 100.0      0.2  0.1  0.1
+routed, every holder              88.5  88.5  87.8    100.0 100.0 100.0      0.2  0.1  0.1
+rrf k60 (before), best holder     88.5  88.5  87.8     90.2  83.2  83.2      0.2  0.1  0.0
+
+other chunks per prompt, questions: no rule 2.28–2.40, best holder 2.44–2.53, every holder 2.57–2.66
+```
+
+Every probe's chunk is injected, questions lose nothing for about 0.15 more chunks a prompt, and the
+ten off-topic prompts, each quoting a name the corpus lacks, gain none: what they get is the gates'
+doing either way. Keeping every holder adds chunks and no recall. Routing and the rule need each
+other: without routing the holder is out of the top 8 a tenth to a sixth of the time.

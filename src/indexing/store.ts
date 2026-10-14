@@ -8,6 +8,7 @@ import { errorMessage } from "../shared/errors.ts";
 import { isRecord } from "../shared/json.ts";
 import { writeAtomic } from "../shared/write-atomic.ts";
 import type { Embedder } from "./embedder.ts";
+import { namesSomething } from "./identifiers.ts";
 
 const TABLE = "chunks";
 /** The meta file's permission bits: readable and writable by its owner only. */
@@ -79,7 +80,10 @@ export interface Hit {
   text: string;
   lineStart: number;
   lineEnd: number;
-  /** Fused rank score; only meaningful for ordering. */
+  /**
+   * Fused score; only meaningful for ordering within one search. Reciprocal rank, or 0–1 for a
+   * query that names something, which is fused by score.
+   */
   score: number;
   /** Cosine similarity of the query and the chunk, 0–1 for related text; comparable across queries. */
   similarity: number;
@@ -442,7 +446,9 @@ export class Store {
   /**
    * Hybrid search: nearest chunks by cosine similarity and best chunks by BM25, fused by reciprocal
    * rank. Lexical search is what finds an exact error string or flag name that an embedding blurs;
-   * dense search is what finds the paragraph that answers a question in other words. A document
+   * dense search is what finds the paragraph that answers a question in other words. A query that
+   * names something (`identifiers.ts`) is fused by score and weighted to BM25 instead: by rank, a
+   * chunk both sides half-agree on beats the one chunk that holds the name. A document
    * another document's frontmatter supersedes is left out, though `readDocument` still opens it.
    *
    * @param pathPrefixes - limits both retrievers to files under any of these relative paths; an
@@ -507,6 +513,7 @@ export class Store {
     }));
 
     let lexicalScored: ScoredRow[] = [];
+    const bm25 = new Map<string, number>();
     if (/[\p{L}\p{N}]/u.test(query)) {
       try {
         // On the chunk with its breadcrumb, as the dense side is. BM25 on the body alone loses
@@ -516,11 +523,14 @@ export class Store {
         if (where) {
           lexical = lexical.where(where);
         }
-        const rows = (await lexical.limit(pool).toArray()) as (HitRow & { vector: unknown })[];
-        lexicalScored = rows.map(({ vector, ...row }) => ({
-          ...row,
-          similarity: cosine(queryVector, vector),
-        }));
+        const rows = (await lexical.limit(pool).toArray()) as (HitRow & {
+          vector: unknown;
+          _score: number;
+        })[];
+        lexicalScored = rows.map(({ vector, _score, ...row }) => {
+          bm25.set(row.id, _score);
+          return { ...row, similarity: cosine(queryVector, vector) };
+        });
       } catch (error) {
         // A query the full-text parser rejects still has a dense answer; losing half the ranking
         // is better than failing the call.
@@ -532,22 +542,43 @@ export class Store {
     // nothing: the two agree to floating-point noise, both being the cosine of the query and that
     // chunk.
     const fused = new Map<string, { row: ScoredRow; score: number; sources: Hit["sources"] }>();
-    const addRanked = (rows: ScoredRow[], source: "dense" | "lexical") => {
+    const add = (
+      rows: ScoredRow[],
+      source: "dense" | "lexical",
+      score: (row: ScoredRow, rank: number) => number,
+    ) => {
       rows.forEach((row, rank) => {
         const entry = fused.get(row.id) ?? { row, score: 0, sources: [] };
-        entry.score += 1 / (defaults.rrfK + rank + 1);
+        entry.score += score(row, rank);
         entry.sources.push(source);
         fused.set(row.id, entry);
       });
     };
-    addRanked(denseScored, "dense");
-    addRanked(lexicalScored, "lexical");
+    if (namesSomething(query)) {
+      // Each side min-max normalised over its own list, a chunk it did not return counting as 0.
+      const weight = defaults.namedQueryDenseWeight;
+      const dense = normalise(denseScored.map((row) => row.similarity));
+      const lexical = normalise(lexicalScored.map((row) => bm25.get(row.id) ?? 0));
+      add(denseScored, "dense", (_, rank) => weight * (dense[rank] ?? 0));
+      add(lexicalScored, "lexical", (_, rank) => (1 - weight) * (lexical[rank] ?? 0));
+    } else {
+      const reciprocal = (_: ScoredRow, rank: number) => 1 / (defaults.rrfK + rank + 1);
+      add(denseScored, "dense", reciprocal);
+      add(lexicalScored, "lexical", reciprocal);
+    }
 
     return [...fused.values()]
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
       .map(({ row, score, sources }) => toHit(row, score, sources));
   }
+}
+
+/** Scores scaled to 0–1 by their own minimum and maximum; all of them 1 when they are equal. */
+function normalise(scores: number[]): number[] {
+  const low = Math.min(...scores);
+  const high = Math.max(...scores);
+  return scores.map((score) => (high > low ? (score - low) / (high - low) : 1));
 }
 
 function toHit(row: ScoredRow, score: number, sources: Hit["sources"]): Hit {

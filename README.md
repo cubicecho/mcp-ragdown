@@ -390,6 +390,16 @@ top-1 recall on a benchmark of 210 questions, and left the fused ranking below d
 own. Both return a pool, and reciprocal rank fusion (k = 60) merges them. Ranking uses the fused score.
 Filtering uses cosine similarity, because a fused score is not comparable across queries.
 
+**A query that names something leans on BM25.** A query holding a quoted command, a snake_case key,
+a dotted or slashed path, a flag, a camelCase name, or a word mixing letters and digits is fused by
+score instead: each side min-max normalised over its own pool, BM25 weighted 0.8. Rank fusion gives
+the dense side an equal vote, and the dense side ranks a chunk *about* the name's topic above the
+one chunk that holds it. On three generated corpora the chunk holding an identifier came first
+26–36% of the time under RRF and 77–85% routed, and top-1 over all 270 questions rose 4–6 points,
+with no question type worse. Plain prose (`up-to-date`, `e.g.`, `10:30`) is not routed. Weighting
+every query towards BM25, or fusing every query by score, gained 1–3 points and cost table-cell
+questions up to 10.
+
 **Choosing an embedder.** `RAGDOWN_EMBEDDER` picks one of three local models. They were measured on
 the same benchmark — 30 generated runbooks, 210 questions with a known answering section, identical
 chunks throughout — so only the model differs. Top-1 is how often the right section ranked first;
@@ -445,6 +455,16 @@ benchmark (`granite-small`, `min_score` 0.8, `top_k` 4, 210 questions plus 10 un
 
 Recall is flat from 0.96 down, so the default sits one step below the knee rather than on it: 0.95
 keeps everything an ungated hook found while still cutting a fifth of the injected chunks.
+
+**A quoted name passes both gates.** The hook re-sorts by cosine, so better fusion alone barely
+reaches it: a chunk that holds the exact command a prompt quotes can sit below `MIN_SCORE`, since
+everything around the name is prose the prompt does not share. So the best-ranked candidate holding
+a name the prompt quotes — whole, case-insensitively — is injected first whatever its cosine, and
+the gated hits follow it. Only one, and only a strong name: a plain word in backticks
+(`` `typescript` ``) or an unquoted version number does not count. On the three corpora the
+identifier's chunk was injected for 4–10% of identifier prompts before and 100% after; the 270
+questions were unchanged, for about 0.15 more chunks per prompt, and prompts quoting names no
+document holds got nothing more.
 
 **Superseding a document.** A document whose frontmatter lists `supersedes:` hides the documents it names from
 search and from hook context. Nothing is deleted or rewritten — the old file stays on disk and
