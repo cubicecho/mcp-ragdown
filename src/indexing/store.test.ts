@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { chunkMarkdown, embeddingText } from "../documents/chunk.ts";
 import { tempSetup } from "../shared/testing.ts";
 import { type Embedder, HashEmbedder } from "./embedder.ts";
-import { Store } from "./store.ts";
+import { callsByAlias, Store } from "./store.ts";
 
 let cleanup: (() => Promise<void>) | undefined;
 afterEach(async () => {
@@ -89,6 +89,39 @@ describe("Store", () => {
     // Fused by score, not rank: 0–1, where reciprocal rank never reaches 1/60.
     expect(hits[0]?.score).toBeGreaterThan(0.5);
     expect(hits[0]?.score).toBeLessThanOrEqual(1);
+  });
+
+  it("lifts the sections of a document the query calls by an alias", async () => {
+    const t = await tempSetup();
+    cleanup = t.cleanup;
+    const embedder: Embedder = new HashEmbedder();
+    const store = await Store.open(t.config.dataDir, embedder, true);
+    const update = async (path: string, title: string, aliases: string[], deploys: string) => {
+      const markdown = `# ${title}\n\nA batch job runner.\n\n## Deploys\n\n${deploys}`;
+      const chunks = chunkMarkdown(markdown, path);
+      const vectors = await embedder.embed(chunks.map(embeddingText), "document");
+      return { path, hash: path, mtimeMs: 0, size: 0, chunks, vectors, supersedes: [], aliases };
+    };
+    await store.apply(
+      [
+        await update(
+          "osprey.md",
+          "Osprey",
+          [],
+          "Production deploys: who approves production deploys.",
+        ),
+        await update("kestrel.md", "Kestrel", ["Vandor"], "The on-call lead approves deploys."),
+      ],
+      [],
+    );
+
+    const hits = await store.search("who approves production deploys of vandor?", 5);
+    // Osprey's section matches the words better; the alias is what puts Kestrel's first.
+    const deploys = hits.filter((hit) => hit.heading.endsWith("Deploys"));
+    expect(deploys.map((hit) => hit.path)).toEqual(["kestrel.md", "osprey.md"]);
+    expect(deploys[0]?.aliases).toEqual(["Vandor"]);
+    // Inside a longer word, it is not the alias.
+    expect(callsByAlias("who approves vandorx deploys?", ["Vandor"])).toBe(false);
   });
 
   it("builds no vector index for a folder of documents", async () => {

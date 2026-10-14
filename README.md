@@ -466,6 +466,16 @@ identifier's chunk was injected for 4–10% of identifier prompts before and 100
 questions were unchanged, for about 0.15 more chunks per prompt, and prompts quoting names no
 document holds got nothing more.
 
+**An alias passes both gates too.** A document's frontmatter aliases are in its first chunk's
+lexical text and nowhere in the embedding, so a query that calls a document by an alias found the
+right section first for under a third of questions. Search adds one rank-1 RRF share to every
+candidate of a document whose alias the query holds — whole, case-insensitively, three characters
+or more — and the hook injects the best-ranked such candidate whatever its cosine, as it does for a
+quoted name. On three generated corpora, each document given a codename alias, the right section
+came first for 83–85% of alias questions (98–99% in the top 8) and the hook injected it for 86–89%,
+against 32–38%; questions by title were unchanged. A title needs no such help: it is in every
+chunk's breadcrumb, embedded and indexed. A query routed to score fusion is not boosted.
+
 **Superseding a document.** A document whose frontmatter lists `supersedes:` hides the documents it names from
 search and from hook context. Nothing is deleted or rewritten — the old file stays on disk and
 `ragdown_read_doc` still opens it, saying which document replaced it, and the web UI

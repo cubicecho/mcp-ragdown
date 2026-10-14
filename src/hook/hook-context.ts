@@ -1,6 +1,6 @@
 import { formatHit } from "../indexing/format.ts";
 import { exactNames, holdsName } from "../indexing/identifiers.ts";
-import type { Hit } from "../indexing/store.ts";
+import { callsByAlias, type Hit } from "../indexing/store.ts";
 import { defaults } from "../shared/defaults.ts";
 import type { HookSettings } from "./hook-settings.ts";
 
@@ -41,23 +41,29 @@ export async function hookContext({
 
   const seen = seenBy();
   const candidates = (await recall(trimmed, topK * 2)).filter((hit) => !seen.has(hit.id));
-  // A chunk that holds a name the prompt quotes is kept whatever its cosine, the best-ranked one
-  // only: it can hold the exact command and still sit below either gate, since everything around
-  // the name is prose the prompt does not share.
+  // A chunk the prompt points at exactly is kept whatever its cosine, the best-ranked one of each
+  // kind only: one that holds a name the prompt quotes, which can sit below either gate since
+  // everything around the name is prose the prompt does not share; and one of a document the
+  // prompt calls by an alias, which the embedder has never seen.
   const names = exactNames(trimmed);
-  const named = candidates.find((hit) =>
-    holdsName(`${hit.title}\n${hit.heading}\n${hit.text}`, names),
-  );
+  const named = [
+    ...new Set(
+      [
+        candidates.find((hit) => holdsName(`${hit.title}\n${hit.heading}\n${hit.text}`, names)),
+        candidates.find((hit) => callsByAlias(trimmed, hit.aliases)),
+      ].filter((hit) => hit !== undefined),
+    ),
+  ];
   const ranked = candidates
-    .filter((hit) => hit !== named && hit.similarity >= minScore)
+    .filter((hit) => !named.includes(hit) && hit.similarity >= minScore)
     .sort((a, b) => b.similarity - a.similarity);
   // Then the relative floor: whatever the best hit scored, a hit well below it is noise beside
   // it, and injected noise costs accuracy rather than merely costing tokens.
   const best = ranked[0]?.similarity ?? 0;
-  const hits = [
-    ...(named ? [named] : []),
-    ...ranked.filter((hit) => hit.similarity >= best * minRatio),
-  ].slice(0, topK);
+  const hits = [...named, ...ranked.filter((hit) => hit.similarity >= best * minRatio)].slice(
+    0,
+    topK,
+  );
   if (hits.length === 0) {
     return undefined;
   }

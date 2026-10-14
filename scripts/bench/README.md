@@ -47,6 +47,7 @@ resumes by re-running the same command.
 | `lance-tuning.ts` | embedder | The LanceDB knobs, one table per variant: selected columns, distance type, `readConsistencyInterval`, prefilter against postfilter, scalar indexes on the filter column, and the vector index types (IVF-flat, HNSW-SQ, IVF-PQ) across `nprobes`/`ef`. |
 | `rerank.ts` | embedder | CPU cross-encoder rerankers over the shipped top 10: rank of the right section, latency, and whether the reranker's score separates on-topic from off-topic prompts better than cosine (gate AUC). `BLEND=1` mixes the reranker into the shipped ranking instead of replacing it, `TIMING=1` times the models interleaved, `BENCH_SEED` (read by `gen.ts`) draws a held-out corpus. |
 | `fusion.ts` | embedder | How dense and BM25 are combined and how BM25 tokenizes: the shipped RRF against score fusions (min-max RSF, DBSF), routing identifier-looking queries to BM25, and FTS tokenizer variants, over the questions and over identifier probes. Ranks are what `ragdown_recall` returns; a second column runs each fused top 8 through the hook's own gates. |
+| `fields.ts` | embedder | Whether a document's own names should count for more than its body: each document given a made-up codename as an alias, the questions asked by title and by alias, against aliases on every chunk, a third BM25 list over title, heading and aliases, and the shipped boost for the chunks of a document the query calls by an alias. Misses are split into wrong document and wrong section, and a hook column tries two rules for an aliased document. |
 
 ## What they found
 
@@ -251,3 +252,45 @@ Every probe's chunk is injected, questions lose nothing for about 0.15 more chun
 ten off-topic prompts, each quoting a name the corpus lacks, gain none: what they get is the gates'
 doing either way. Keeping every holder adds chunks and no recall. Routing and the rule need each
 other: without routing the holder is out of the top 8 a tenth to a sixth of the time.
+
+`fields.ts` found that a title needs nothing and an alias needs a lot. Three corpora (default, 42,
+7; a fourth, seed 0, agreed), each document given a made-up codename as its frontmatter alias, the
+questions asked once by title and once with the title swapped for the alias. The baseline
+reproduces `store.search`'s top 8 on every query, now with the alias boost it ships. First / top 8,
+with the right section injected by the hook:
+
+```
+                                  by title                       by alias
+                                  first     hook                 first      top 8      hook
+before                            79.6–82.2 87.8–88.5            30.0–32.4  57.6–61.4  32–38
+aliases on every chunk            unchanged unchanged            46.2–50.5  83.8–86.2  36–41
+field list, RRF ×1                75.2–77.8 +0–1                 74.3–77.1  92.9–93.8  36–41
+alias boost ×1 (shipped)          unchanged unchanged            82.9–84.8  98.1–99.0  36–41
+  + hook keeps the aliased doc's best (shipped)                  ·          ·          86–89
+aliases on every chunk + boost ×1 unchanged unchanged            88.6–90.5  100        36–41
+  + hook keeps the aliased doc's best                            ·          ·          90–92
+```
+
+A title is already in every chunk's breadcrumb, embedded and indexed, so a query that names its
+document by title finds it: of the 18–20% of title questions not ranked first, two fifths land in
+the wrong document and three fifths in the wrong section of the right one, which no document-level
+boost can fix. The field list (BM25 over title › heading and aliases alone) makes that worse, costing
+table-cell questions 27–47 points, since every chunk of the right document matches it equally and
+the heading words outvote the cell. An earlier run boosted a document named by title as well as by
+alias: it changed nothing by title, and in the hook it found no right answer the gates had not and
+added 0.6 chunks a prompt.
+
+An alias is in neither: it reaches lexical search on the document's first chunk only, and the
+embedder has never seen it, so the right section came first for under a third of alias questions
+and the right document for barely a third. One rank-1 RRF share for each candidate of a document the
+query calls by an alias (`callsByAlias`: the whole alias, case-insensitively) takes that to 83–85%
+first and 98–99% in the top 8, with no index change, and is what `store.search` ships. Putting the
+aliases on every chunk's lexical text as well reaches 89–91% and 100%, but means rebuilding every
+index, so it is not shipped; on its own it is worth half as much, and contrary to the comment on
+`search_text`, it did not lift whole documents over the section on title questions.
+
+None of it reaches the hook, which re-sorts by cosine: the alias means nothing to the embedder.
+Keeping the best-ranked candidate of a document the prompt calls by an alias, whatever its cosine,
+as the exact-name rule does, takes the hook from 32–38% to 86–89% on alias questions, with fewer
+stray chunks a prompt (2.10–2.18 against 2.14–2.24); that is what `hookContext` ships. Keeping every
+candidate of that document instead reached only 53–57%.
