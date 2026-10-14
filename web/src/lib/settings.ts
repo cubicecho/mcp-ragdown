@@ -12,6 +12,7 @@ export type SettingsForm = {
   watch: boolean;
   root_mcp: boolean;
   text_limit: number | null;
+  max_per_document: number | null;
   top_k: number | null;
   min_score: number | null;
   min_ratio: number | null;
@@ -23,6 +24,7 @@ export const settingsForm = (settings: Settings): SettingsForm => ({
   watch: settings.watch,
   root_mcp: settings.root_mcp,
   text_limit: settings.saved.text_limit ?? null,
+  max_per_document: settings.saved.max_per_document ?? null,
   top_k: settings.saved.hook?.top_k ?? null,
   min_score: settings.saved.hook?.min_score ?? null,
   min_ratio: settings.saved.hook?.min_ratio ?? null,
@@ -46,6 +48,9 @@ export function settingsPatch(settings: Settings, values: SettingsForm): ServerS
   }
   if (values.text_limit !== (settings.saved.text_limit ?? null)) {
     patch.text_limit = values.text_limit;
+  }
+  if (values.max_per_document !== (settings.saved.max_per_document ?? null)) {
+    patch.max_per_document = values.max_per_document;
   }
   const hook: NonNullable<ServerSettingsPatch["hook"]> = {};
   for (const key of HOOK_KEYS) {

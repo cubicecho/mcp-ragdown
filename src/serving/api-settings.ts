@@ -22,6 +22,7 @@ export function publicSettings(config: Config) {
     watch: config.watch,
     root_mcp: config.rootMcp,
     text_limit: config.textLimit,
+    max_per_document: config.maxPerDocument,
     hook: {
       top_k: config.hook.topK,
       min_score: config.hook.minScore,
@@ -37,6 +38,7 @@ export function publicSettings(config: Config) {
       watch: config.env.watch,
       root_mcp: config.env.rootMcp,
       text_limit: config.env.textLimit,
+      max_per_document: config.env.maxPerDocument,
       hook: {
         top_k: config.env.hook.topK,
         min_score: config.env.hook.minScore,

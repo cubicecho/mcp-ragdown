@@ -26,6 +26,7 @@ export interface ServerSettings {
   watch?: boolean;
   root_mcp?: boolean;
   text_limit?: number;
+  max_per_document?: number;
   hook?: HookOverrides;
 }
 
@@ -35,6 +36,7 @@ export interface SettingsChanges {
   watch?: boolean | null;
   root_mcp?: boolean | null;
   text_limit?: number | null;
+  max_per_document?: number | null;
   hook?: HookChanges;
 }
 
@@ -113,6 +115,12 @@ export function parseChanges(body: Record<string, unknown> | undefined): Setting
     }
     out.text_limit = body.text_limit;
   }
+  if (body?.max_per_document !== undefined) {
+    if (body.max_per_document !== null && !isCount(body.max_per_document)) {
+      throw invalid("max_per_document must be a non-negative integer");
+    }
+    out.max_per_document = body.max_per_document;
+  }
   if (body?.hook !== undefined) {
     out.hook = parseHookChanges(body.hook);
   }
@@ -142,6 +150,11 @@ export function applyChanges(saved: ServerSettings, changes: SettingsChanges): S
   } else if (changes.text_limit !== undefined) {
     out.text_limit = changes.text_limit;
   }
+  if (changes.max_per_document === null) {
+    delete out.max_per_document;
+  } else if (changes.max_per_document !== undefined) {
+    out.max_per_document = changes.max_per_document;
+  }
   if (changes.hook) {
     const hook = mergeHookChanges(saved.hook ?? {}, changes.hook);
     if (Object.keys(hook).length > 0) {
@@ -165,6 +178,7 @@ export function applySettings(config: Config, saved: ServerSettings): void {
   config.watch = saved.watch ?? env.watch;
   config.rootMcp = saved.root_mcp ?? env.rootMcp;
   config.textLimit = saved.text_limit ?? env.textLimit;
+  config.maxPerDocument = saved.max_per_document ?? env.maxPerDocument;
   config.hook = resolveHook({}, saved.hook ?? {}, {
     ...env.hook,
     // Unset everywhere, the floor is the embedder's own, so it moves when the embedder does.

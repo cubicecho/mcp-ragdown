@@ -47,6 +47,7 @@ resumes by re-running the same command.
 | `lance-tuning.ts` | embedder | The LanceDB knobs, one table per variant: selected columns, distance type, `readConsistencyInterval`, prefilter against postfilter, scalar indexes on the filter column, and the vector index types (IVF-flat, HNSW-SQ, IVF-PQ) across `nprobes`/`ef`. |
 | `rerank.ts` | embedder | CPU cross-encoder rerankers over the shipped top 10: rank of the right section, latency, and whether the reranker's score separates on-topic from off-topic prompts better than cosine (gate AUC). `BLEND=1` mixes the reranker into the shipped ranking instead of replacing it, `TIMING=1` times the models interleaved, `BENCH_SEED` (read by `gen.ts`) draws a held-out corpus. |
 | `fusion.ts` | embedder | How dense and BM25 are combined and how BM25 tokenizes: the shipped RRF against score fusions (min-max RSF, DBSF), routing identifier-looking queries to BM25, and FTS tokenizer variants, over the questions and over identifier probes. Ranks are what `ragdown_recall` returns; a second column runs each fused top 8 through the hook's own gates. |
+| `diversity.ts` | embedder | Whether results should spread over more documents: `RAGDOWN_MAX_PER_DOCUMENT` at 1, 2 and 3 against maximal marginal relevance at λ 0.9, 0.7 and 0.5, over the questions with one right section and the count questions that span documents, with the hook's own gates run on each top 8. |
 | `fields.ts` | embedder | Whether a document's own names should count for more than its body: each document given a made-up codename as an alias, the questions asked by title and by alias, against aliases on every chunk, a third BM25 list over title, heading and aliases, and the shipped boost for the chunks of a document the query calls by an alias. Misses are split into wrong document and wrong section, and a hook column tries two rules for an aliased document. |
 
 ## What they found
@@ -294,3 +295,26 @@ Keeping the best-ranked candidate of a document the prompt calls by an alias, wh
 as the exact-name rule does, takes the hook from 32–38% to 86–89% on alias questions, with fewer
 stray chunks a prompt (2.10–2.18 against 2.14–2.24); that is what `hookContext` ships. Keeping every
 candidate of that document instead reached only 53–57%.
+
+`diversity.ts` found that a per-document cap trades a little recall for a cleaner hook, and that
+neither it nor MMR finds the other documents a question needs. Three corpora (default, 42, 7);
+the fused pool reproduces `store.search`'s top 8 on every query. Ranges are across the corpora:
+
+```
+            one right section (270)                        across documents (15–17)
+            top 8       hook        off-target/prompt      gold docs in top 8   distinct docs
+none        88.9–89.3   87.8–88.5   2.31–2.40              69.6–72.3            4.35–4.42
+cap 1       84.4–85.9   84.1–84.8   1.24–1.28              68.8–69.6            8.00
+cap 2       86.7        85.6–86.3   1.83–1.89              69.6–70.2            6.29–6.32
+cap 3       87.8–89.3   86.7–88.1   2.10–2.14              69.6–72.3            5.41–5.45
+mmr 0.9     88.9        87.8–88.5   2.31–2.41              69.6–71.3            4.35–4.42
+mmr 0.5     88.5–88.9   87.8–88.5   2.31–2.41              68.5–69.1            4.28–4.37
+```
+
+The first hit never changes: a cap only moves a document's later sections. A cap of 2 takes about a
+fifth of the hook's off-target sections away at about 2 points of recall; a cap of 1 halves them at
+4. The count questions do not gain from either: their missing documents are not in the pool to be
+promoted, so spreading the top 8 over twice as many documents brings in other documents, not the
+right ones. MMR on the chunk vectors barely moves anything, because sections of one runbook are not
+near-duplicates of each other. So the cap ships off by default, for a corpus where one long document
+crowds out the rest, and MMR does not ship.

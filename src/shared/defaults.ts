@@ -82,6 +82,12 @@ export const defaults = Object.freeze({
 
   /** `RAGDOWN_TEXT_LIMIT`. */
   textLimit: 2000,
+  /**
+   * `RAGDOWN_MAX_PER_DOCUMENT`: no cap. Measured on three corpora, a cap of 2 cost the right
+   * section in the top 8 about 2 points and cut the hook's off-target sections by a fifth; it did
+   * not bring in the other documents a question spread over several needed, and neither did MMR.
+   */
+  maxPerDocument: 0,
   /** `RAGDOWN_HOOK_TOP_K`. */
   hookTopK: 4,
   /**

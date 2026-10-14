@@ -1,6 +1,6 @@
 import { formatHit } from "../indexing/format.ts";
 import { exactNames, holdsName } from "../indexing/identifiers.ts";
-import { callsByAlias, type Hit } from "../indexing/store.ts";
+import { callsByAlias, capPerDocument, type Hit } from "../indexing/store.ts";
 import { defaults } from "../shared/defaults.ts";
 import type { HookSettings } from "./hook-settings.ts";
 
@@ -12,6 +12,8 @@ export interface HookContextInput {
   settings: HookSettings;
   /** The most characters of one chunk, before `settings.maxChars` is applied. */
   textLimit: number;
+  /** The most chunks of one document in the block, as search caps them; 0 is no cap. */
+  perDocument: number;
   /**
    * The ids of the chunks this session was already given; the ones returned here are added. Asked
    * for only once the prompt is worth a search, so a one-word reply does not touch the session.
@@ -29,6 +31,7 @@ export async function hookContext({
   source,
   settings,
   textLimit,
+  perDocument,
   seenBy,
   recall,
 }: HookContextInput): Promise<string | undefined> {
@@ -60,10 +63,12 @@ export async function hookContext({
   // Then the relative floor: whatever the best hit scored, a hit well below it is noise beside
   // it, and injected noise costs accuracy rather than merely costing tokens.
   const best = ranked[0]?.similarity ?? 0;
-  const hits = [...named, ...ranked.filter((hit) => hit.similarity >= best * minRatio)].slice(
-    0,
-    topK,
-  );
+  // Search capped the candidates by fused rank; re-sorted by cosine, one document can lead again.
+  const hits = capPerDocument(
+    [...named, ...ranked.filter((hit) => hit.similarity >= best * minRatio)],
+    perDocument,
+    (hit) => hit.path,
+  ).slice(0, topK);
   if (hits.length === 0) {
     return undefined;
   }

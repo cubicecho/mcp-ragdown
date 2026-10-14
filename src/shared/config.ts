@@ -39,6 +39,8 @@ export interface Config {
   /** Where `ragdown_remember` writes, relative to the folder, `/`-separated; never climbs out of it. */
   notesDir: string;
   textLimit: number;
+  /** The most sections of one document a search returns, the rest refilled from others; 0 is no cap. */
+  maxPerDocument: number;
   http: {
     port: number;
     /** Bearer token for `/mcp` and the web UI's `/api` routes; null when unset. */
@@ -52,7 +54,7 @@ export interface Config {
   hook: HookSettings;
   /**
    * What the environment said for the settings the web UI can change. `embedder`, `watch`,
-   * `rootMcp`, `textLimit` and `hook` above are these with `saved` laid over them
+   * `rootMcp`, `textLimit`, `maxPerDocument` and `hook` above are these with `saved` laid over them
    * (`server-settings.ts`).
    */
   env: {
@@ -60,6 +62,7 @@ export interface Config {
     watch: boolean;
     rootMcp: boolean;
     textLimit: number;
+    maxPerDocument: number;
     /** `minScore` is null when `RAGDOWN_HOOK_MIN_SCORE` is unset and the embedder's own applies. */
     hook: { topK: number; minScore: number | null; minRatio: number; maxChars: number };
   };
@@ -119,6 +122,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
   const watch = bool(env, "RAGDOWN_WATCH", true);
   const rootMcp = bool(env, "RAGDOWN_ROOT_MCP", false);
   const textLimit = int(env, "RAGDOWN_TEXT_LIMIT", defaults.textLimit);
+  const maxPerDocument = int(env, "RAGDOWN_MAX_PER_DOCUMENT", defaults.maxPerDocument);
   const explicitMinScore =
     env.RAGDOWN_HOOK_MIN_SCORE === undefined || env.RAGDOWN_HOOK_MIN_SCORE === ""
       ? null
@@ -150,6 +154,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
     rootMcp,
     notesDir: notesDir === "." ? "" : notesDir.replace(/\/+$/, ""),
     textLimit,
+    maxPerDocument,
     http: {
       port: int(env, "PORT", defaults.port),
       token: env.RAGDOWN_TOKEN || null,
@@ -160,7 +165,14 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
       ...hook,
       minScore: explicitMinScore ?? embedderMinScore(embedder),
     },
-    env: { embedder, watch, rootMcp, textLimit, hook: { ...hook, minScore: explicitMinScore } },
+    env: {
+      embedder,
+      watch,
+      rootMcp,
+      textLimit,
+      maxPerDocument,
+      hook: { ...hook, minScore: explicitMinScore },
+    },
     saved: {},
   };
 }
