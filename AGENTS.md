@@ -56,7 +56,8 @@ is a "document" everywhere in the code; a "file" is anything on disk, attachment
     embedder's `name` is recorded in the index, so changing what a name produces means changing the
     name.
   - `store.ts`: the LanceDB table, the meta file, and hybrid search (dense + FTS, RRF, or BM25-led
-    score fusion for a query that names something: `identifiers.ts`, which the hook uses too). Bump
+    score fusion for a query that names something: `identifiers.ts`, which the hook uses too; an
+    RRF boost for a document the query calls by an alias, `callsByAlias`). Bump
     `INDEX_VERSION` when the columns change. Tags and aliases have their own columns: never add
     them (or titles) to `embeddingText`.
   - `indexer.ts`: diff sync, the single-flight sync queue, and the watcher.

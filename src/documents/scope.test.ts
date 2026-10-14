@@ -228,6 +228,26 @@ describe("Scope", () => {
     );
   });
 
+  it("injects a chunk of a document the prompt calls by an alias, below both gates", async () => {
+    const t = await tempSetup({}, "folders");
+    closers.push(t.cleanup);
+    await t.write(
+      "work/kestrel.md",
+      "---\naliases: [Vandor]\n---\n# Kestrel\n\n## Deploys\n\nThe on-call lead approves production deploys.",
+    );
+    const rag = await Ragdown.start(t.config);
+    closers.push(() => rag.close());
+    await rag.sync(false);
+    const work = new Scope(rag, "work");
+
+    const block = await work.context("who approves Vandor deploys?", undefined, { minScore: 2 });
+    expect(block).toContain("The on-call lead approves");
+    // By title the embedder already knows the name, so the gates decide alone.
+    expect(await work.context("who approves Kestrel deploys?", undefined, { minScore: 2 })).toBe(
+      undefined,
+    );
+  });
+
   it("puts a saved server setting over the environment's and under the folder's", async () => {
     const t = await tempSetup({}, "folders");
     closers.push(t.cleanup);

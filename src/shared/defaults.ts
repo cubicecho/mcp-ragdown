@@ -32,6 +32,12 @@ export const defaults = Object.freeze({
    */
   namedQueryDenseWeight: 0.2,
   /**
+   * Rank-1 RRF shares added to every candidate of a document the query calls by an alias. Measured
+   * on three corpora with one alias a document: the right section first for 83% of questions asked
+   * by alias against 30%, in the top 8 for 98% against 58%, and questions asked by title unchanged.
+   */
+  aliasBoost: 1,
+  /**
    * Chunks below which no vector index is built. A folder of documents is nowhere near it, and
    * under it the flat scan wins anyway: measured at 10k chunks the index is twice as fast, at 1k
    * it is noise.

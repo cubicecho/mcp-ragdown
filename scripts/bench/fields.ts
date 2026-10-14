@@ -6,8 +6,9 @@
 //     or the aliases on every chunk;
 //   - a field list: BM25 over `title › heading` plus the aliases alone, a third list in RRF at a
 //     weight;
-//   - a phrase boost: a chunk of a document whose title or alias the query holds as a phrase gets one
-//     extra rank-1 RRF share.
+//   - an alias boost: a chunk of a document the query calls by an alias (`callsByAlias`) gets an
+//     extra rank-1 RRF share, as `store.search` ships it at ×1. A title boost needs no variant of its
+//     own: the title is in every chunk's breadcrumb already, and boosting it changed nothing.
 //
 // A query that names something keeps `store.search`'s score fusion untouched in every variant; the
 // field list and the boost only enter the RRF path. Query sets: the answerable questions, which name
@@ -24,7 +25,7 @@ import { breadcrumb, chunkMarkdown, embeddingText } from "../../src/documents/ch
 import { embedderMinScore } from "../../src/hook/hook-settings.ts";
 import { createEmbedder } from "../../src/indexing/embedder.ts";
 import { namesSomething } from "../../src/indexing/identifiers.ts";
-import { Store } from "../../src/indexing/store.ts";
+import { callsByAlias, Store } from "../../src/indexing/store.ts";
 import { defaults } from "../../src/shared/defaults.ts";
 import { docs, hardQuestions, headingPath, questions, renderDoc } from "./gen.ts";
 
@@ -100,7 +101,7 @@ const byId = new Map(chunks.map((c) => [c.id, c]));
 
 // --- the lexical variants, one FTS table each
 const LEXICAL: Record<string, (c: Chunk) => string> = {
-  shipped: (c) => c.search_text,
+  indexed: (c) => c.search_text,
   "aliases everywhere": (c) =>
     `${embeddingText({ title: c.title, heading: c.heading, text: c.text })}\n\n${alias.get(c.path)}`,
   fields: (c) => `${breadcrumb(c.title, c.heading)}\n${alias.get(c.path)}`,
@@ -194,7 +195,7 @@ for (const query of queries) {
 interface Variant {
   lexical: string;
   fieldWeight: number;
-  phraseBoost: number;
+  aliasBoost: number;
 }
 const order = (acc: Map<string, number>) =>
   [...acc.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
@@ -203,11 +204,7 @@ const minmax = (xs: Scored[]) => {
   const hi = Math.max(...xs.map((x) => x.score));
   return new Map(xs.map((x) => [x.id, hi > lo ? (x.score - lo) / (hi - lo) : 1]));
 };
-const namesDoc = (q: string, path: string) => {
-  const lower = q.toLowerCase();
-  const d = docs.find((x) => x.slug === path) as (typeof docs)[0];
-  return [d.title, alias.get(path) as string].some((name) => lower.includes(name.toLowerCase()));
-};
+const namesDoc = (q: string, path: string) => callsByAlias(q, [alias.get(path) as string]);
 const fuse = (r: Retrieved, v: Variant) => {
   const lex = r.lex.get(v.lexical) ?? [];
   const acc = new Map<string, number>();
@@ -228,37 +225,37 @@ const fuse = (r: Retrieved, v: Variant) => {
   add(r.dense, 1);
   add(lex, 1);
   if (v.fieldWeight) add(r.lex.get("fields") ?? [], v.fieldWeight);
-  if (v.phraseBoost) {
+  if (v.aliasBoost) {
     for (const id of acc.keys()) {
       if (namesDoc(r.query.q, (byId.get(id) as Chunk).path)) {
-        acc.set(id, (acc.get(id) ?? 0) + v.phraseBoost / (K + 1));
+        acc.set(id, (acc.get(id) ?? 0) + v.aliasBoost / (K + 1));
       }
     }
   }
   return order(acc);
 };
 const VARIANTS: Record<string, Variant> = {
-  shipped: { lexical: "shipped", fieldWeight: 0, phraseBoost: 0 },
-  "aliases everywhere": { lexical: "aliases everywhere", fieldWeight: 0, phraseBoost: 0 },
-  "field list ×0.5": { lexical: "shipped", fieldWeight: 0.5, phraseBoost: 0 },
-  "field list ×1": { lexical: "shipped", fieldWeight: 1, phraseBoost: 0 },
+  before: { lexical: "indexed", fieldWeight: 0, aliasBoost: 0 },
+  "aliases everywhere": { lexical: "aliases everywhere", fieldWeight: 0, aliasBoost: 0 },
+  "field list ×0.5": { lexical: "indexed", fieldWeight: 0.5, aliasBoost: 0 },
+  "field list ×1": { lexical: "indexed", fieldWeight: 1, aliasBoost: 0 },
   "aliases everywhere + field ×0.5": {
     lexical: "aliases everywhere",
     fieldWeight: 0.5,
-    phraseBoost: 0,
+    aliasBoost: 0,
   },
-  "phrase boost ×0.5": { lexical: "shipped", fieldWeight: 0, phraseBoost: 0.5 },
-  "phrase boost ×1": { lexical: "shipped", fieldWeight: 0, phraseBoost: 1 },
-  "aliases everywhere + phrase ×0.5": {
+  "alias boost ×0.5": { lexical: "indexed", fieldWeight: 0, aliasBoost: 0.5 },
+  "alias boost ×1 (shipped)": { lexical: "indexed", fieldWeight: 0, aliasBoost: 1 },
+  "aliases everywhere + alias boost ×0.5": {
     lexical: "aliases everywhere",
     fieldWeight: 0,
-    phraseBoost: 0.5,
+    aliasBoost: 0.5,
   },
 };
-VARIANTS["aliases everywhere + phrase ×1"] = {
+VARIANTS["aliases everywhere + alias boost ×1"] = {
   lexical: "aliases everywhere",
   fieldWeight: 0,
-  phraseBoost: 1,
+  aliasBoost: 1,
 };
 
 // --- scoring
@@ -272,7 +269,7 @@ const rankOf = (ids: string[], gold: Query["gold"]) => {
 // The hook as `hookContext` runs it, without the exact-name rule (no query here quotes one).
 const MIN_SCORE = embedderMinScore("granite-small");
 // HOOK rules on top of the gates: `best` injects the best-fused candidate of a document the prompt
-// names by title or alias whatever its cosine, ahead of the gated ones, as the exact-name rule does;
+// calls by an alias whatever its cosine, as `hookContext` ships it, ahead of the gated ones, as the exact-name rule does;
 // `doc` puts every candidate of a named document that clears the floor first, by cosine.
 type HookRule = "none" | "best" | "doc";
 const injected = (ids: string[], qv: Float32Array, q = "", rule: HookRule = "none") => {
@@ -346,7 +343,7 @@ const evaluate = (v: Variant) => {
 
 const mismatched = retrieved.filter(
   (r) =>
-    fuse(r, VARIANTS.shipped as Variant)
+    fuse(r, VARIANTS["alias boost ×1 (shipped)"] as Variant)
       .slice(0, 8)
       .join() !== r.shipped.join(),
 ).length;
@@ -387,7 +384,7 @@ const hookResults: Record<string, Record<string, { gold: number; noise: number }
 console.log(
   `\nhook, gold injected / non-gold chunks per prompt    ${["none", "best", "doc"].map((m) => `title ${m}`.padEnd(13)).join("")}${["none", "best", "doc"].map((m) => `alias ${m}`.padEnd(13)).join("")}`,
 );
-for (const name of ["shipped", "phrase boost ×1", "aliases everywhere + phrase ×1"]) {
+for (const name of ["before", "alias boost ×1 (shipped)", "aliases everywhere + alias boost ×1"]) {
   const v = VARIANTS[name] as Variant;
   const cells: string[] = [];
   hookResults[name] = {};

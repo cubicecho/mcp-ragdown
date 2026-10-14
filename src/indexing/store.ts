@@ -8,7 +8,7 @@ import { errorMessage } from "../shared/errors.ts";
 import { isRecord } from "../shared/json.ts";
 import { writeAtomic } from "../shared/write-atomic.ts";
 import type { Embedder } from "./embedder.ts";
-import { namesSomething } from "./identifiers.ts";
+import { holdsName, namesSomething } from "./identifiers.ts";
 
 const TABLE = "chunks";
 /** The meta file's permission bits: readable and writable by its owner only. */
@@ -91,6 +91,8 @@ export interface Hit {
   sources: ("dense" | "lexical")[];
   /** The document's tags. */
   tags: string[];
+  /** The document's frontmatter aliases: other names it answers to. */
+  aliases: string[];
   /** The document's frontmatter `created_by`; empty for a document the user wrote. */
   createdBy: string;
   /** When the document's file last changed, as the index saw it. */
@@ -117,6 +119,7 @@ const HIT_COLUMNS = [
   "heading",
   "text",
   "tags",
+  "aliases",
   "created_by",
   "mtime_ms",
   "line_start",
@@ -311,7 +314,7 @@ export class Store {
           size: row.size,
           chunks: 1,
           tags: splitTags(row.tags),
-          aliases: row.aliases ? row.aliases.split("\n") : [],
+          aliases: splitAliases(row.aliases),
           supersedes: row.supersedes ? row.supersedes.split("\n") : [],
           description: row.description,
           createdBy: row.created_by,
@@ -448,8 +451,11 @@ export class Store {
    * rank. Lexical search is what finds an exact error string or flag name that an embedding blurs;
    * dense search is what finds the paragraph that answers a question in other words. A query that
    * names something (`identifiers.ts`) is fused by score and weighted to BM25 instead: by rank, a
-   * chunk both sides half-agree on beats the one chunk that holds the name. A document
-   * another document's frontmatter supersedes is left out, though `readDocument` still opens it.
+   * chunk both sides half-agree on beats the one chunk that holds the name. Under rank fusion, a
+   * chunk of a document the query calls by one of its aliases gets one more rank-1 share: the
+   * embedder has never seen an alias, and BM25 sees it on the document's first chunk only. A
+   * document another document's frontmatter supersedes is left out, though `readDocument` still
+   * opens it.
    *
    * @param pathPrefixes - limits both retrievers to files under any of these relative paths; an
    *   empty list is nowhere to search, so it finds nothing.
@@ -565,6 +571,11 @@ export class Store {
       const reciprocal = (_: ScoredRow, rank: number) => 1 / (defaults.rrfK + rank + 1);
       add(denseScored, "dense", reciprocal);
       add(lexicalScored, "lexical", reciprocal);
+      for (const entry of fused.values()) {
+        if (callsByAlias(query, splitAliases(entry.row.aliases))) {
+          entry.score += defaults.aliasBoost / (defaults.rrfK + 1);
+        }
+      }
     }
 
     return [...fused.values()]
@@ -594,9 +605,26 @@ function toHit(row: ScoredRow, score: number, sources: Hit["sources"]): Hit {
     similarity: row.similarity,
     sources,
     tags: splitTags(row.tags),
+    aliases: splitAliases(row.aliases),
     createdBy: row.created_by,
     mtimeMs: row.mtime_ms,
   };
+}
+
+/** The aliases column, newline-separated, as a list. */
+function splitAliases(aliases: string): string[] {
+  return aliases ? aliases.split("\n") : [];
+}
+
+/**
+ * Whether a query calls a document by one of its aliases: whole, case-insensitively, and only an
+ * alias long enough to mean something (`identifiers.ts` drops the same short names).
+ */
+export function callsByAlias(query: string, aliases: string[]): boolean {
+  return holdsName(
+    query,
+    aliases.map((alias) => alias.toLowerCase()).filter((alias) => alias.length >= 3),
+  );
 }
 
 /** Which documents replace each superseded one, root-relative, from `documents()`. */
