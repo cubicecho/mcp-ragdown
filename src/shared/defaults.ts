@@ -88,6 +88,14 @@ export const defaults = Object.freeze({
    * not bring in the other documents a question spread over several needed, and neither did MMR.
    */
   maxPerDocument: 0,
+  /** `RAGDOWN_QUERY_LOG`: off, since what it records are the user's prompts. */
+  queryLog: false,
+  /** The query log's size before it is rotated; one rotated file is kept beside it. */
+  queryLogMaxBytes: 10 * 1024 * 1024,
+  /** How soon after a search a read of one of its hits counts as that hit having been used. */
+  queryLogFeedbackMs: 10 * 60 * 1000,
+  /** The most rows of each list the usage summary returns. */
+  usageRows: 25,
   /** `RAGDOWN_HOOK_TOP_K`. */
   hookTopK: 4,
   /**

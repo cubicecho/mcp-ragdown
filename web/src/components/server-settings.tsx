@@ -102,6 +102,12 @@ export function EditServerSettings({
             label="Serve every folder at /mcp"
             description="One MCP server over every folder with MCP on, where an agent names the folder in each call and can make new folders. Off, each folder has only its own address."
           />
+          <SwitchField
+            form={form}
+            name="query_log"
+            label="Log searches"
+            description="Each search, hook call and document read is written to a file in the data directory, for the Usage tab. Nothing is sent anywhere."
+          />
           <Section
             title="Search defaults"
             level={3}

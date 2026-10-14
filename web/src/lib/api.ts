@@ -7,6 +7,7 @@ export interface ServerSettings {
   root_mcp?: boolean;
   text_limit?: number;
   max_per_document?: number;
+  query_log?: boolean;
   hook?: HookOverrides;
 }
 
@@ -17,6 +18,7 @@ export interface ServerSettingsPatch {
   root_mcp?: boolean | null;
   text_limit?: number | null;
   max_per_document?: number | null;
+  query_log?: boolean | null;
   hook?: { [K in keyof HookOverrides]?: number | null };
 }
 
@@ -36,6 +38,8 @@ export interface Status {
     text_limit: number;
     /** The most sections of one document a search returns; 0 is no cap. */
     max_per_document: number;
+    /** On, searches and reads are logged in the data dir for the Usage tab. */
+    query_log: boolean;
     /** `ragdown_context`'s defaults, which a hook's own arguments override. */
     hook: {
       top_k: number;
@@ -54,6 +58,7 @@ export interface Status {
       root_mcp: boolean;
       text_limit: number;
       max_per_document: number;
+      query_log: boolean;
       hook: { top_k: number; min_score: number | null; min_ratio: number; max_chars: number };
     };
     /** The embedders a form can offer, with each one's own floor and unrelated score. */
@@ -199,6 +204,29 @@ export interface DocWrite {
   sync: { added: number; updated: number; removed: number; unchanged: number; chunks: number };
 }
 
+/** A search no hit answered well: its best similarity was under the floor, or nothing came back. */
+export interface UsageGap {
+  query: string;
+  endpoint: "ragdown_recall" | "ragdown_context" | "/api/search";
+  scope: string;
+  best: number | null;
+  count: number;
+  last: string;
+}
+
+/** `GET /api/query-log`: what the query log says about search, and whether it is on. */
+export interface QueryLogSummary {
+  enabled: boolean;
+  summary: {
+    since: string | null;
+    searches: number;
+    gaps: UsageGap[];
+    hook: { calls: number; injected: number; chunks_per_call: number; skipped: number };
+    reads: { total: number; after_search: number };
+    documents: { path: string; reads: number; returned: number }[];
+  };
+}
+
 /** A request with the token, and a JSON body when `body` is given. 401 asks for the token again. */
 async function send(path: string, init: { method?: string; body?: unknown } = {}) {
   const token = getToken();
@@ -267,6 +295,11 @@ export const updateSettings = async (patch: ServerSettingsPatch) =>
       body: patch,
     })
   ).settings;
+
+export const getQueryLog = () => request<QueryLogSummary>("/api/query-log");
+
+/** Delete every record in the query log; it keeps logging if it is on. */
+export const clearQueryLog = () => request<QueryLogSummary>("/api/query-log", { method: "DELETE" });
 
 /** Delete one of `loose_files`: a Markdown file directly in the docs directory, in no folder. */
 export const deleteLooseFile = (name: string) =>

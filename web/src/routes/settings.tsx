@@ -43,17 +43,19 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemePicker } from "@/components/ui/theme-picker";
 import { useToast } from "@/components/ui/toast";
+import { UsageSection } from "@/components/usage";
 import type { Folder, Status } from "@/lib/api";
 import { clearToken, getToken, requireAuth } from "@/lib/auth";
 import { formatAgo, formatCount } from "@/lib/format";
 import { useDeleteLooseFile, useFolders, useStatus, useWritable } from "@/lib/queries";
 
-export type SettingsTab = "folders" | "device" | "server";
+export type SettingsTab = "folders" | "device" | "server" | "usage";
 
 const TABS: { value: SettingsTab; label: string }[] = [
   { value: "folders", label: "Folders" },
   { value: "device", label: "This device" },
   { value: "server", label: "Server" },
+  { value: "usage", label: "Usage" },
 ];
 
 /**
@@ -87,7 +89,7 @@ export function SettingsPage() {
     >
       <PageLayout
         title="Settings"
-        description="Folders, how this device shows ragdown, and how the server is set up."
+        description="Folders, how this device shows ragdown, how the server is set up, and how search is used."
         width="prose"
         breadcrumbsSlot={
           // Under `md` the sidebar is gone, and its folder links with it.
@@ -128,7 +130,7 @@ export function SettingsPage() {
             </TabsContent>
             <TabsContent value="server" className="mt-0">
               <Section
-                description="What the index is doing, then how the server is set up. Each setting starts as an environment variable; the embedder, watching, the /mcp address and the search defaults can be changed here, and a value saved here wins over its variable."
+                description="What the index is doing, then how the server is set up. Each setting starts as an environment variable; the embedder, watching, the /mcp address, the query log and the search defaults can be changed here, and a value saved here wins over its variable."
                 actionSlot={
                   writable && status.data ? (
                     <Button
@@ -162,6 +164,9 @@ export function SettingsPage() {
                   onClose={() => setEditing(false)}
                 />
               ) : null}
+            </TabsContent>
+            <TabsContent value="usage" className="mt-0">
+              <UsageSection />
             </TabsContent>
           </div>
         }
@@ -552,6 +557,20 @@ function IndexSettingsCard({ status, loading }: { status: Status | undefined; lo
                     <>
                       <Env name="RAGDOWN_WATCH" saved={status.settings.saved.watch !== undefined} />
                       . Off, the index syncs at start and on <Code>ragdown_reindex</Code> only.
+                    </>
+                  }
+                />,
+                <PropertyRow
+                  key="query-log"
+                  label="Log searches"
+                  value={<YesNo value={status.settings.query_log} />}
+                  hint={
+                    <>
+                      <Env
+                        name="RAGDOWN_QUERY_LOG"
+                        saved={status.settings.saved.query_log !== undefined}
+                      />
+                      . On, searches and reads are logged in the data directory for the Usage tab.
                     </>
                   }
                 />,

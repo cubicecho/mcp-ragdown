@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
+  clearQueryLog,
   createFolder,
   deleteDoc,
   deleteFolder,
@@ -8,6 +9,7 @@ import {
   getBacklinks,
   getDoc,
   getFile,
+  getQueryLog,
   getStatus,
   listDocs,
   listFolders,
@@ -175,4 +177,16 @@ export const useUpdateSettings = () => {
 export const useDeleteLooseFile = () => {
   const invalidate = useInvalidateDocs();
   return useMutation({ mutationFn: deleteLooseFile, onSettled: () => invalidate() });
+};
+
+/** The query log summed up; polled slowly, since it only grows while agents search. */
+export const useQueryLog = () =>
+  useQuery({ queryKey: ["query-log"], queryFn: getQueryLog, refetchInterval: 30_000 });
+
+export const useClearQueryLog = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: clearQueryLog,
+    onSuccess: (data) => queryClient.setQueryData(["query-log"], data),
+  });
 };

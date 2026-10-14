@@ -10,6 +10,7 @@ import { errorMessage } from "../shared/errors.ts";
 import { Refusal } from "../shared/refusal.ts";
 import { handleDocuments } from "./api-documents.ts";
 import { handleFolders } from "./api-folders.ts";
+import { handleQueryLog } from "./api-query-log.ts";
 import { handleSettings, publicSettings } from "./api-settings.ts";
 import type { Ragdown } from "./engine.ts";
 import { type ApiRequest, json, readJson } from "./http-io.ts";
@@ -109,6 +110,7 @@ async function handle(
 
 const API_ROUTES = new Set([
   "/api/settings",
+  "/api/query-log",
   "/api/folders",
   "/api/loose",
   "/api/docs",
@@ -202,6 +204,8 @@ async function handleApi(
     await handleFolders(request);
   } else if (path === "/api/settings") {
     await handleSettings(request);
+  } else if (path === "/api/query-log") {
+    await handleQueryLog(request);
   } else {
     await handleDocuments(request);
   }
