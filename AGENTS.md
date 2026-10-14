@@ -67,6 +67,8 @@ is a "document" everywhere in the code; a "file" is anything on disk, attachment
 - `src/hook/`: what `ragdown_context` injects. `hook-settings.ts` parses, merges and resolves the
   hook's settings (call, folder, server, environment); `hook-context.ts` builds the block;
   `session-memory.ts` remembers what a session was already given.
+- `src/usage/`: the opt-in query log (`query-log.ts`: searches, hook traces and reads as JSON lines
+  in the data dir, paths docs-relative) and `usage-summary.ts`, what the Usage tab shows of it.
 - `src/serving/`: the processes and their endpoints.
   - `engine.ts`: `Ragdown`. Primary/reader roles, the store, syncs, the session memory.
   - `primary.ts`: the unix-socket lock and request protocol (newline-delimited JSON).
@@ -77,7 +79,8 @@ is a "document" everywhere in the code; a "file" is anything on disk, attachment
   - `http.ts`: `serve` — the server, bearer auth, `/mcp/<folder>[/<sub...>]`, bare `/mcp` when `root_mcp` is on, and `/api/status`, and
     the dispatch to one handler per resource: `api-folders.ts` (`/api/folders`, `/api/loose`),
     `api-documents.ts` (`/api/docs`, `/api/doc`, `/api/move`, `/api/search`, `/api/resolve`,
-    `/api/backlinks`, `/api/file`) and `api-settings.ts` (`/api/settings`). `http-io.ts` is what
+    `/api/backlinks`, `/api/file`), `api-settings.ts` (`/api/settings`) and `api-query-log.ts`
+    (`/api/query-log`). `http-io.ts` is what
     they share; `web-ui.ts` serves the built UI for every other `GET`.
 - `src/shared/`: what every concept uses.
   - `config.ts`: the only reader of `process.env`. `mode` is `folders` (`serve`) or `single`

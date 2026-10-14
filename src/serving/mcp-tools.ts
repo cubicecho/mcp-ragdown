@@ -4,10 +4,12 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { Root } from "../documents/root.ts";
 import type { Scope } from "../documents/scope.ts";
+import type { HookTrace } from "../hook/hook-context.ts";
 import { formatHits, hitJson } from "../indexing/format.ts";
 import type { Config } from "../shared/config.ts";
 import { defaults } from "../shared/defaults.ts";
 import { errorMessage } from "../shared/errors.ts";
+import { docsPath, loggedHit, loggedTrace } from "../usage/query-log.ts";
 import {
   formatDocument,
   formatEdited,
@@ -149,6 +151,7 @@ export function createMcpServer(
     },
     (args) =>
       inDocuments(args, async (rag) => {
+        const started = performance.now();
         const hits = await rag.recall(
           args.query,
           args.top_k,
@@ -156,6 +159,19 @@ export function createMcpServer(
           args.tag,
           args.written_by,
         );
+        rag.rag.queryLog.search({
+          endpoint: "ragdown_recall",
+          scope: scopeName(rag),
+          query: args.query,
+          filters: filters({
+            folder: folderOf(args),
+            path_prefix: args.path_prefix,
+            tag: args.tag,
+            written_by: args.written_by,
+          }),
+          hits: hits.map((hit) => loggedHit(hit, dirOf(rag))),
+          ms: elapsed(started),
+        });
         return args.format === "json"
           ? { hits: hits.map(hitJson) }
           : formatHits(hits, args.max_chars ?? rag.config.textLimit);
@@ -221,12 +237,32 @@ export function createMcpServer(
         if (args.reset && args.session_id) {
           rag.forgetSession(args.session_id);
         }
-        const context = await rag.context(args.prompt, args.session_id || undefined, {
-          topK: args.top_k,
-          minScore: args.min_score,
-          minRatio: args.min_ratio,
-          maxChars: args.max_chars,
-        });
+        const started = performance.now();
+        let trace: HookTrace | undefined;
+        const context = await rag.context(
+          args.prompt,
+          args.session_id || undefined,
+          {
+            topK: args.top_k,
+            minScore: args.min_score,
+            minRatio: args.min_ratio,
+            maxChars: args.max_chars,
+          },
+          (done) => {
+            trace = done;
+          },
+        );
+        if (trace) {
+          rag.rag.queryLog.search({
+            endpoint: "ragdown_context",
+            scope: scopeName(rag),
+            query: args.prompt,
+            filters: filters({ folder: folderOf(args) }),
+            hits: trace.candidates.map((hit) => loggedHit(hit, dirOf(rag))),
+            ms: elapsed(started),
+            hook: loggedTrace(trace, dirOf(rag)),
+          });
+        }
         if (!context || args.format === "text") {
           return context ?? "";
         }
@@ -255,9 +291,11 @@ export function createMcpServer(
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     (args) =>
-      inScope(args, async (rag) =>
-        formatDocument(await rag.readDocument(args.path, args.start_line, args.end_line)),
-      ),
+      inScope(args, async (rag) => {
+        const doc = await rag.readDocument(args.path, args.start_line, args.end_line);
+        rag.rag.queryLog.read(scopeName(rag), docsPath(rag.dir, doc.path));
+        return formatDocument(doc);
+      }),
   );
 
   register(
@@ -590,6 +628,24 @@ export function createMcpServer(
 
   return server;
 }
+
+/** How the query log names the endpoint a call came to: its directory, or `*` for the root. */
+function scopeName(rag: Scope | Root): string {
+  return rag instanceof Root ? "*" : rag.dir;
+}
+
+/** The directory a scope's paths are relative to; undefined at the root, whose hits name a folder. */
+function dirOf(rag: Scope | Root): string | undefined {
+  return rag instanceof Root ? undefined : rag.dir;
+}
+
+/** The filters a call set, leaving out the ones it did not. */
+function filters(set: Record<string, string | undefined>): Record<string, string> | undefined {
+  const named = Object.entries(set).filter((entry): entry is [string, string] => !!entry[1]);
+  return named.length > 0 ? Object.fromEntries(named) : undefined;
+}
+
+const elapsed = (started: number) => Math.round(performance.now() - started);
 
 /** The `folder` a call named. Only the root's schemas have one, so anywhere else there is none. */
 function folderOf(args: object): string | undefined {

@@ -1,5 +1,5 @@
 import { createFolder, type Folder, getFolder, listFolders } from "../folders/folder-settings.ts";
-import { hookContext } from "../hook/hook-context.ts";
+import { type HookContextInput, hookContext } from "../hook/hook-context.ts";
 import { type ContextOptions, resolveHook } from "../hook/hook-settings.ts";
 import type { Hit, WrittenBy } from "../indexing/store.ts";
 import type { Ragdown } from "../serving/engine.ts";
@@ -75,6 +75,7 @@ export class Root {
     prompt: string,
     sessionId?: string,
     options: ContextOptions = {},
+    trace?: HookContextInput["trace"],
   ): Promise<string | undefined> {
     return hookContext({
       prompt,
@@ -85,6 +86,7 @@ export class Root {
       seenBy: () =>
         sessionId ? this.rag.sessions.seen(sessionKey(EVERY_FOLDER, sessionId)) : new Set<string>(),
       recall: (query, topK) => this.recall(query, topK),
+      trace,
     });
   }
 

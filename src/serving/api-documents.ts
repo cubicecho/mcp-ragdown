@@ -9,6 +9,7 @@ import type { Config } from "../shared/config.ts";
 import { defaults } from "../shared/defaults.ts";
 import { hasCode } from "../shared/errors.ts";
 import { Refusal } from "../shared/refusal.ts";
+import { loggedHit } from "../usage/query-log.ts";
 import {
   type ApiRequest,
   allow,
@@ -151,12 +152,17 @@ export async function handleDocuments(request: ApiRequest): Promise<void> {
       json(res, 404, { error: `no such folder: ${name}` });
       return;
     }
-    const hits = await new Scope(rag, name).recall(
+    const tag = params.get("tag") || undefined;
+    const started = performance.now();
+    const hits = await new Scope(rag, name).recall(query, topK, undefined, tag);
+    rag.queryLog.search({
+      endpoint: "/api/search",
+      scope: name,
       query,
-      topK,
-      undefined,
-      params.get("tag") || undefined,
-    );
+      ...(tag ? { filters: { tag } } : {}),
+      hits: hits.map((hit) => loggedHit(hit, name)),
+      ms: Math.round(performance.now() - started),
+    });
     json(res, 200, {
       hits: hits.map((hit) => ({
         path: `${name}/${hit.path}`,

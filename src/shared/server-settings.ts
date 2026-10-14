@@ -27,6 +27,7 @@ export interface ServerSettings {
   root_mcp?: boolean;
   text_limit?: number;
   max_per_document?: number;
+  query_log?: boolean;
   hook?: HookOverrides;
 }
 
@@ -37,6 +38,7 @@ export interface SettingsChanges {
   root_mcp?: boolean | null;
   text_limit?: number | null;
   max_per_document?: number | null;
+  query_log?: boolean | null;
   hook?: HookChanges;
 }
 
@@ -121,6 +123,12 @@ export function parseChanges(body: Record<string, unknown> | undefined): Setting
     }
     out.max_per_document = body.max_per_document;
   }
+  if (body?.query_log !== undefined) {
+    if (body.query_log !== null && typeof body.query_log !== "boolean") {
+      throw invalid("query_log must be true or false");
+    }
+    out.query_log = body.query_log;
+  }
   if (body?.hook !== undefined) {
     out.hook = parseHookChanges(body.hook);
   }
@@ -155,6 +163,11 @@ export function applyChanges(saved: ServerSettings, changes: SettingsChanges): S
   } else if (changes.max_per_document !== undefined) {
     out.max_per_document = changes.max_per_document;
   }
+  if (changes.query_log === null) {
+    delete out.query_log;
+  } else if (changes.query_log !== undefined) {
+    out.query_log = changes.query_log;
+  }
   if (changes.hook) {
     const hook = mergeHookChanges(saved.hook ?? {}, changes.hook);
     if (Object.keys(hook).length > 0) {
@@ -179,6 +192,7 @@ export function applySettings(config: Config, saved: ServerSettings): void {
   config.rootMcp = saved.root_mcp ?? env.rootMcp;
   config.textLimit = saved.text_limit ?? env.textLimit;
   config.maxPerDocument = saved.max_per_document ?? env.maxPerDocument;
+  config.queryLog = saved.query_log ?? env.queryLog;
   config.hook = resolveHook({}, saved.hook ?? {}, {
     ...env.hook,
     // Unset everywhere, the floor is the embedder's own, so it moves when the embedder does.

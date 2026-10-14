@@ -845,4 +845,66 @@ describe("HTTP server", () => {
     expect(await contextFor()).toContain("backups.md");
     expect(await contextFor()).toBe("");
   });
+
+  it("logs searches, hook calls and reads once the query log is on, and clears it", async () => {
+    const t = await serve({ RAGDOWN_TOKEN: "secret" });
+    const headers = { ...auth("secret"), "content-type": "application/json" };
+    const usage = async (method = "GET") =>
+      (await (await fetch(`${t.url}/api/query-log`, { method, headers })).json()) as {
+        enabled: boolean;
+        summary: { searches: number; hook: { calls: number }; reads: Record<string, number> };
+      };
+    const client = new Client({ name: "test", version: "0" });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${t.url}/mcp/ops`), {
+        requestInit: { headers: auth("secret") },
+      }),
+    );
+    closers.push(() => client.close());
+    const useTools = async (session: string) => {
+      await client.callTool({ name: "ragdown_recall", arguments: { query: "pg_restore" } });
+      await client.callTool({
+        name: "ragdown_context",
+        arguments: { prompt: "how do I restore postgres?", session_id: session },
+      });
+      await client.callTool({ name: "ragdown_read_doc", arguments: { path: "backups.md" } });
+      await fetch(`${t.url}/api/search?folder=ops&q=restore`, { headers });
+    };
+
+    expect((await fetch(`${t.url}/api/query-log`)).status).toBe(401);
+    // Off by default: nothing is written.
+    await useTools("log:off");
+    expect(await usage()).toMatchObject({ enabled: false, summary: { searches: 0 } });
+
+    const patch = await fetch(`${t.url}/api/settings`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ query_log: true }),
+    });
+    expect(patch.status).toBe(200);
+    await useTools("log:on");
+    const on = await usage();
+    expect(on).toMatchObject({
+      enabled: true,
+      summary: { searches: 3, hook: { calls: 1 }, reads: { total: 1, after_search: 1 } },
+    });
+    const lines = (await readFile(join(t.config.dataDir, "query-log.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(lines.map((line) => line.endpoint ?? line.kind)).toEqual([
+      "ragdown_recall",
+      "ragdown_context",
+      "read",
+      "/api/search",
+    ]);
+    // Paths are the docs dir's, whichever endpoint answered, so reads match searches across them.
+    expect(lines[0].hits[0]).toMatchObject({ path: "ops/backups.md" });
+    expect(lines[2]).toMatchObject({ scope: "ops", path: "ops/backups.md" });
+    expect(lines[3].hits[0]).toMatchObject({ path: "ops/backups.md" });
+    expect(lines[1].hook.injected[0]).toMatchObject({ path: "ops/backups.md" });
+
+    expect(await usage("DELETE")).toMatchObject({ enabled: true, summary: { searches: 0 } });
+    expect((await fetch(`${t.url}/api/query-log`, { method: "PUT", headers })).status).toBe(405);
+  });
 });

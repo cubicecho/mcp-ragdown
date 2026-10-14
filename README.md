@@ -302,6 +302,7 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `RAGDOWN_NOTES_DIR` | `notes` | Where `ragdown_remember` writes, relative to each folder (a subfolder endpoint writes into the subfolder). A relative path inside the folder, not a dot-folder. |
 | `RAGDOWN_TEXT_LIMIT` | `2000` | Characters per hit in text output. Every cut names the `ragdown_read_doc` call that returns the rest. |
 | `RAGDOWN_MAX_PER_DOCUMENT` | `0` | Most sections of one document a search returns and `ragdown_context` injects; the rest are filled from other documents. `0` is no cap. See [Design](#design). |
+| `RAGDOWN_QUERY_LOG` | `false` | Log every search, hook call and `ragdown_read_doc` to `query-log.jsonl` in the data dir, for the web UI's **Settings → Usage**. Never sent anywhere. See [Design](#design). |
 | `RAGDOWN_HOOK_TOP_K` | `4` | `ragdown_context`: most sections per prompt. |
 | `RAGDOWN_HOOK_MIN_SCORE` | the embedder's own | `ragdown_context`: lowest cosine similarity returned. Defaults to the `MIN_SCORE` of the embedder in use (`0.8` for the default one), so leave it unset unless you measured a better number. |
 | `RAGDOWN_HOOK_MIN_RATIO` | `0.95` | `ragdown_context`: lowest share of the best hit's similarity a hit may have and still be injected; `0` disables it. Being a ratio, it carries across embedders as `MIN_SCORE` does not. See [Design](#design). |
@@ -311,8 +312,8 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `RAGDOWN_TOKEN` | — | `serve` only. The bearer token `/mcp`, `/mcp/<folder>` and the web UI's `/api` routes require. |
 | `SECURE_LOCAL_NET` | `false` | `serve` only. Skip the token on a trusted network. `serve` refuses to start with neither. |
 
-Under `serve`, the embedder, watching, the `/mcp` root, the characters per hit and the four `ragdown_context`
-defaults can also be changed while the server runs, under **Settings → Server** in the web UI. What
+Under `serve`, the embedder, watching, the `/mcp` root, the characters per hit, the sections per
+document, the query log and the four `ragdown_context` defaults can also be changed while the server runs, under **Settings → Server** in the web UI. What
 is saved there is kept in `.ragdown-server.json` in the docs directory and wins over the variable of
 the same setting, at once and after every restart, until it is cleared there; the variable is the
 value it goes back to. A new embedder is loaded first (so one that cannot load changes nothing),
@@ -329,14 +330,15 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 
 | Route | Auth | |
 | --- | --- | --- |
-| `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. `settings` holds the non-secret tuning values (`RAGDOWN_EMBEDDER`, `RAGDOWN_WATCH`, `RAGDOWN_ROOT_MCP`, `RAGDOWN_TEXT_LIMIT`, `RAGDOWN_MAX_PER_DOCUMENT`, `RAGDOWN_HOOK_*`) for the web UI's Settings page: the ones in effect, the ones `saved` there, and what the `env` says. |
+| `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. `settings` holds the non-secret tuning values (`RAGDOWN_EMBEDDER`, `RAGDOWN_WATCH`, `RAGDOWN_ROOT_MCP`, `RAGDOWN_TEXT_LIMIT`, `RAGDOWN_MAX_PER_DOCUMENT`, `RAGDOWN_QUERY_LOG`, `RAGDOWN_HOOK_*`) for the web UI's Settings page: the ones in effect, the ones `saved` there, and what the `env` says. |
 | `/mcp/<folder>[/<subfolder...>]` | bearer | Streamable HTTP MCP, stateless, for a folder with MCP on. 404 otherwise. See [Folders](#folders). |
 | `/mcp` | bearer | The same over every folder with MCP on, while `RAGDOWN_ROOT_MCP` is on. 404 otherwise. See [Every folder at once](#every-folder-at-once). |
 | `GET /api/folders` | bearer | Each folder's `name`, `title`, `mcp`, `mcp_path`, `files` and `chunks`, with `created_by` on one an agent made, and `loose_files`: the Markdown outside every folder. |
 | `POST /api/folders` | bearer | Create a folder: JSON `{ name, title?, mcp? }`. 201; 409 when it exists, 400 for a bad name. |
 | `PATCH /api/folders/<name>` | bearer | JSON `{ title?, mcp?, hook?, name? }`: change its settings, or rename it with `name` (which re-indexes it). `hook` takes any of `top_k`, `min_score`, `min_ratio` and `max_chars`; `null` takes the folder's own value away. Unknown keys in `.ragdown.json` are kept. |
 | `DELETE /api/folders/<name>?confirm=<name>` | bearer | Delete a folder and everything in it. 400 unless `confirm` repeats the name. |
-| `PATCH /api/settings` | bearer | JSON `{ embedder?, watch?, text_limit?, max_per_document?, hook? }`: save server settings over their variables and apply them at once. `null` gives a value back to its variable. 400 for a value that is not valid or an embedder that cannot load, 409 when this process is not the one that owns the index. Answers with the new `settings`. |
+| `PATCH /api/settings` | bearer | JSON `{ embedder?, watch?, root_mcp?, text_limit?, max_per_document?, query_log?, hook? }`: save server settings over their variables and apply them at once. `null` gives a value back to its variable. 400 for a value that is not valid or an embedder that cannot load, 409 when this process is not the one that owns the index. Answers with the new `settings`. |
+| `GET /api/query-log` | bearer | The query log summed up for **Settings → Usage**: `enabled`, and a `summary` of the searches, the `gaps` (queries whose best hit was under the minimum score), the hook's injection rate, and the documents read most with how many reads followed a search that showed them. `DELETE` empties the log, read-only or not. |
 | `DELETE /api/loose?name=` | bearer | Delete one of the `loose_files`: a Markdown file directly in the docs directory. 404 for any other name. |
 | `GET /api/docs?folder=` | bearer | The indexed files, of one folder or all: `path`, `folder`, `title`, `description`, `tags`, `aliases`, `created_by`, `session`, `superseded_by`, `mtime_ms`, `size`, `chunks`. |
 | `GET /api/doc?path=` | bearer | One indexed file's text, read from disk, with its tags, aliases and `hash` (SHA-256 of the bytes on disk). 404 for a file the index does not hold. |
@@ -486,6 +488,16 @@ generated corpora a cap of 2 cut the hook's off-target sections by about a fifth
 86.7%). It did not find more of the documents a question spread over several needed, and nor did
 maximal marginal relevance at λ 0.9–0.5, so neither is on by default
 ([`diversity.ts`](scripts/bench/README.md)). Turn the cap on when one document crowds out the rest.
+
+**The query log, off by default.** Search is tuned on generated corpora; `RAGDOWN_QUERY_LOG` (or
+**Settings → Server**) records how it does on real ones. Each `ragdown_recall`, `ragdown_context`
+and web search is a JSON line in `query-log.jsonl` in the data dir — the query, its filters, each
+hit's path, lines, similarity and score, the latency, and for the hook what every gate dropped —
+and each `ragdown_read_doc` is one more. It holds queries, never document text, stays on the
+server, and rotates at 10 MB to one `.1` file. **Settings → Usage** sums it up: the gaps, the
+share of prompts the hook injected into, and the reads that followed a search showing the same
+document within 10 minutes. HTTP MCP has no session, so that last one is a hint that a hit was
+used, not proof.
 
 **Superseding a document.** A document whose frontmatter lists `supersedes:` hides the documents it names from
 search and from hook context. Nothing is deleted or rewritten — the old file stays on disk and

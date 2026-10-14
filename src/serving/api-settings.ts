@@ -23,6 +23,7 @@ export function publicSettings(config: Config) {
     root_mcp: config.rootMcp,
     text_limit: config.textLimit,
     max_per_document: config.maxPerDocument,
+    query_log: config.queryLog,
     hook: {
       top_k: config.hook.topK,
       min_score: config.hook.minScore,
@@ -39,6 +40,7 @@ export function publicSettings(config: Config) {
       root_mcp: config.env.rootMcp,
       text_limit: config.env.textLimit,
       max_per_document: config.env.maxPerDocument,
+      query_log: config.env.queryLog,
       hook: {
         top_k: config.env.hook.topK,
         min_score: config.env.hook.minScore,

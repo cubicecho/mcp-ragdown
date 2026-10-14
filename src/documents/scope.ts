@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import { join, posix, relative, resolve } from "node:path";
 import { readSettings } from "../folders/folder-settings.ts";
-import { hookContext } from "../hook/hook-context.ts";
+import { type HookContextInput, hookContext } from "../hook/hook-context.ts";
 import { type ContextOptions, resolveHook } from "../hook/hook-settings.ts";
 import { type Hit, supersededBy, type WrittenBy } from "../indexing/store.ts";
 import type { Ragdown } from "../serving/engine.ts";
@@ -109,6 +109,7 @@ export class Scope {
     prompt: string,
     sessionId?: string,
     options: ContextOptions = {},
+    trace?: HookContextInput["trace"],
   ): Promise<string | undefined> {
     // The call's own arguments, then the folder's `.ragdown.json`, then the environment's.
     const own = this.folder
@@ -123,6 +124,7 @@ export class Scope {
       seenBy: () =>
         sessionId ? this.rag.sessions.seen(sessionKey(this.dir, sessionId)) : new Set<string>(),
       recall: (query, topK) => this.recall(query, topK),
+      trace,
     });
   }
 

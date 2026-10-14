@@ -13,6 +13,7 @@ import type { Config } from "../shared/config.ts";
 import { defaults } from "../shared/defaults.ts";
 import { errorMessage } from "../shared/errors.ts";
 import { Refusal } from "../shared/refusal.ts";
+import { QueryLog } from "../usage/query-log.ts";
 import { claimSocket, request } from "./primary.ts";
 
 /**
@@ -29,9 +30,12 @@ export class Ragdown {
   private takeover: NodeJS.Timeout | undefined;
   /** Chunk ids already returned by `ragdown_context` for each session, so a hook does not repeat itself. */
   readonly sessions = new SessionMemory();
+  /** What search was asked and returned, when `config.queryLog` is on. */
+  readonly queryLog: QueryLog;
 
   private constructor(config: Config, embedder: Embedder, store: Store) {
     this.config = config;
+    this.queryLog = new QueryLog(config);
     this.embedder = embedder;
     this.store = store;
   }
