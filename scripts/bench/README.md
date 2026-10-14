@@ -45,6 +45,8 @@ resumes by re-running the same command.
 | `scale.ts` | — | Not a benchmark: the shared parts of the two below. The corpus embedded as the server would, its vectors jittered and replicated to any N, exact brute-force ground truth, recall\@k, and `interleaved()`, which times variants round-robin so load drift lands on all of them alike. |
 | `qdrant.ts` | embedder, a local Qdrant | Whether a separate vector server beats the embedded table: the real pipeline (embed, dense, FTS) against Qdrant on the same 210 chunks, then jittered to 1k/10k/100k, top-10 unfiltered and with a 10% payload filter, recall against brute force. |
 | `lance-tuning.ts` | embedder | The LanceDB knobs, one table per variant: selected columns, distance type, `readConsistencyInterval`, prefilter against postfilter, scalar indexes on the filter column, and the vector index types (IVF-flat, HNSW-SQ, IVF-PQ) across `nprobes`/`ef`. |
+| `rerank.ts` | embedder | CPU cross-encoder rerankers over the shipped top 10: rank of the right section, latency, and whether the reranker's score separates on-topic from off-topic prompts better than cosine (gate AUC). `BLEND=1` mixes the reranker into the shipped ranking instead of replacing it, `TIMING=1` times the models interleaved, `BENCH_SEED` (read by `gen.ts`) draws a held-out corpus. |
+| `fusion.ts` | embedder | How dense and BM25 are combined and how BM25 tokenizes: the shipped RRF against score fusions (min-max RSF, DBSF), routing identifier-looking queries to BM25, and FTS tokenizer variants, over the questions and over identifier probes. Ranks are what `ragdown_recall` returns; a second column runs each fused top 8 through the hook's own gates. |
 
 ## What they found
 
@@ -136,3 +138,100 @@ index on the filter column makes a *filtered flat* search 4.5–8× slower (13.1
 index only adds work; `folder = 'f3'` is no faster than the shipped `starts_with(path, ...)`; and
 `postfilter()` is slightly faster only because it is wrong — it filters the top-k it already picked,
 so recall falls to 0.10. Hence: no index on `path`, prefilter, and the vector index built lazily.
+
+`rerank.ts` says a CPU reranker is worth offering, but not as a replacement for the shipped
+ranking. Nine candidates were researched (ms-marco TinyBERT-L2 and MiniLM-L6, jina-reranker-v1-tiny,
+the Ettin rerankers at 17m/32m/68m/150m, gte-reranker-modernbert-base, granite reranker r2); LLM
+rerankers such as Qwen3-Reranker-0.6B were left out as too slow on CPU. Six were run, int8 ONNX,
+reranking the shipped top 10, over the 270 answerable questions. `first` is the right section ranked
+first; the shipped fusion's own ceiling at 10 is 89.3:
+
+```
+                 first   top4    mrr   gate AUC    p50 ms (10 pairs)
+fused (shipped)   76.7   88.5      —      0.971    —
+ettin-17m         77.8   88.9  0.833      0.935    50–130
+ettin-32m         75.6   88.9  0.820      0.936    140–240
+minilm-l6         81.1   88.9  0.849      0.989    100–210
+ettin-68m         81.9   88.9  0.853      0.934    420–620
+ettin-150m        83.3   88.9  0.860      0.989    1300–2800
+gte-modernbert    85.6   89.3  0.873      0.943    690–1350
+```
+
+Latencies are 4 threads on an i9-13900H that was never idle (load 1–8 across runs), so read the
+order, not the numbers: interleaved timing kept the order identical across every run. ModernBERT is
+slow on CPU by architecture, not by quantisation; fp32 Ettin is only 5–20% slower than int8. A
+pool of 20 doubled the time for under a point.
+
+Replacing the ranking hides regressions behind the averages. ettin-17m drops code-block questions
+from 100 to 37 and MiniLM drops scoped-section questions from 97 to 53, because a cross-encoder
+reads the chunk without the heading context the fused ranking already used. Only gte-modernbert had
+no type that got worse. So `BLEND=1` mixes the two, and the blend that works is linear: min-max
+both scores over the pool and weight them, against cosine similarity rather than the fused score.
+Equal-weight RRF of the two ranks barely moves anything (about 78 for every model), and
+reranker-weighted RRF brings the regressions back. `worst` is the largest drop on any question type:
+
+```
+                              default seed       seed 42 (held out)   seed 7 (held out)
+                              first   worst      first   worst        first   worst
+fused (shipped)               75.9      —        73.7      —          77.8      —
+ettin-17m replace             77.0   -63.3       76.7   -56.7         80.0   -46.7
+ettin-17m linear-cos 0.5      82.6     0.0       80.0    -6.7         83.7    -3.3
+ettin-17m linear-cos 0.7      82.6    -3.3       83.0    -6.7         85.2   -10.0
+minilm-l6 linear-cos 0.5      81.5    -3.3       77.8   -10.0         81.1   -10.0
+gte-modernbert replace        85.9     0.0         —        —           —       —
+```
+
+The blend was chosen on the default corpus, so `BENCH_SEED` draws two more with the same shape and
+different services, values and wording. ettin-17m at 0.5 kept +6 points on both and its worst type
+stayed within two questions of the shipped ranking; 0.7 scores higher but gives up code blocks.
+That makes two useful settings: ettin-17m blended 50/50 with cosine at about the cost of the query
+embedding, and gte-modernbert replacing the ranking at about a second.
+
+The gate should stay on cosine. MiniLM and ettin-150m separate on-topic from off-topic better
+(AUC 0.989 against 0.971), but the two worth shipping, ettin-17m and gte-modernbert, do worse (0.935, 0.943), and a second threshold per reranker is
+not worth it.
+
+One trap: the Ettin ONNX exports are encoder-only. The sentence-transformers head (CLS pooling,
+Dense 256→256 with exact GELU, LayerNorm, Dense 256→1) lives in safetensors beside the model, and
+`rerank.ts` applies it in JS. Against sentence-transformers it matches exactly in fp32 and keeps the
+order in int8. Any shipped version has to do the same.
+
+`fusion.ts` found one change worth making and closed off two. Pool 32, as the hook asks for; three
+corpora (`BENCH_SEED` default, 42, 7); and the bench's own RRF reproduces `store.search`'s top 8 on
+every query, so the variants are compared against the real thing. Identifier probes are a token that
+occurs in exactly one chunk, asked as "where is \`token\` used?":
+
+```
+                                  questions first         worst type      identifier probes first
+                                  def    42     7         def  42   7     def    42     7
+dense only                        73.3  72.6  76.7                         6.9   7.8  12.7
+lexical only                      74.4  71.1  73.3                        79.2  83.5  83.3
+rrf k60 (shipped)                 76.7  74.1  78.1                        24.8  36.9  33.3
+rsf 0.5                           79.3  77.0  79.3      -10  -10  -3      51.5  64.1  60.8
+dbsf                              79.6  77.8  79.3       -7   -3  -3      53.5  62.1  64.7
+routed: rrf, or rsf 0.2           82.2  79.6  82.2        0    0   0      79.2  85.4  84.3
+```
+
+Routing is the change. A query that looks like it holds an identifier (a backtick span, snake_case,
+a dotted, slashed or flag-shaped name, camelCase, a hyphenated name with a digit) is fused by RSF
+weighted 0.2 dense / 0.8 lexical; every other query keeps RRF unchanged. It gains 4–6 points on the
+questions with no type worse on any corpus — all of it from the questions that quote a command — and
+takes the identifier probes from a quarter or a third to above 80%, level with BM25 alone. The shipped
+fusion is worse there than either side alone would suggest: an exact identifier BM25 ranks first
+loses to chunks both retrievers half-agree on. The detector fired on every question that quotes a command
+and otherwise only on a version number ("after the 4.2 release"), which routing did not hurt. Real
+prompts are messier than these, so it needs watching.
+
+Score fusion on its own (Weaviate's relative score fusion, Qdrant's DBSF) is better than RRF by 1–3
+points but costs table-cell questions up to 10, so it only earns its place inside the routing.
+
+The tokenizer is already right. `Index.fts()` with no options ranks identically to stemming plus
+stop-word removal on every query of every corpus; turning stemming off or keeping stop words is no
+better and usually worse.
+
+None of it reaches the hook as it stands. `hookContext` takes the fused top 8, re-sorts by cosine
+and gates on it, so the right section is injected for 88% of questions under every fusion, and an
+identifier probe's chunk is injected only 6–26% of the time even when the fusion ranks it first:
+a chunk can hold the exact string and still sit below 0.8 cosine, or below 0.95 of the best hit.
+Routing is a `ragdown_recall` and web search change; the hook would need its own rule for exact
+matches.

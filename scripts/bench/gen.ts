@@ -6,7 +6,9 @@ import { join } from "node:path";
 export type Fmt = "md" | "html" | "txt";
 export const FORMATS: Fmt[] = ["md", "html", "txt"];
 
-let seed = 1234567;
+// BENCH_SEED draws a different corpus with the same shape: a held-out set for a choice tuned on the
+// default one.
+let seed = Number(process.env.BENCH_SEED ?? 1234567);
 const rnd = () => {
   seed = (seed * 1103515245 + 12345) % 2147483648;
   return seed / 2147483648;
