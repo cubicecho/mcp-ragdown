@@ -81,6 +81,7 @@ export class Root {
       source: this.config.docsDir,
       settings: resolveHook(options, {}, this.config.hook),
       textLimit: this.config.textLimit,
+      perDocument: this.config.maxPerDocument,
       seenBy: () =>
         sessionId ? this.rag.sessions.seen(sessionKey(EVERY_FOLDER, sessionId)) : new Set<string>(),
       recall: (query, topK) => this.recall(query, topK),

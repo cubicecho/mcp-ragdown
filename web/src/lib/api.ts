@@ -6,6 +6,7 @@ export interface ServerSettings {
   watch?: boolean;
   root_mcp?: boolean;
   text_limit?: number;
+  max_per_document?: number;
   hook?: HookOverrides;
 }
 
@@ -15,6 +16,7 @@ export interface ServerSettingsPatch {
   watch?: boolean | null;
   root_mcp?: boolean | null;
   text_limit?: number | null;
+  max_per_document?: number | null;
   hook?: { [K in keyof HookOverrides]?: number | null };
 }
 
@@ -32,6 +34,8 @@ export interface Status {
     /** On, `/mcp` serves every folder with MCP on as one server. */
     root_mcp: boolean;
     text_limit: number;
+    /** The most sections of one document a search returns; 0 is no cap. */
+    max_per_document: number;
     /** `ragdown_context`'s defaults, which a hook's own arguments override. */
     hook: {
       top_k: number;
@@ -49,6 +53,7 @@ export interface Status {
       watch: boolean;
       root_mcp: boolean;
       text_limit: number;
+      max_per_document: number;
       hook: { top_k: number; min_score: number | null; min_ratio: number; max_chars: number };
     };
     /** The embedders a form can offer, with each one's own floor and unrelated score. */

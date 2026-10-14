@@ -72,6 +72,7 @@ describe("HTTP server", () => {
       settings: {
         watch: false,
         text_limit: 2000,
+        max_per_document: 0,
         // The hash embedder has no measured scale, so there is no unrelated score to warn against.
         hook: { top_k: 4, min_score: 0.2, min_ratio: 0, max_chars: 6000, unrelated_score: null },
       },
@@ -548,6 +549,7 @@ describe("HTTP server", () => {
     for (const bad of [
       { watch: "no" },
       { text_limit: -1 },
+      { max_per_document: 1.5 },
       { hook: { top_k: 1.5 } },
       { hook: { min_ratio: 2 } },
       { hook: [] },
@@ -561,28 +563,42 @@ describe("HTTP server", () => {
     const saved = await patch({
       watch: false,
       text_limit: 500,
+      max_per_document: 2,
       hook: { top_k: 2, min_score: 0.5 },
     });
     expect(saved.status).toBe(200);
     expect(((await saved.json()) as { settings: unknown }).settings).toMatchObject({
       watch: false,
       text_limit: 500,
+      max_per_document: 2,
       hook: { top_k: 2, min_score: 0.5, min_ratio: 0, max_chars: 6000 },
-      saved: { watch: false, text_limit: 500, hook: { top_k: 2, min_score: 0.5 } },
+      saved: {
+        watch: false,
+        text_limit: 500,
+        max_per_document: 2,
+        hook: { top_k: 2, min_score: 0.5 },
+      },
       // What the variables said is still there to go back to.
-      env: { watch: true, text_limit: 2000, hook: { top_k: 4, min_score: 0.2 } },
+      env: {
+        watch: true,
+        text_limit: 2000,
+        max_per_document: 0,
+        hook: { top_k: 4, min_score: 0.2 },
+      },
     });
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
       watch: false,
       text_limit: 500,
+      max_per_document: 2,
       hook: { top_k: 2, min_score: 0.5 },
     });
     // In effect without a restart: the running config is what the tools read.
     expect(t.config.hook.topK).toBe(2);
     expect(t.config.textLimit).toBe(500);
+    expect(t.config.maxPerDocument).toBe(2);
 
     // A later change keeps what it does not name, and a null gives the value back.
-    await patch({ hook: { top_k: null, max_chars: 100 }, watch: null });
+    await patch({ hook: { top_k: null, max_chars: 100 }, watch: null, max_per_document: null });
     expect(await settings()).toMatchObject({
       watch: true,
       hook: { top_k: 4, min_score: 0.5, max_chars: 100 },

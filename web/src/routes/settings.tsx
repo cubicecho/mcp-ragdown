@@ -664,6 +664,20 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
                   </>
                 }
               />,
+              <PropertyRow
+                key="max-per-document"
+                label="Sections per document"
+                value={settings.max_per_document || "No cap"}
+                hint={
+                  <>
+                    <Env
+                      name="RAGDOWN_MAX_PER_DOCUMENT"
+                      saved={settings.saved.max_per_document !== undefined}
+                    />
+                    . For search and the hook; the rest come from other documents.
+                  </>
+                }
+              />,
             ]}
           />
         ) : null

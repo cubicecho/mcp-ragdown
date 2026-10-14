@@ -462,6 +462,9 @@ export class Store {
    * @param tag - limits both to documents with this tag or one nested under it (`project` takes in
    *   `project/alpha`).
    * @param writtenBy - limits both to documents an agent wrote, or to the ones the user did.
+   * @param perDocument - the most chunks of one document in the result, the places it frees taken
+   *   by the next-best chunks of other documents (or of the same ones, when the pool has no more);
+   *   0 is no cap.
    */
   async search(
     query: string,
@@ -469,6 +472,7 @@ export class Store {
     pathPrefixes?: string[],
     tag?: string,
     writtenBy?: WrittenBy,
+    perDocument = 0,
   ): Promise<Hit[]> {
     if (pathPrefixes?.length === 0) {
       return [];
@@ -578,11 +582,36 @@ export class Store {
       }
     }
 
-    return [...fused.values()]
-      .sort((a, b) => b.score - a.score)
+    const ranked = [...fused.values()].sort((a, b) => b.score - a.score);
+    return capPerDocument(ranked, perDocument, (entry) => entry.row.path)
       .slice(0, limit)
       .map(({ row, score, sources }) => toHit(row, score, sources));
   }
+}
+
+/**
+ * A ranking with each document's chunks past the first `perDocument` moved behind every other
+ * chunk, in their own order: kept rather than dropped, so a pool with too few documents still
+ * fills the result. 0 leaves it as it is.
+ */
+export function capPerDocument<T>(
+  ranked: T[],
+  perDocument: number,
+  pathOf: (entry: T) => string,
+): T[] {
+  if (perDocument <= 0) {
+    return ranked;
+  }
+  const taken = new Map<string, number>();
+  const kept: T[] = [];
+  const over: T[] = [];
+  for (const entry of ranked) {
+    const path = pathOf(entry);
+    const count = taken.get(path) ?? 0;
+    taken.set(path, count + 1);
+    (count < perDocument ? kept : over).push(entry);
+  }
+  return [...kept, ...over];
 }
 
 /** Scores scaled to 0–1 by their own minimum and maximum; all of them 1 when they are equal. */

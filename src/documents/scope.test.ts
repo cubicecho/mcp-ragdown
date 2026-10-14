@@ -248,6 +248,28 @@ describe("Scope", () => {
     );
   });
 
+  it("caps the sections of one document in search and in hook context", async () => {
+    const t = await tempSetup({}, "folders");
+    closers.push(t.cleanup);
+    const sections = ["Primary", "Replica", "Failover"]
+      .map((name) => `## ${name}\n\nPostgres replication lag on the ${name.toLowerCase()}.`)
+      .join("\n\n");
+    await t.write("work/database.md", `# Database\n\n${sections}`);
+    await t.write("work/alerts.md", "# Alerts\n\nPage on postgres lag.");
+    const rag = await Ragdown.start(t.config);
+    closers.push(() => rag.close());
+    await rag.sync(false);
+    const work = new Scope(rag, "work");
+    const query = "postgres replication lag";
+
+    const paths = async () => (await work.recall(query, 2)).map((hit) => hit.path);
+    expect(await paths()).toEqual(["database.md", "database.md"]);
+    applySettings(t.config, { max_per_document: 1 });
+    expect(await paths()).toEqual(["database.md", "alerts.md"]);
+    const block = await work.context(query, undefined, { topK: 2, minScore: 0, minRatio: 0 });
+    expect(block).toContain("alerts.md");
+  });
+
   it("puts a saved server setting over the environment's and under the folder's", async () => {
     const t = await tempSetup({}, "folders");
     closers.push(t.cleanup);

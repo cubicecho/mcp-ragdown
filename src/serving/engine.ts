@@ -85,6 +85,8 @@ export class Ragdown {
    *   docs folder.
    * @param tag - limits it to documents with this tag or one nested under it.
    * @param writtenBy - limits it to documents an agent wrote, or to the ones the user did.
+   *
+   * At most `config.maxPerDocument` sections of one document come back, when it is set.
    */
   async recall(
     query: string,
@@ -93,7 +95,7 @@ export class Ragdown {
     tag?: string,
     writtenBy?: WrittenBy,
   ): Promise<Hit[]> {
-    return this.store.search(query, topK, pathPrefixes, tag, writtenBy);
+    return this.store.search(query, topK, pathPrefixes, tag, writtenBy, this.config.maxPerDocument);
   }
 
   /** The files the index knows about, with their titles, sorted by path. */

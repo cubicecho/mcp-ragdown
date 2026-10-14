@@ -124,6 +124,40 @@ describe("Store", () => {
     expect(callsByAlias("who approves vandorx deploys?", ["Vandor"])).toBe(false);
   });
 
+  it("caps the sections of one document, refilling from the next-best", async () => {
+    const t = await tempSetup();
+    cleanup = t.cleanup;
+    const embedder: Embedder = new HashEmbedder();
+    const store = await Store.open(t.config.dataDir, embedder, true);
+    const sections = ["Primary", "Replica", "Failover", "Backups"]
+      .map((name) => `## ${name}\n\nPostgres replication lag on the ${name.toLowerCase()}.`)
+      .join("\n\n");
+    const update = async (path: string, markdown: string) => {
+      const chunks = chunkMarkdown(markdown, path);
+      const vectors = await embedder.embed(chunks.map(embeddingText), "document");
+      return { path, hash: path, mtimeMs: 0, size: 0, chunks, vectors, supersedes: [] };
+    };
+    await store.apply(
+      [
+        await update("long.md", `# Database\n\n${sections}`),
+        await update("short.md", "# Alerts\n\nPage on postgres lag."),
+      ],
+      [],
+    );
+
+    const query = "postgres replication lag";
+    const paths = async (perDocument?: number) =>
+      (await store.search(query, 3, undefined, undefined, undefined, perDocument)).map(
+        (hit) => hit.path,
+      );
+    expect(await paths()).toEqual(["long.md", "long.md", "long.md"]);
+    expect(await paths(2)).toEqual(["long.md", "long.md", "short.md"]);
+    // Too few documents to fill the result: the capped sections come back after the rest.
+    expect(
+      (await store.search(query, 6, undefined, undefined, undefined, 1)).map((hit) => hit.path),
+    ).toEqual(["long.md", "short.md", "long.md", "long.md", "long.md"]);
+  });
+
   it("builds no vector index for a folder of documents", async () => {
     const t = await tempSetup();
     cleanup = t.cleanup;

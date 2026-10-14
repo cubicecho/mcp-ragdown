@@ -171,6 +171,16 @@ export function EditServerSettings({
                   placeholder={String(env.text_limit)}
                   validators={{ onChange: ({ value }) => countError(value) }}
                 />
+                <NumberField
+                  form={form}
+                  name="max_per_document"
+                  label="Sections per document"
+                  description="The most sections of one document a search or a prompt gets; 0 is no cap."
+                  min={0}
+                  step={1}
+                  placeholder={String(env.max_per_document)}
+                  validators={{ onChange: ({ value }) => countError(value) }}
+                />
               </div>
             }
           />

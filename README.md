@@ -301,6 +301,7 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `RAGDOWN_DISABLED_TOOLS` | none | Tools to leave out, by name and comma-separated, such as `ragdown_stats,ragdown_reindex`. They are neither listed nor callable. See [Tools](#tools). |
 | `RAGDOWN_NOTES_DIR` | `notes` | Where `ragdown_remember` writes, relative to each folder (a subfolder endpoint writes into the subfolder). A relative path inside the folder, not a dot-folder. |
 | `RAGDOWN_TEXT_LIMIT` | `2000` | Characters per hit in text output. Every cut names the `ragdown_read_doc` call that returns the rest. |
+| `RAGDOWN_MAX_PER_DOCUMENT` | `0` | Most sections of one document a search returns and `ragdown_context` injects; the rest are filled from other documents. `0` is no cap. See [Design](#design). |
 | `RAGDOWN_HOOK_TOP_K` | `4` | `ragdown_context`: most sections per prompt. |
 | `RAGDOWN_HOOK_MIN_SCORE` | the embedder's own | `ragdown_context`: lowest cosine similarity returned. Defaults to the `MIN_SCORE` of the embedder in use (`0.8` for the default one), so leave it unset unless you measured a better number. |
 | `RAGDOWN_HOOK_MIN_RATIO` | `0.95` | `ragdown_context`: lowest share of the best hit's similarity a hit may have and still be injected; `0` disables it. Being a ratio, it carries across embedders as `MIN_SCORE` does not. See [Design](#design). |
@@ -328,14 +329,14 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 
 | Route | Auth | |
 | --- | --- | --- |
-| `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. `settings` holds the non-secret tuning values (`RAGDOWN_EMBEDDER`, `RAGDOWN_WATCH`, `RAGDOWN_ROOT_MCP`, `RAGDOWN_TEXT_LIMIT`, `RAGDOWN_HOOK_*`) for the web UI's Settings page: the ones in effect, the ones `saved` there, and what the `env` says. |
+| `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. `settings` holds the non-secret tuning values (`RAGDOWN_EMBEDDER`, `RAGDOWN_WATCH`, `RAGDOWN_ROOT_MCP`, `RAGDOWN_TEXT_LIMIT`, `RAGDOWN_MAX_PER_DOCUMENT`, `RAGDOWN_HOOK_*`) for the web UI's Settings page: the ones in effect, the ones `saved` there, and what the `env` says. |
 | `/mcp/<folder>[/<subfolder...>]` | bearer | Streamable HTTP MCP, stateless, for a folder with MCP on. 404 otherwise. See [Folders](#folders). |
 | `/mcp` | bearer | The same over every folder with MCP on, while `RAGDOWN_ROOT_MCP` is on. 404 otherwise. See [Every folder at once](#every-folder-at-once). |
 | `GET /api/folders` | bearer | Each folder's `name`, `title`, `mcp`, `mcp_path`, `files` and `chunks`, with `created_by` on one an agent made, and `loose_files`: the Markdown outside every folder. |
 | `POST /api/folders` | bearer | Create a folder: JSON `{ name, title?, mcp? }`. 201; 409 when it exists, 400 for a bad name. |
 | `PATCH /api/folders/<name>` | bearer | JSON `{ title?, mcp?, hook?, name? }`: change its settings, or rename it with `name` (which re-indexes it). `hook` takes any of `top_k`, `min_score`, `min_ratio` and `max_chars`; `null` takes the folder's own value away. Unknown keys in `.ragdown.json` are kept. |
 | `DELETE /api/folders/<name>?confirm=<name>` | bearer | Delete a folder and everything in it. 400 unless `confirm` repeats the name. |
-| `PATCH /api/settings` | bearer | JSON `{ embedder?, watch?, text_limit?, hook? }`: save server settings over their variables and apply them at once. `null` gives a value back to its variable. 400 for a value that is not valid or an embedder that cannot load, 409 when this process is not the one that owns the index. Answers with the new `settings`. |
+| `PATCH /api/settings` | bearer | JSON `{ embedder?, watch?, text_limit?, max_per_document?, hook? }`: save server settings over their variables and apply them at once. `null` gives a value back to its variable. 400 for a value that is not valid or an embedder that cannot load, 409 when this process is not the one that owns the index. Answers with the new `settings`. |
 | `DELETE /api/loose?name=` | bearer | Delete one of the `loose_files`: a Markdown file directly in the docs directory. 404 for any other name. |
 | `GET /api/docs?folder=` | bearer | The indexed files, of one folder or all: `path`, `folder`, `title`, `description`, `tags`, `aliases`, `created_by`, `session`, `superseded_by`, `mtime_ms`, `size`, `chunks`. |
 | `GET /api/doc?path=` | bearer | One indexed file's text, read from disk, with its tags, aliases and `hash` (SHA-256 of the bytes on disk). 404 for a file the index does not hold. |
@@ -475,6 +476,16 @@ quoted name. On three generated corpora, each document given a codename alias, t
 came first for 83–85% of alias questions (98–99% in the top 8) and the hook injected it for 86–89%,
 against 32–38%; questions by title were unchanged. A title needs no such help: it is in every
 chunk's breadcrumb, embedded and indexed. A query routed to score fusion is not boosted.
+
+**Sections per document, off by default.** A long document on the topic can fill every result with
+its own sections. `RAGDOWN_MAX_PER_DOCUMENT` caps them: past the cap, a document's sections move
+behind every other document's, so a short result fills from the next-best documents and a corpus
+with too few still fills it. The hook applies the cap again after its cosine sort. On three
+generated corpora a cap of 2 cut the hook's off-target sections by about a fifth (2.31–2.40 to
+1.83–1.89 a prompt), at about 2 points of the right section in the top 8 (88.9–89.3% to
+86.7%). It did not find more of the documents a question spread over several needed, and nor did
+maximal marginal relevance at λ 0.9–0.5, so neither is on by default
+([`diversity.ts`](scripts/bench/README.md)). Turn the cap on when one document crowds out the rest.
 
 **Superseding a document.** A document whose frontmatter lists `supersedes:` hides the documents it names from
 search and from hook context. Nothing is deleted or rewritten — the old file stays on disk and

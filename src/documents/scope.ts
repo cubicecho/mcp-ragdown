@@ -119,6 +119,7 @@ export class Scope {
       source: this.root,
       settings: resolveHook(options, own, this.config.hook),
       textLimit: this.config.textLimit,
+      perDocument: this.config.maxPerDocument,
       seenBy: () =>
         sessionId ? this.rag.sessions.seen(sessionKey(this.dir, sessionId)) : new Set<string>(),
       recall: (query, topK) => this.recall(query, topK),
