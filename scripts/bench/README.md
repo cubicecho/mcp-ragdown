@@ -46,6 +46,7 @@ resumes by re-running the same command.
 | `qdrant.ts` | embedder, a local Qdrant | Whether a separate vector server beats the embedded table: the real pipeline (embed, dense, FTS) against Qdrant on the same 210 chunks, then jittered to 1k/10k/100k, top-10 unfiltered and with a 10% payload filter, recall against brute force. |
 | `lance-tuning.ts` | embedder | The LanceDB knobs, one table per variant: selected columns, distance type, `readConsistencyInterval`, prefilter against postfilter, scalar indexes on the filter column, and the vector index types (IVF-flat, HNSW-SQ, IVF-PQ) across `nprobes`/`ef`. |
 | `rerank.ts` | embedder | CPU cross-encoder rerankers over the shipped top 10: rank of the right section, latency, and whether the reranker's score separates on-topic from off-topic prompts better than cosine (gate AUC). `BLEND=1` mixes the reranker into the shipped ranking instead of replacing it, `TIMING=1` times the models interleaved, `BENCH_SEED` (read by `gen.ts`) draws a held-out corpus. |
+| `fusion.ts` | embedder | How dense and BM25 are combined and how BM25 tokenizes: the shipped RRF against score fusions (min-max RSF, DBSF), routing identifier-looking queries to BM25, and FTS tokenizer variants, over the questions and over identifier probes. Ranks are what `ragdown_recall` returns; a second column runs each fused top 8 through the hook's own gates. |
 
 ## What they found
 
@@ -194,3 +195,43 @@ One trap: the Ettin ONNX exports are encoder-only. The sentence-transformers hea
 Dense 256→256 with exact GELU, LayerNorm, Dense 256→1) lives in safetensors beside the model, and
 `rerank.ts` applies it in JS. Against sentence-transformers it matches exactly in fp32 and keeps the
 order in int8. Any shipped version has to do the same.
+
+`fusion.ts` found one change worth making and closed off two. Pool 32, as the hook asks for; three
+corpora (`BENCH_SEED` default, 42, 7); and the bench's own RRF reproduces `store.search`'s top 8 on
+every query, so the variants are compared against the real thing. Identifier probes are a token that
+occurs in exactly one chunk, asked as "where is \`token\` used?":
+
+```
+                                  questions first         worst type      identifier probes first
+                                  def    42     7         def  42   7     def    42     7
+dense only                        73.3  72.6  76.7                         6.9   7.8  12.7
+lexical only                      74.4  71.1  73.3                        79.2  83.5  83.3
+rrf k60 (shipped)                 76.7  74.1  78.1                        24.8  36.9  33.3
+rsf 0.5                           79.3  77.0  79.3      -10  -10  -3      51.5  64.1  60.8
+dbsf                              79.6  77.8  79.3       -7   -3  -3      53.5  62.1  64.7
+routed: rrf, or rsf 0.2           82.2  79.6  82.2        0    0   0      79.2  85.4  84.3
+```
+
+Routing is the change. A query that looks like it holds an identifier (a backtick span, snake_case,
+a dotted, slashed or flag-shaped name, camelCase, a hyphenated name with a digit) is fused by RSF
+weighted 0.2 dense / 0.8 lexical; every other query keeps RRF unchanged. It gains 4–6 points on the
+questions with no type worse on any corpus — all of it from the questions that quote a command — and
+takes the identifier probes from a quarter or a third to above 80%, level with BM25 alone. The shipped
+fusion is worse there than either side alone would suggest: an exact identifier BM25 ranks first
+loses to chunks both retrievers half-agree on. The detector fired on every question that quotes a command
+and otherwise only on a version number ("after the 4.2 release"), which routing did not hurt. Real
+prompts are messier than these, so it needs watching.
+
+Score fusion on its own (Weaviate's relative score fusion, Qdrant's DBSF) is better than RRF by 1–3
+points but costs table-cell questions up to 10, so it only earns its place inside the routing.
+
+The tokenizer is already right. `Index.fts()` with no options ranks identically to stemming plus
+stop-word removal on every query of every corpus; turning stemming off or keeping stop words is no
+better and usually worse.
+
+None of it reaches the hook as it stands. `hookContext` takes the fused top 8, re-sorts by cosine
+and gates on it, so the right section is injected for 88% of questions under every fusion, and an
+identifier probe's chunk is injected only 6–26% of the time even when the fusion ranks it first:
+a chunk can hold the exact string and still sit below 0.8 cosine, or below 0.95 of the best hit.
+Routing is a `ragdown_recall` and web search change; the hook would need its own rule for exact
+matches.
