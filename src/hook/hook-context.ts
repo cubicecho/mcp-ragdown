@@ -1,4 +1,5 @@
 import { formatHit } from "../indexing/format.ts";
+import { exactNames, holdsName } from "../indexing/identifiers.ts";
 import type { Hit } from "../indexing/store.ts";
 import { defaults } from "../shared/defaults.ts";
 import type { HookSettings } from "./hook-settings.ts";
@@ -39,13 +40,24 @@ export async function hookContext({
   }
 
   const seen = seenBy();
-  const ranked = (await recall(trimmed, topK * 2))
-    .filter((hit) => hit.similarity >= minScore && !seen.has(hit.id))
+  const candidates = (await recall(trimmed, topK * 2)).filter((hit) => !seen.has(hit.id));
+  // A chunk that holds a name the prompt quotes is kept whatever its cosine, the best-ranked one
+  // only: it can hold the exact command and still sit below either gate, since everything around
+  // the name is prose the prompt does not share.
+  const names = exactNames(trimmed);
+  const named = candidates.find((hit) =>
+    holdsName(`${hit.title}\n${hit.heading}\n${hit.text}`, names),
+  );
+  const ranked = candidates
+    .filter((hit) => hit !== named && hit.similarity >= minScore)
     .sort((a, b) => b.similarity - a.similarity);
   // Then the relative floor: whatever the best hit scored, a hit well below it is noise beside
   // it, and injected noise costs accuracy rather than merely costing tokens.
   const best = ranked[0]?.similarity ?? 0;
-  const hits = ranked.filter((hit) => hit.similarity >= best * minRatio).slice(0, topK);
+  const hits = [
+    ...(named ? [named] : []),
+    ...ranked.filter((hit) => hit.similarity >= best * minRatio),
+  ].slice(0, topK);
   if (hits.length === 0) {
     return undefined;
   }

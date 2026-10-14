@@ -26,6 +26,12 @@ export const defaults = Object.freeze({
   /** Reciprocal-rank-fusion constant; 60 is the original RRF paper's and rarely worth tuning. */
   rrfK: 60,
   /**
+   * The dense side's weight when a query names something (`identifiers.ts`), and the two sides are
+   * fused by min-max score instead of rank. Measured on three corpora: 4–6 points of top-1 with no
+   * question type worse, and an exact identifier's chunk first 80%+ of the time against a third.
+   */
+  namedQueryDenseWeight: 0.2,
+  /**
    * Chunks below which no vector index is built. A folder of documents is nowhere near it, and
    * under it the flat scan wins anyway: measured at 10k chunks the index is twice as fast, at 1k
    * it is noise.

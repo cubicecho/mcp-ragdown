@@ -2,13 +2,14 @@
 // the real index, with the two retrievers run separately (pool 32, as the hook's `limit 8` asks for)
 // and their lists fused offline by each method:
 //
-//   - RRF k=60, the shipped fusion, and RRF with the lexical side weighted up;
+//   - RRF k=60, the fusion before routing (`rrf k60 (shipped)`), and RRF with the lexical side
+//     weighted up;
 //   - relative score fusion (RSF): each side's scores min-max normalised over its own list, absent
 //     counts as 0, weighted sum. `rsf-cos` takes the dense side from cosine over every candidate
 //     instead, since a lexical-only row's cosine is known anyway;
 //   - distribution-based score fusion (DBSF): each side normalised by its mean ± 3σ;
-//   - routed: a query that looks like it holds an identifier (backticks, snake_case, a dotted or
-//     slashed name, a flag, camelCase, a hyphenated name with a digit) leans on BM25.
+//   - routed: a query `namesSomething` (src/indexing/identifiers.ts) leans on BM25. `routed rrf / rsf
+//     0.2` is what `store.search` ships.
 //
 // Tokenizer variants are each their own small FTS table over the same `search_text`. The first,
 // `default`, is the shipped `Index.fts()`, and which explicit variant ranks identically to it says
@@ -26,6 +27,7 @@ import * as lancedb from "@lancedb/lancedb";
 import { chunkMarkdown, embeddingText } from "../../src/documents/chunk.ts";
 import { embedderMinScore } from "../../src/hook/hook-settings.ts";
 import { createEmbedder } from "../../src/indexing/embedder.ts";
+import { exactNames, holdsName, namesSomething } from "../../src/indexing/identifiers.ts";
 import { Store } from "../../src/indexing/store.ts";
 import { defaults } from "../../src/shared/defaults.ts";
 import { docs, hardQuestions, headingPath, questions, renderDoc } from "./gen.ts";
@@ -96,14 +98,13 @@ for (const [name, options] of Object.entries(TOKENIZERS)) {
 }
 
 // --- queries
-const IDENT =
-  /`[^`]+`|[\p{L}\p{N}]+(?:[_./:=][\p{L}\p{N}]+)+|\p{Ll}+\p{Lu}[\p{L}\p{N}]*|(?:^|\s)--?\p{L}[\w-]*|[\p{L}\p{N}]*(?:\p{L}\d|\d\p{L})[\p{L}\p{N}]*|[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+){2,}|[\p{L}\p{N}]*\d[\p{L}\p{N}]*-[\p{L}\p{N}-]+|[\p{L}\p{N}]+-[\p{L}\p{N}]*\d[\p{L}\p{N}]*/u;
-const looksLikeIdentifier = (q: string) => IDENT.test(q);
+// The detector `Store.search` routes on, and the names the hook keeps a chunk for.
+const looksLikeIdentifier = namesSomething;
 
 interface Query {
   id: string;
   q: string;
-  set: "questions" | "ident";
+  set: "questions" | "ident" | "offtopic";
   type: string;
   /** A chunk id, or a section as `path` + breadcrumb heading. */
   gold: { id: string } | { path: string; heading: string };
@@ -146,6 +147,23 @@ for (const [i, c] of chunks.entries()) {
       gold: { id: c.id },
     });
   }
+}
+
+// Prompts that quote identifiers the corpus does not have: an exact-match rule must add nothing.
+const OFF_TOPIC = [
+  "why does `useEffect` run twice in Dashboard.tsx?",
+  "fix the `parse_config` KeyError in settings.py",
+  "what does `git commit --no-verify` skip?",
+  "rename `fetchUserProfile` to `loadProfile` everywhere",
+  "the `node_modules/.vite` cache is stale, how do I clear it?",
+  "add a `--dry-run` flag to the release script",
+  "why is `Array.prototype.flatMap` undefined in this test?",
+  "bump `typescript` to 5.9 in package.json",
+  "what does `SIGTERM` do to a child process?",
+  "convert `snake_case_name` keys to camelCase in the API response",
+];
+for (const [i, q] of OFF_TOPIC.entries()) {
+  queries.push({ id: `off-${i}`, q, set: "offtopic", type: "offtopic", gold: { id: "" } });
 }
 
 // --- the two retrievers, run once per query
@@ -285,23 +303,34 @@ const rankOf = (ids: string[], gold: Query["gold"]) => {
 // The hook as `hookContext` runs it: the top 8 of the fused order, re-sorted by cosine, gated on
 // the model's floor and then on a ratio of the best, top 4. Fusion only decides the candidates.
 const MIN_SCORE = embedderMinScore("granite-small");
-const injected = (ids: string[], qv: Float32Array) => {
-  const ranked = ids
-    .slice(0, defaults.hookTopK * 2)
+// HOOK=1 adds an exception to those gates: a candidate holding one of the query's identifiers
+// verbatim is injected whatever its cosine, ahead of the gated ones. `all` keeps every such
+// candidate, `one` only the best-fused.
+type Exact = "none" | "all" | "one";
+const injected = (ids: string[], qv: Float32Array, query = "", exact: Exact = "none") => {
+  const candidates = ids.slice(0, defaults.hookTopK * 2);
+  const wanted = exact === "none" ? [] : exactNames(query);
+  const verbatim = candidates.filter((id) =>
+    holdsName((byId.get(id) as Chunk).search_text, wanted),
+  );
+  const kept = exact === "one" ? verbatim.slice(0, 1) : verbatim;
+  const ranked = candidates
+    .filter((id) => !kept.includes(id))
     .map((id) => ({ id, similarity: cosine(qv, (byId.get(id) as Chunk).vector) }))
     .filter((h) => h.similarity >= MIN_SCORE)
     .sort((a, b) => b.similarity - a.similarity);
   const best = ranked[0]?.similarity ?? 0;
-  return ranked
-    .filter((h) => h.similarity >= best * defaults.hookMinRatio)
-    .slice(0, defaults.hookTopK)
-    .map((h) => h.id);
+  return [
+    ...kept,
+    ...ranked.filter((h) => h.similarity >= best * defaults.hookMinRatio).map((h) => h.id),
+  ].slice(0, defaults.hookTopK);
 };
+const isGold = (id: string, gold: Query["gold"]) => rankOf([id], gold) === 1;
 const types = [...new Set(queries.filter((q) => q.set === "questions").map((q) => q.type))];
-const evaluate = (fuse: (r: Retrieved) => string[]) => {
+const evaluate = (fuse: (r: Retrieved) => string[], exact: Exact = "none") => {
   const scored = retrieved.map((r) => {
     const ids = fuse(r);
-    const hook = injected(ids, r.qv);
+    const hook = injected(ids, r.qv, r.query.q, exact);
     return {
       query: r.query,
       rank: rankOf(ids, r.query.gold),
@@ -320,20 +349,28 @@ const evaluate = (fuse: (r: Retrieved) => string[]) => {
       mrr: xs.reduce((s, x) => s + (x.rank === Infinity ? 0 : 1 / x.rank), 0) / xs.length,
       hook: share((x) => x.hookRank !== Infinity),
       hookChunks: xs.reduce((s, x) => s + x.hook.length, 0) / xs.length,
+      hookNoise:
+        xs.reduce((s, x) => s + x.hook.filter((id) => !isGold(id, x.query.gold)).length, 0) /
+        xs.length,
     };
   };
   return {
     questions: of((q) => q.set === "questions"),
     ident: of((q) => q.set === "ident"),
+    offtopic: of((q) => q.set === "offtopic"),
     byType: Object.fromEntries(types.map((t) => [t, of((q) => q.type === t)])),
   };
 };
 type Result = ReturnType<typeof evaluate>;
 const results: Record<string, Result> = {};
 
-// The bench's own shipped fusion must reproduce `store.search`, or nothing below means anything.
+// The bench's own routed fusion, which `store.search` now ships, must reproduce it, or nothing below
+// means anything. `rrf k60 (shipped)` is the fusion before routing.
 const mismatched = retrieved.filter((r) => {
-  const mine = (FUSIONS["rrf k60 (shipped)"] as Fusion)(r, r.lex.get("default") ?? []).slice(0, 8);
+  const mine = (FUSIONS["routed rrf / rsf 0.2"] as Fusion)(r, r.lex.get("default") ?? []).slice(
+    0,
+    8,
+  );
   return mine.join() !== r.shipped.join();
 }).length;
 
@@ -374,7 +411,7 @@ console.log(
   `${chunks.length} chunks · ${count("questions")} questions · ${count("ident")} identifier probes · pool ${POOL} · hook min ${MIN_SCORE} ratio ${defaults.hookMinRatio}`,
 );
 console.log(
-  `shipped fusion reproduces store.search top 8: ${retrieved.length - mismatched}/${retrieved.length}`,
+  `routed fusion reproduces store.search top 8: ${retrieved.length - mismatched}/${retrieved.length}`,
 );
 console.log(
   `lexical lists identical to default, of ${retrieved.length}: ${Object.entries(sameAsDefault)
@@ -404,7 +441,24 @@ for (const [name, r] of Object.entries(results)) {
   );
 }
 
+const hookResults: Record<string, Result> = {};
+if (process.env.HOOK) {
+  console.log(
+    `\nhook, gold injected / non-gold chunks per prompt     questions        ident probes     off-topic`,
+  );
+  for (const name of ["rrf k60 (shipped)", "routed rrf / rsf 0.2"]) {
+    const fuse = FUSIONS[name] as Fusion;
+    for (const exact of ["none", "one", "all"] as Exact[]) {
+      const r = evaluate((x) => fuse(x, x.lex.get("default") ?? []), exact);
+      hookResults[`${name} · exact ${exact}`] = r;
+      console.log(
+        `${`${name} · exact ${exact}`.padEnd(50)} ${f(r.questions.hook)} ${r.questions.hookNoise.toFixed(2).padStart(5)}      ${f(r.ident.hook)} ${r.ident.hookNoise.toFixed(2).padStart(5)}      ${r.offtopic.hookChunks.toFixed(2).padStart(5)}`,
+      );
+    }
+  }
+}
+
 writeFileSync(
   join(here, `fusion${suffix}.json`),
-  `${JSON.stringify({ mismatched, sameAsDefault, results }, null, 2)}\n`,
+  `${JSON.stringify({ mismatched, sameAsDefault, results, hookResults }, null, 2)}\n`,
 );

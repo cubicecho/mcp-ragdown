@@ -203,6 +203,31 @@ describe("Scope", () => {
     expect(await work.context(prompt)).toBeDefined();
   });
 
+  it("injects a chunk that holds a name the prompt quotes, below both gates", async () => {
+    const t = await tempSetup({}, "folders");
+    closers.push(t.cleanup);
+    await t.write(
+      "work/backups.md",
+      "# Backups\n\n## Restore\n\nRun pg_restore twice on postgres.\n\n## Retention\n\nKeep 30 days.",
+    );
+    const rag = await Ragdown.start(t.config);
+    closers.push(() => rag.close());
+    await rag.sync(false);
+    const work = new Scope(rag, "work");
+
+    // No similarity reaches 2; the name alone carries the chunk, and only the chunk that holds it.
+    const block = await work.context("why does `pg_restore` hang?", undefined, { minScore: 2 });
+    expect(block).toContain("Run pg_restore twice");
+    expect(block).not.toContain("Keep 30 days");
+    // A name no document holds adds nothing, and a plain word in backticks is not a name.
+    expect(await work.context("why does `pg_dumpall` hang?", undefined, { minScore: 2 })).toBe(
+      undefined,
+    );
+    expect(await work.context("what does `postgres` keep?", undefined, { minScore: 2 })).toBe(
+      undefined,
+    );
+  });
+
   it("puts a saved server setting over the environment's and under the folder's", async () => {
     const t = await tempSetup({}, "folders");
     closers.push(t.cleanup);
