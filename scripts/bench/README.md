@@ -48,6 +48,7 @@ resumes by re-running the same command.
 | `rerank.ts` | embedder | CPU cross-encoder rerankers over the shipped top 10: rank of the right section, latency, and whether the reranker's score separates on-topic from off-topic prompts better than cosine (gate AUC). `BLEND=1` mixes the reranker into the shipped ranking instead of replacing it, `TIMING=1` times the models interleaved, `BENCH_SEED` (read by `gen.ts`) draws a held-out corpus. |
 | `fusion.ts` | embedder | How dense and BM25 are combined and how BM25 tokenizes: the shipped RRF against score fusions (min-max RSF, DBSF), routing identifier-looking queries to BM25, and FTS tokenizer variants, over the questions and over identifier probes. Ranks are what `ragdown_recall` returns; a second column runs each fused top 8 through the hook's own gates. |
 | `diversity.ts` | embedder | Whether results should spread over more documents: `RAGDOWN_MAX_PER_DOCUMENT` at 1, 2 and 3 against maximal marginal relevance at λ 0.9, 0.7 and 0.5, over the questions with one right section and the count questions that span documents, with the hook's own gates run on each top 8. |
+| `links.ts` | embedder | Whether the wikilink graph helps ranking (#51): the corpus with wikilinks written (service to upstream and team, incident to the procedure it was recovered with) and two question types only a link answers, against boosting hits linked to other hits and expanding hits into their linked documents' best sections, with the hook's own gates run on each top 8. A last row runs `store.search` with `followLinks: 1`. |
 | `fields.ts` | embedder | Whether a document's own names should count for more than its body: each document given a made-up codename as an alias, the questions asked by title and by alias, against aliases on every chunk, a third BM25 list over title, heading and aliases, and the shipped boost for the chunks of a document the query calls by an alias. Misses are split into wrong document and wrong section, and a hook column tries two rules for an aliased document. |
 
 ## What they found
@@ -318,3 +319,42 @@ promoted, so spreading the top 8 over twice as many documents brings in other do
 right ones. MMR on the chunk vectors barely moves anything, because sections of one runbook are not
 near-duplicates of each other. So the cap ships off by default, for a corpus where one long document
 crowds out the rest, and MMR does not ship.
+
+`links.ts` found that following a hit's links finds what only a link leads to, and that boosting
+linked hits does not. `gen.ts` writes wikilinks into a copy of the runbooks: each overview names
+the service it calls and its team's other services, each incident the procedure it was recovered
+with, and ten procedure documents are added. Two questions a runbook can only be answered through a
+link: the first command of the procedure an outage was recovered with (gold: the procedure's
+steps), and the health-check port of the service a runbook calls (gold: that service's
+troubleshooting). Four corpora (default, 42, 7, 0); the fused pool reproduces `store.search`'s top 8
+on every query. Percent of questions with the right section at that rank; `+ex` lets a linked
+section past the hook's ratio gate (not its floor); `worst` is the largest drop in first place on
+any answerable question type:
+
+```
+                     answerable (270)                linked-procedure (30)     upstream-hop (30)
+                     1st    top4   top8   hook  +ex   top4   top8   hook  +ex   top4   top8   hook  +ex   worst
+none                 80–82  89     89     87–89  —     0      0      0     —     0      0      0     —
+boost 0.25 /8        71–74  84–87  89     87–89  —     0      0      0     —     0      0      0     —     -5 to -11
+boost 0.25 /4        78–81  89     89     87–89  —     0      0      0     —     0      0      0     —     -1 to -5
+exp 3 out +3         80–82  86–88  88–89  87–88  63–66 3–7    7–10   0     7     37–40  73–97  0–3   20–30 0
+exp 1 sect +1        80–82  87–89  89     87–89  86–88 7–10   7–10   0     7     73–93  73–93  0–3   20–27 0
+follow 1 (shipped)   80–82  83–86  89     88–89  86–87 37–43  37–43  0     20–33 63–83  93–100 0–7   20–33 0
+```
+
+`boost s /n` multiplies the score of a top-n hit linked to or from another top-n hit by 1 + s per
+link. It only reorders hits already in the pool, and the answer to a link question is not in it, so
+it costs first place and finds nothing. `exp` follows the links of the first hits: `out` every link
+of the hit's document, `sect` only those in the hit's own section; `+n` places a linked document's
+closest section just above what ranked n places after the hit. Links from the whole document bring
+in neighbours that cost the hook a quarter of its answers once let past the ratio gate; the hit's own
+section is the link the question means. One section by cosine often picked a procedure's
+verification over its steps, so the shipped search takes two, right after the hit: the procedure's
+steps reach the top 8 four to six times as often, for 3–6 points of top 4 elsewhere, nothing in
+the top 8 and nothing in first place.
+
+The hook gains nothing: a linked section's own cosine is far below the hit's, so the ratio gate
+drops it, and the issue requires the hook to gate on it. Exempting linked sections from the ratio
+gate gave it 20–33% on both link questions for about a point on the others; that is left for a
+real corpus to decide (the query log records the gate). So `RAGDOWN_FOLLOW_LINKS` ships off by
+default, for `ragdown_recall`, and the hook is unchanged.

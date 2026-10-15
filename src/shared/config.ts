@@ -41,6 +41,8 @@ export interface Config {
   textLimit: number;
   /** The most sections of one document a search returns, the rest refilled from others; 0 is no cap. */
   maxPerDocument: number;
+  /** How many of a search's best hits have their section's links followed; 0 is none. */
+  followLinks: number;
   /** Whether searches, hook calls and reads are recorded in the data dir (`src/usage/`). */
   queryLog: boolean;
   http: {
@@ -56,8 +58,8 @@ export interface Config {
   hook: HookSettings;
   /**
    * What the environment said for the settings the web UI can change. `embedder`, `watch`,
-   * `rootMcp`, `textLimit`, `maxPerDocument`, `queryLog` and `hook` above are these with `saved` laid over them
-   * (`server-settings.ts`).
+   * `rootMcp`, `textLimit`, `maxPerDocument`, `followLinks`, `queryLog` and `hook` above are these
+   * with `saved` laid over them (`server-settings.ts`).
    */
   env: {
     embedder: string;
@@ -65,6 +67,7 @@ export interface Config {
     rootMcp: boolean;
     textLimit: number;
     maxPerDocument: number;
+    followLinks: number;
     queryLog: boolean;
     /** `minScore` is null when `RAGDOWN_HOOK_MIN_SCORE` is unset and the embedder's own applies. */
     hook: { topK: number; minScore: number | null; minRatio: number; maxChars: number };
@@ -126,6 +129,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
   const rootMcp = bool(env, "RAGDOWN_ROOT_MCP", false);
   const textLimit = int(env, "RAGDOWN_TEXT_LIMIT", defaults.textLimit);
   const maxPerDocument = int(env, "RAGDOWN_MAX_PER_DOCUMENT", defaults.maxPerDocument);
+  const followLinks = int(env, "RAGDOWN_FOLLOW_LINKS", defaults.followLinks);
   const queryLog = bool(env, "RAGDOWN_QUERY_LOG", defaults.queryLog);
   const explicitMinScore =
     env.RAGDOWN_HOOK_MIN_SCORE === undefined || env.RAGDOWN_HOOK_MIN_SCORE === ""
@@ -159,6 +163,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
     notesDir: notesDir === "." ? "" : notesDir.replace(/\/+$/, ""),
     textLimit,
     maxPerDocument,
+    followLinks,
     queryLog,
     http: {
       port: int(env, "PORT", defaults.port),
@@ -176,6 +181,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
       rootMcp,
       textLimit,
       maxPerDocument,
+      followLinks,
       queryLog,
       hook: { ...hook, minScore: explicitMinScore },
     },

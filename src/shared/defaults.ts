@@ -88,6 +88,16 @@ export const defaults = Object.freeze({
    * not bring in the other documents a question spread over several needed, and neither did MMR.
    */
   maxPerDocument: 0,
+  /**
+   * `RAGDOWN_FOLLOW_LINKS`: off. Following the best hit's section links, on four corpora, put the
+   * right section of a document only a link answered in the top 8 for 93–100% of upstream-service
+   * questions (from 0) and for 37–43% of linked-procedure ones, at 3–6 points of top 4 elsewhere
+   * and none of the top 8; the hook, gating on each section's own cosine, gained nothing
+   * (`scripts/bench/links.ts`).
+   */
+  followLinks: 0,
+  /** How many sections of each document a followed link brings in. */
+  linkedSections: 2,
   /** `RAGDOWN_QUERY_LOG`: off, since what it records are the user's prompts. */
   queryLog: false,
   /** The query log's size before it is rotated; one rotated file is kept beside it. */

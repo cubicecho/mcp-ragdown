@@ -27,6 +27,7 @@ export interface ServerSettings {
   root_mcp?: boolean;
   text_limit?: number;
   max_per_document?: number;
+  follow_links?: number;
   query_log?: boolean;
   hook?: HookOverrides;
 }
@@ -38,6 +39,7 @@ export interface SettingsChanges {
   root_mcp?: boolean | null;
   text_limit?: number | null;
   max_per_document?: number | null;
+  follow_links?: number | null;
   query_log?: boolean | null;
   hook?: HookChanges;
 }
@@ -123,6 +125,12 @@ export function parseChanges(body: Record<string, unknown> | undefined): Setting
     }
     out.max_per_document = body.max_per_document;
   }
+  if (body?.follow_links !== undefined) {
+    if (body.follow_links !== null && !isCount(body.follow_links)) {
+      throw invalid("follow_links must be a non-negative integer");
+    }
+    out.follow_links = body.follow_links;
+  }
   if (body?.query_log !== undefined) {
     if (body.query_log !== null && typeof body.query_log !== "boolean") {
       throw invalid("query_log must be true or false");
@@ -163,6 +171,11 @@ export function applyChanges(saved: ServerSettings, changes: SettingsChanges): S
   } else if (changes.max_per_document !== undefined) {
     out.max_per_document = changes.max_per_document;
   }
+  if (changes.follow_links === null) {
+    delete out.follow_links;
+  } else if (changes.follow_links !== undefined) {
+    out.follow_links = changes.follow_links;
+  }
   if (changes.query_log === null) {
     delete out.query_log;
   } else if (changes.query_log !== undefined) {
@@ -192,6 +205,7 @@ export function applySettings(config: Config, saved: ServerSettings): void {
   config.rootMcp = saved.root_mcp ?? env.rootMcp;
   config.textLimit = saved.text_limit ?? env.textLimit;
   config.maxPerDocument = saved.max_per_document ?? env.maxPerDocument;
+  config.followLinks = saved.follow_links ?? env.followLinks;
   config.queryLog = saved.query_log ?? env.queryLog;
   config.hook = resolveHook({}, saved.hook ?? {}, {
     ...env.hook,

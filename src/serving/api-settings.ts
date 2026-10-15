@@ -23,6 +23,7 @@ export function publicSettings(config: Config) {
     root_mcp: config.rootMcp,
     text_limit: config.textLimit,
     max_per_document: config.maxPerDocument,
+    follow_links: config.followLinks,
     query_log: config.queryLog,
     hook: {
       top_k: config.hook.topK,
@@ -40,6 +41,7 @@ export function publicSettings(config: Config) {
       root_mcp: config.env.rootMcp,
       text_limit: config.env.textLimit,
       max_per_document: config.env.maxPerDocument,
+      follow_links: config.env.followLinks,
       query_log: config.env.queryLog,
       hook: {
         top_k: config.env.hook.topK,
