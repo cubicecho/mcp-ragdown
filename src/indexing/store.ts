@@ -3,6 +3,7 @@ import { join } from "node:path";
 import * as lancedb from "@lancedb/lancedb";
 import { Field, FixedSizeList, Float32, Float64, Int32, Schema, Utf8 } from "apache-arrow";
 import { CHUNKER_VERSION, type Chunk, embeddingText } from "../documents/chunk.ts";
+import { findLinks, type LinkDocument, resolveRef } from "../documents/links.ts";
 import { defaults } from "../shared/defaults.ts";
 import { errorMessage } from "../shared/errors.ts";
 import { isRecord } from "../shared/json.ts";
@@ -47,6 +48,26 @@ export interface DocumentInfo {
   session: string;
 }
 
+/** How `Store.search` shapes its result, past what it searches for. */
+export interface SearchOptions {
+  /**
+   * The most chunks of one document in the result, the places it frees taken by the next-best
+   * chunks of other documents (or of the same ones, when the pool has no more); 0 is no cap.
+   */
+  perDocument?: number;
+  /**
+   * How many of the best hits have the links in their own section followed: the
+   * `defaults.linkedSections` sections of each linked document closest to the query are placed
+   * right after the hit. 0 follows none.
+   */
+  followLinks?: number;
+  /**
+   * Whether a path's first segment is the folder its links resolve within (`serve`), rather than
+   * the whole index being one folder (`stdio`).
+   */
+  folders?: boolean;
+}
+
 /** Who a document says wrote it: an `agent` when its frontmatter has `created_by`, else the `user`. */
 export type WrittenBy = "agent" | "user";
 
@@ -87,8 +108,8 @@ export interface Hit {
   score: number;
   /** Cosine similarity of the query and the chunk, 0–1 for related text; comparable across queries. */
   similarity: number;
-  /** Which retrievers nominated the chunk. */
-  sources: ("dense" | "lexical")[];
+  /** Which retrievers nominated the chunk; `link` when a better hit's section links its document. */
+  sources: ("dense" | "lexical" | "link")[];
   /** The document's tags. */
   tags: string[];
   /** The document's frontmatter aliases: other names it answers to. */
@@ -179,6 +200,8 @@ export class Store {
   private readonly embedder: Embedder;
   /** `supersededPaths`, until the next `apply` makes it stale. */
   private superseded: Set<string> | undefined;
+  /** `linkDocuments`, until the next `apply` makes it stale. */
+  private linkable: LinkDocument[] | undefined;
   /** Whether the table has a vector index, so `compact` asks the table only until it does. */
   private vectorIndexed = false;
 
@@ -369,6 +392,24 @@ export class Store {
       await this.table.add(rows as unknown as Record<string, unknown>[]);
     }
     this.superseded = undefined;
+    this.linkable = undefined;
+  }
+
+  /**
+   * Every document's path and aliases, which is all a wikilink resolves against. Cached as
+   * `supersededPaths` is, and read from each document's first chunk only.
+   */
+  private async linkDocuments(): Promise<LinkDocument[]> {
+    if (this.linkable) {
+      return this.linkable;
+    }
+    const rows: Pick<Row, "path" | "aliases">[] = await this.table
+      .query()
+      .where("chunk_index = 0")
+      .select(["path", "aliases"])
+      .toArray();
+    this.linkable = rows.map((row) => ({ path: row.path, aliases: splitAliases(row.aliases) }));
+    return this.linkable;
   }
 
   /**
@@ -457,14 +498,15 @@ export class Store {
    * document another document's frontmatter supersedes is left out, though `readDocument` still
    * opens it.
    *
+   * With `options.followLinks`, a best hit whose section links other documents brings their
+   * closest sections in right after it, under the same filters, each with its own similarity: a
+   * note that says "see [[Restore procedure]]" brings the procedure with it.
+   *
    * @param pathPrefixes - limits both retrievers to files under any of these relative paths; an
    *   empty list is nowhere to search, so it finds nothing.
    * @param tag - limits both to documents with this tag or one nested under it (`project` takes in
    *   `project/alpha`).
    * @param writtenBy - limits both to documents an agent wrote, or to the ones the user did.
-   * @param perDocument - the most chunks of one document in the result, the places it frees taken
-   *   by the next-best chunks of other documents (or of the same ones, when the pool has no more);
-   *   0 is no cap.
    */
   async search(
     query: string,
@@ -472,8 +514,9 @@ export class Store {
     pathPrefixes?: string[],
     tag?: string,
     writtenBy?: WrittenBy,
-    perDocument = 0,
+    options: SearchOptions = {},
   ): Promise<Hit[]> {
+    const { perDocument = 0, followLinks = 0, folders = false } = options;
     if (pathPrefixes?.length === 0) {
       return [];
     }
@@ -551,7 +594,7 @@ export class Store {
     // Each row already carries its own similarity, so which retriever reaches an id first decides
     // nothing: the two agree to floating-point noise, both being the cosine of the query and that
     // chunk.
-    const fused = new Map<string, { row: ScoredRow; score: number; sources: Hit["sources"] }>();
+    const fused = new Map<string, Fused>();
     const add = (
       rows: ScoredRow[],
       source: "dense" | "lexical",
@@ -582,11 +625,93 @@ export class Store {
       }
     }
 
-    const ranked = [...fused.values()].sort((a, b) => b.score - a.score);
-    return capPerDocument(ranked, perDocument, (entry) => entry.row.path)
-      .slice(0, limit)
-      .map(({ row, score, sources }) => toHit(row, score, sources));
+    const ranked = capPerDocument(
+      [...fused.values()].sort((a, b) => b.score - a.score),
+      perDocument,
+      (entry) => entry.row.path,
+    );
+    const result =
+      followLinks > 0
+        ? await this.withLinked(ranked, followLinks, queryVector, where, folders)
+        : ranked;
+    return result.slice(0, limit).map(({ row, score, sources }) => toHit(row, score, sources));
   }
+
+  /**
+   * `ranked` with the closest sections of the documents each of its first `from` entries' sections
+   * link placed right after that entry, by their own cosine, under the search's own `where`. A
+   * section already ranked above that place stays there; one ranked below moves up.
+   */
+  private async withLinked(
+    ranked: Fused[],
+    from: number,
+    queryVector: Float32Array,
+    where: string | undefined,
+    folders: boolean,
+  ): Promise<Fused[]> {
+    const out = [...ranked];
+    for (const source of ranked.slice(0, from)) {
+      const refs = findLinks(source.row.text);
+      if (refs.length === 0) {
+        continue;
+      }
+      // Wikilinks resolve within one folder, with paths relative to it.
+      const slash = source.row.path.indexOf("/");
+      const prefix = folders && slash !== -1 ? source.row.path.slice(0, slash + 1) : "";
+      const documents = (await this.linkDocuments())
+        .filter((doc) => doc.path.startsWith(prefix))
+        .map((doc) => ({ ...doc, path: doc.path.slice(prefix.length) }));
+      const self = source.row.path.slice(prefix.length);
+      const targets = new Set<string>();
+      for (const ref of refs) {
+        const target = resolveRef(ref, self, documents);
+        if (target && target !== self) {
+          targets.add(`${prefix}${target}`);
+        }
+      }
+      const linked = (
+        await Promise.all(
+          [...targets].map(async (target) => {
+            const rows = (await this.table
+              .vectorSearch(queryVector)
+              .distanceType("cosine")
+              .select([...HIT_COLUMNS, "_distance"])
+              .where([`path = ${sqlString(target)}`, ...(where ? [where] : [])].join(" AND "))
+              .limit(defaults.linkedSections)
+              .toArray()) as (HitRow & { _distance: number })[];
+            return rows.map(({ _distance, ...row }) => ({ ...row, similarity: 1 - _distance }));
+          }),
+        )
+      )
+        .flat()
+        .sort((a, b) => b.similarity - a.similarity);
+      let at = out.indexOf(source);
+      for (const row of linked) {
+        const existing = out.findIndex((entry) => entry.row.id === row.id);
+        if (existing !== -1 && existing <= at) {
+          continue;
+        }
+        const sources: Hit["sources"] = [
+          ...(existing === -1 ? [] : (out[existing]?.sources ?? [])),
+          "link",
+        ];
+        if (existing !== -1) {
+          out.splice(existing, 1);
+        }
+        at++;
+        // Its fused score would sort it back down; it ranks with the hit that brought it.
+        out.splice(at, 0, { row, score: source.score, sources });
+      }
+    }
+    return out;
+  }
+}
+
+/** A chunk in the fused ranking. */
+interface Fused {
+  row: ScoredRow;
+  score: number;
+  sources: Hit["sources"];
 }
 
 /**

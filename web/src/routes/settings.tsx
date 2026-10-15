@@ -697,6 +697,20 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
                   </>
                 }
               />,
+              <PropertyRow
+                key="follow-links"
+                label="Hits that follow links"
+                value={settings.follow_links || "Off"}
+                hint={
+                  <>
+                    <Env
+                      name="RAGDOWN_FOLLOW_LINKS"
+                      saved={settings.saved.follow_links !== undefined}
+                    />
+                    . The documents their section links come in right after them.
+                  </>
+                }
+              />,
             ]}
           />
         ) : null

@@ -270,6 +270,33 @@ describe("Scope", () => {
     expect(block).toContain("alerts.md");
   });
 
+  it("follows the best hit's links within its folder once the setting is on", async () => {
+    const t = await tempSetup({}, "folders");
+    closers.push(t.cleanup);
+    await t.write(
+      "work/incident.md",
+      "# Gateway outage\n\nThe gateway outage on Friday was recovered with [[Restore procedure]].",
+    );
+    await t.write(
+      "work/Restore procedure.md",
+      "# Restore procedure\n\nRun the snapshot restore, then replay the journal.",
+    );
+    await t.write("home/Restore procedure.md", "# Restore procedure\n\nCall the landlord.");
+    const rag = await Ragdown.start(t.config);
+    closers.push(() => rag.close());
+    await rag.sync(false);
+    const work = new Scope(rag, "work");
+    const query = "how was the gateway outage on friday recovered";
+
+    const linked = async () =>
+      (await work.recall(query, 3))
+        .filter((hit) => hit.sources.includes("link"))
+        .map((hit) => hit.path);
+    expect(await linked()).toEqual([]);
+    applySettings(t.config, { follow_links: 1 });
+    expect(await linked()).toEqual(["Restore procedure.md"]);
+  });
+
   it("puts a saved server setting over the environment's and under the folder's", async () => {
     const t = await tempSetup({}, "folders");
     closers.push(t.cleanup);

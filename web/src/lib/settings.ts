@@ -13,6 +13,7 @@ export type SettingsForm = {
   root_mcp: boolean;
   text_limit: number | null;
   max_per_document: number | null;
+  follow_links: number | null;
   query_log: boolean;
   top_k: number | null;
   min_score: number | null;
@@ -26,6 +27,7 @@ export const settingsForm = (settings: Settings): SettingsForm => ({
   root_mcp: settings.root_mcp,
   text_limit: settings.saved.text_limit ?? null,
   max_per_document: settings.saved.max_per_document ?? null,
+  follow_links: settings.saved.follow_links ?? null,
   query_log: settings.query_log,
   top_k: settings.saved.hook?.top_k ?? null,
   min_score: settings.saved.hook?.min_score ?? null,
@@ -53,6 +55,9 @@ export function settingsPatch(settings: Settings, values: SettingsForm): ServerS
   }
   if (values.max_per_document !== (settings.saved.max_per_document ?? null)) {
     patch.max_per_document = values.max_per_document;
+  }
+  if (values.follow_links !== (settings.saved.follow_links ?? null)) {
+    patch.follow_links = values.follow_links;
   }
   if (values.query_log !== settings.query_log) {
     patch.query_log = values.query_log === settings.env.query_log ? null : values.query_log;

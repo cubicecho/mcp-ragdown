@@ -187,6 +187,16 @@ export function EditServerSettings({
                   placeholder={String(env.max_per_document)}
                   validators={{ onChange: ({ value }) => countError(value) }}
                 />
+                <NumberField
+                  form={form}
+                  name="follow_links"
+                  label="Hits that follow links"
+                  description="How many of a search's best hits bring in the documents their section links; 0 is none."
+                  min={0}
+                  step={1}
+                  placeholder={String(env.follow_links)}
+                  validators={{ onChange: ({ value }) => countError(value) }}
+                />
               </div>
             }
           />

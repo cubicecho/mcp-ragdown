@@ -25,7 +25,8 @@ const shuffle = <T>(a: T[]): T[] => {
 };
 
 // ---------- document model ----------
-type Inline = { t: "text" | "strong" | "code"; v: string }[];
+// A `link` is a wikilink to the document titled `v`: `[[v]]` in Markdown.
+type Inline = { t: "text" | "strong" | "code" | "link"; v: string }[];
 type Block =
   | { k: "p"; c: Inline }
   | { k: "table"; head: string[]; rows: string[][] }
@@ -85,13 +86,22 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 function inline(c: Inline, f: Fmt): string {
   return c
     .map((x) => {
-      if (f === "md") return x.t === "strong" ? `**${x.v}**` : x.t === "code" ? `\`${x.v}\`` : x.v;
+      if (f === "md")
+        return x.t === "strong"
+          ? `**${x.v}**`
+          : x.t === "code"
+            ? `\`${x.v}\``
+            : x.t === "link"
+              ? `[[${x.v}]]`
+              : x.v;
       if (f === "html")
         return x.t === "strong"
           ? `<strong>${esc(x.v)}</strong>`
           : x.t === "code"
             ? `<code>${esc(x.v)}</code>`
-            : esc(x.v);
+            : x.t === "link"
+              ? `<a href="${esc(x.v)}.html">${esc(x.v)}</a>`
+              : esc(x.v);
       return x.v;
     })
     .join("");
@@ -677,6 +687,165 @@ export const hardQuestions: Question[] = [];
       numeric: true,
     });
   }
+}
+
+// ---------- the linked corpus (`links.ts`) ----------
+// The same runbooks as an Obsidian vault would hold them, each named by its title, plus one shared
+// recovery procedure per kind of outage cause. A runbook's overview links the one service it calls
+// and the other runbooks of its team (links that answer nothing, as most links in real notes do),
+// and each incident links the procedure it was recovered with. Generated after everything above,
+// so the base corpus and its questions are the same with or without it.
+const PROCEDURES: { cause: string; title: string; summary: string; steps: string[] }[] = [
+  {
+    cause: "an expired TLS certificate",
+    title: "Certificate rotation",
+    summary: "Issues a fresh serving certificate and reloads every listener that holds the old one",
+    steps: [
+      "veltra cert issue",
+      "veltra cert push",
+      "veltra listeners reload",
+      "veltra cert verify",
+    ],
+  },
+  {
+    cause: "an exhausted connection pool",
+    title: "Pool saturation recovery",
+    summary: "Frees stuck database sessions and resizes the pool before traffic returns",
+    steps: ["veltra sessions kill --idle", "veltra pool resize", "veltra traffic resume"],
+  },
+  {
+    cause: "a runaway cron job",
+    title: "Job quarantine",
+    summary: "Stops a recurring job that will not finish and holds its schedule until it is fixed",
+    steps: ["veltra jobs freeze", "veltra jobs kill --stuck", "veltra schedule hold"],
+  },
+  {
+    cause: "a misconfigured feature flag",
+    title: "Flag rollback",
+    summary: "Returns a flag to its last known good state across every tenant",
+    steps: ["veltra flags history", "veltra flags revert", "veltra flags audit"],
+  },
+  {
+    cause: "clock skew",
+    title: "Time source resync",
+    summary: "Brings a host's clock back in line with the fleet's time source",
+    steps: ["veltra chrony step", "veltra leases expire", "veltra chrony verify"],
+  },
+  {
+    cause: "a full disk",
+    title: "Volume reclamation",
+    summary: "Frees space on a data volume without losing anything not yet replicated",
+    steps: ["veltra volume usage", "veltra wal prune --replicated", "veltra volume grow"],
+  },
+  {
+    cause: "leaked file descriptors",
+    title: "Handle leak triage",
+    summary: "Finds the process holding handles it no longer needs and restarts it safely",
+    steps: ["veltra fds top", "veltra process cycle", "veltra fds verify"],
+  },
+  {
+    cause: "a stale config map",
+    title: "Config resync",
+    summary: "Pushes the current rendered config to every pod and confirms they reloaded it",
+    steps: ["veltra config render", "veltra config push --all", "veltra config confirm"],
+  },
+  {
+    cause: "a bad schema migration",
+    title: "Migration rollback",
+    summary: "Reverts the last schema change and replays the writes that hit the broken one",
+    steps: ["veltra migrate down", "veltra writes replay", "veltra schema verify"],
+  },
+  {
+    cause: "a retry storm",
+    title: "Load shedding",
+    summary: "Sheds retries at the edge until the downstream queues drain",
+    steps: ["veltra edge shed --retries", "veltra queues watch", "veltra edge restore"],
+  },
+];
+const L = (v: string) => ({ t: "link" as const, v });
+
+export const procedureDocs: Doc[] = PROCEDURES.map((p) => ({
+  slug: p.title.toLowerCase().replace(/ /g, "-"),
+  title: p.title,
+  tags: ["procedure"],
+  sections: [
+    { key: "overview", path: ["Overview"], blocks: [{ k: "p", c: [T(`${p.summary}.`)] }] },
+    {
+      key: "steps",
+      path: ["Steps"],
+      blocks: [{ k: "ol", items: p.steps.map((c) => [T("Run "), C(c), T(".")]) }],
+    },
+    {
+      key: "verify",
+      path: ["Verification"],
+      blocks: [
+        { k: "p", c: [T("Confirm the error rate is back under its baseline for an hour.")] },
+      ],
+    },
+  ],
+}));
+const procedureOf = (cause: string) =>
+  PROCEDURES.find((p) => cause.startsWith(p.cause)) as (typeof PROCEDURES)[number];
+
+/** The runbooks with their links, then the procedures. Paths are `${title}.md`. */
+export const linkedDocs: Doc[] = [];
+/** Questions only a link answers: the gold section is in a document the query does not name. */
+export const linkQuestions: Question[] = [];
+/** Which runbook each runbook calls. */
+export const calls = new Map<string, string>();
+{
+  const teamOf = (d: Doc) => blockAt(d, 0, 0, "p").c[1]?.v ?? "";
+  for (const d of docs) {
+    const others = docs.filter((x) => x !== d);
+    const upstream = pick(others);
+    calls.set(d.title, upstream.title);
+    const team = others.filter((x) => teamOf(x) === teamOf(d)).slice(0, 2);
+    const clone: Doc = structuredClone(d);
+    clone.sections[0]?.blocks.push({
+      k: "p",
+      c: [
+        T("It calls "),
+        L(upstream.title),
+        T(" on every request."),
+        ...(team.length > 0
+          ? [
+              T(` Other ${teamOf(d)} services: `),
+              ...team.flatMap((x, i) => [...(i ? [T(", ")] : []), L(x.title)]),
+              T("."),
+            ]
+          : []),
+      ],
+    });
+    const incidents = blockAt(clone, 6, 0, "incidents");
+    incidents.items = incidents.items.map((x) => {
+      const cause = x.text.replace(/^Outage caused by |\.$/g, "");
+      return {
+        date: x.date,
+        text: `Outage caused by ${cause}. Recovered with [[${procedureOf(cause).title}]].`,
+      };
+    });
+    linkedDocs.push(clone);
+
+    const cause = pick(incidents.items).text.replace(/^Outage caused by |\. Recovered.*$/g, "");
+    linkQuestions.push({
+      id: `${d.slug}:linked-procedure`,
+      type: "linked-procedure",
+      doc: procedureOf(cause).title,
+      section: "steps",
+      q: `${d.title} had an outage caused by ${cause}. What is the first command of the procedure it was recovered with?`,
+      gold: [procedureOf(cause).steps[0] as string],
+    });
+    linkQuestions.push({
+      id: `${d.slug}:upstream-hop`,
+      type: "upstream-hop",
+      doc: upstream.title,
+      section: "troubleshooting",
+      q: `Which local port does the health check of the service ${d.title} calls use?`,
+      gold: [String(/localhost:(\d+)\/healthz/.exec(blockAt(upstream, 5, 1, "code").text)?.[1])],
+      numeric: true,
+    });
+  }
+  linkedDocs.push(...procedureDocs);
 }
 
 export function headingPath(doc: Doc, key: string): string {

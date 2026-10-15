@@ -90,7 +90,8 @@ export class Ragdown {
    * @param tag - limits it to documents with this tag or one nested under it.
    * @param writtenBy - limits it to documents an agent wrote, or to the ones the user did.
    *
-   * At most `config.maxPerDocument` sections of one document come back, when it is set.
+   * At most `config.maxPerDocument` sections of one document come back, when it is set, and the
+   * first `config.followLinks` hits bring in the documents their sections link.
    */
   async recall(
     query: string,
@@ -99,7 +100,11 @@ export class Ragdown {
     tag?: string,
     writtenBy?: WrittenBy,
   ): Promise<Hit[]> {
-    return this.store.search(query, topK, pathPrefixes, tag, writtenBy, this.config.maxPerDocument);
+    return this.store.search(query, topK, pathPrefixes, tag, writtenBy, {
+      perDocument: this.config.maxPerDocument,
+      followLinks: this.config.followLinks,
+      folders: this.config.mode === "folders",
+    });
   }
 
   /** The files the index knows about, with their titles, sorted by path. */

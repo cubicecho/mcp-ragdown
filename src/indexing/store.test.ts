@@ -147,15 +147,144 @@ describe("Store", () => {
 
     const query = "postgres replication lag";
     const paths = async (perDocument?: number) =>
-      (await store.search(query, 3, undefined, undefined, undefined, perDocument)).map(
+      (await store.search(query, 3, undefined, undefined, undefined, { perDocument })).map(
         (hit) => hit.path,
       );
     expect(await paths()).toEqual(["long.md", "long.md", "long.md"]);
     expect(await paths(2)).toEqual(["long.md", "long.md", "short.md"]);
     // Too few documents to fill the result: the capped sections come back after the rest.
     expect(
-      (await store.search(query, 6, undefined, undefined, undefined, 1)).map((hit) => hit.path),
+      (await store.search(query, 6, undefined, undefined, undefined, { perDocument: 1 })).map(
+        (hit) => hit.path,
+      ),
     ).toEqual(["long.md", "short.md", "long.md", "long.md", "long.md"]);
+  });
+
+  describe("following links", () => {
+    const setup = async (
+      documents: Record<string, string>,
+      tags: Record<string, string[]> = {},
+    ) => {
+      const t = await tempSetup();
+      cleanup = t.cleanup;
+      const embedder: Embedder = new HashEmbedder();
+      const store = await Store.open(t.config.dataDir, embedder, true);
+      const updates = await Promise.all(
+        Object.entries(documents).map(async ([path, markdown]) => {
+          const chunks = chunkMarkdown(markdown, path);
+          const vectors = await embedder.embed(chunks.map(embeddingText), "document");
+          const tagged = tags[path] ?? [];
+          return {
+            path,
+            hash: path,
+            mtimeMs: 0,
+            size: 0,
+            chunks,
+            vectors,
+            supersedes: [],
+            tags: tagged,
+          };
+        }),
+      );
+      await store.apply(updates, []);
+      return { store, embedder };
+    };
+    const incident = [
+      "# Gateway outage",
+      "",
+      "The gateway outage on Friday was recovered with [[Restore procedure]].",
+      "",
+      "## Timeline",
+      "",
+      "Gateway outage paged at noon, gateway outage resolved by one.",
+    ].join("\n");
+    const procedure = [
+      "# Restore procedure",
+      "",
+      "## Steps",
+      "",
+      "Run the snapshot restore, then replay the journal.",
+      "",
+      "## Notes",
+      "",
+      "Ask the database team before replaying.",
+      "",
+      "## History",
+      "",
+      "Written after the 2023 migration.",
+    ].join("\n");
+    const query = "how was the gateway outage on friday recovered";
+
+    it("places the closest sections of a linked document right after the hit that links it", async () => {
+      const { store, embedder } = await setup({
+        "incident.md": incident,
+        "Restore procedure.md": procedure,
+      });
+
+      const plain = await store.search(query, 3);
+      expect(plain[0]?.heading).toBe("Gateway outage");
+      expect(plain.map((hit) => hit.sources)).not.toContainEqual(expect.arrayContaining(["link"]));
+
+      const hits = await store.search(query, 4, undefined, undefined, undefined, {
+        followLinks: 1,
+      });
+      expect(hits[0]?.heading).toBe("Gateway outage");
+      const linked = hits.slice(1, 3);
+      expect(linked.map((hit) => hit.path)).toEqual([
+        "Restore procedure.md",
+        "Restore procedure.md",
+      ]);
+      expect(linked.every((hit) => hit.sources.includes("link"))).toBe(true);
+      // Its own cosine, not the hit's that brought it in, since the hook gates on it.
+      const [vector] = await embedder.embed([query], "query");
+      const [chunkVector] = await embedder.embed(
+        [`Restore procedure › ${linked[0]?.heading.split(" › ").pop()}\n\n${linked[0]?.text}`],
+        "document",
+      );
+      expect(linked[0]?.similarity).toBeLessThan(hits[0]?.similarity ?? 0);
+      expect(linked[0]?.similarity).toBeCloseTo(
+        dot(vector as Float32Array, chunkVector as Float32Array),
+        1,
+      );
+      expect(linked[0]?.score).toBe(hits[0]?.score);
+    });
+
+    it("follows only the links in the hit's own section", async () => {
+      const { store } = await setup({
+        "incident.md": incident
+          .replace(" with [[Restore procedure]]", "")
+          .concat("\n\n## See also\n\n[[Restore procedure]]"),
+        "Restore procedure.md": procedure,
+      });
+      const hits = await store.search(query, 3, undefined, undefined, undefined, {
+        followLinks: 1,
+      });
+      expect(hits.some((hit) => hit.sources.includes("link"))).toBe(false);
+    });
+
+    it("brings in nothing the search's filters leave out", async () => {
+      const { store } = await setup(
+        { "incident.md": incident, "Restore procedure.md": procedure },
+        { "incident.md": ["ops"] },
+      );
+      const hits = await store.search(query, 4, undefined, "ops", undefined, { followLinks: 1 });
+      expect(hits.map((hit) => hit.path)).not.toContain("Restore procedure.md");
+    });
+
+    it("resolves links within the hit's folder when paths start with one", async () => {
+      const { store } = await setup({
+        "work/incident.md": incident,
+        "home/Restore procedure.md": procedure,
+      });
+      const linkedPaths = async (folders: boolean) =>
+        (await store.search(query, 4, undefined, undefined, undefined, { followLinks: 1, folders }))
+          .filter((hit) => hit.sources.includes("link"))
+          .map((hit) => hit.path);
+      // One index of the whole docs dir: the name matches wherever the document is.
+      expect(await linkedPaths(false)).toContain("home/Restore procedure.md");
+      // Each folder a vault of its own: `home` is out of `work`'s reach.
+      expect(await linkedPaths(true)).toEqual([]);
+    });
   });
 
   it("builds no vector index for a folder of documents", async () => {
