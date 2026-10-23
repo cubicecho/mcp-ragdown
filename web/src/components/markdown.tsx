@@ -1,4 +1,4 @@
-import { Image as ImageIcon, ImageOff } from "lucide-react";
+import { ChevronRight, Image as ImageIcon, ImageOff } from "lucide-react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { createContext, useContext, useEffect, useId, useMemo, useState } from "react";
 import ReactMarkdown, {
@@ -48,7 +48,7 @@ const FLOW = "flex flex-col gap-3";
 const DOCUMENT = cn(
   FLOW,
   "min-w-0 text-sm leading-relaxed text-foreground wrap-anywhere",
-  "[&_a]:font-medium [&_a]:text-info [&_a]:underline [&_a]:underline-offset-4",
+  "[&_a]:font-semibold [&_a]:text-info [&_a]:underline [&_a]:underline-offset-4",
   "[&_img]:inline-block [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-md",
 );
 
@@ -87,6 +87,15 @@ function textOf(node: SyntaxNode | SyntaxNode["children"][number] | undefined): 
 /** What `Markdown` tells the elements inside it. Only the heading ids, so far. */
 const HeadingIdContext = createContext<MarkdownProps["headingId"]>(undefined);
 
+/**
+ * The section a heading opens, when `collapsible` is on: whether its body shows, and the id of
+ * that body. Only the heading that opens the section reads it — the body hands its own blocks
+ * `undefined`, so a heading in a quotation under it stays a plain heading.
+ */
+const SectionContext = createContext<
+  { open: boolean; toggle: () => void; bodyId: string } | undefined
+>(undefined);
+
 /** The id of the task-list item a checkbox sits in, which is what names the checkbox. */
 const TaskItemContext = createContext<string | undefined>(undefined);
 
@@ -100,20 +109,123 @@ function Heading({
   children?: ReactNode;
 }) {
   const headingId = useContext(HeadingIdContext);
+  const section = useContext(SectionContext);
+  const ownId = useId();
   const Tag = `h${level}` as const;
-  return (
+  const id = headingId?.(textOf(node));
+  const heading = (
     <Tag
-      id={headingId?.(textOf(node))}
+      id={section ? (id ?? ownId) : id}
       className={cn(
         // More room above than below, so a heading belongs to what follows it. `scroll-mt` is for
         // the heading that is a link's target: it lands clear of the edge rather than under it.
-        "mt-3 mb-0 scroll-mt-4 font-semibold tracking-tight first:mt-0",
+        "mt-3 mb-0 min-w-0 scroll-mt-4 font-semibold tracking-tight first:mt-0",
         HEADINGS[level],
       )}
     >
       {children}
     </Tag>
   );
+  if (!section) {
+    return heading;
+  }
+  // The toggle sits beside the heading, not inside it: a heading's name stays its text, and a link
+  // in the heading is not a link inside a button. The button is named by the heading it folds.
+  return (
+    <div data-slot="markdown-section-heading" className="flex min-w-0 items-start gap-1">
+      <button
+        type="button"
+        aria-expanded={section.open}
+        aria-controls={section.bodyId}
+        aria-labelledby={id ?? ownId}
+        onClick={section.toggle}
+        className={cn(
+          "flex h-[1lh] shrink-0 items-center rounded-sm text-foreground/60",
+          "hover:bg-hover focus-visible:bg-hover focus-visible:outline-none",
+          HEADINGS[level],
+        )}
+      >
+        <ChevronRight
+          aria-hidden
+          className={cn("size-4 transition-transform", section.open && "rotate-90")}
+        />
+      </button>
+      {heading}
+    </div>
+  );
+}
+
+/** What the sectioning pass marks its elements with, so they are told from a footnote's section. */
+const SECTION = "dataMarkdownSection";
+const SECTION_BODY = "dataMarkdownSectionBody";
+
+/**
+ * A `<section>`: one a heading opens, when `collapsible` is on, or any other — the footnotes are
+ * one — drawn as it came.
+ */
+function DocumentSection({
+  node,
+  children,
+  ...rest
+}: ComponentPropsWithoutRef<"section"> & ExtraProps) {
+  if (node?.properties[SECTION] === undefined) {
+    return <section {...rest}>{children}</section>;
+  }
+  return <CollapsibleSection node={node}>{children}</CollapsibleSection>;
+}
+
+/**
+ * A heading and the blocks under it, up to the next heading of its level or higher. Open to start
+ * with; the open state is the section's own, as a `Disclosure`'s is. A heading with nothing under
+ * it has nothing to fold, and draws no toggle.
+ */
+function CollapsibleSection({ node, children }: { node: SyntaxNode; children?: ReactNode }) {
+  const [open, setOpen] = useState(true);
+  const bodyId = useId();
+  const body = node.children.find(
+    (child) => child.type === "element" && child.properties[SECTION_BODY] !== undefined,
+  );
+  const folds = body?.type === "element" && body.children.some((child) => child.type === "element");
+  const section = useMemo(
+    () => ({ open, toggle: () => setOpen((was) => was === false), bodyId }),
+    [open, bodyId],
+  );
+  return (
+    <section data-slot="markdown-section" className={cn(FLOW, "mt-3 first:mt-0")}>
+      <SectionContext.Provider value={folds ? section : undefined}>
+        {children}
+      </SectionContext.Provider>
+    </section>
+  );
+}
+
+/**
+ * What a section folds. Hidden by class as well as by attribute, because `flex` would otherwise
+ * win over `hidden`; kept mounted, so a section folded inside it is still folded when it opens.
+ */
+function SectionBody({ children }: { children?: ReactNode }) {
+  const section = useContext(SectionContext);
+  if (!section) {
+    return children ? <div className={FLOW}>{children}</div> : null;
+  }
+  return (
+    <div
+      id={section.bodyId}
+      data-slot="markdown-section-body"
+      hidden={section.open === false}
+      className={section.open ? FLOW : "hidden"}
+    >
+      <SectionContext.Provider value={undefined}>{children}</SectionContext.Provider>
+    </div>
+  );
+}
+
+/** A `<div>`: a section's body, or — from a plugin of the caller's — any other, drawn as it came. */
+function DocumentDiv({ node, children, ...rest }: ComponentPropsWithoutRef<"div"> & ExtraProps) {
+  if (node?.properties[SECTION_BODY] === undefined) {
+    return <div {...rest}>{children}</div>;
+  }
+  return <SectionBody>{children}</SectionBody>;
 }
 
 /**
@@ -212,6 +324,8 @@ type TreeNode = {
   value?: string;
   url?: string;
   alt?: string;
+  depth?: number;
+  data?: { hName: string; hProperties: Record<string, string> };
   children?: TreeNode[];
 };
 
@@ -273,6 +387,42 @@ function rewriteWikilinks(node: TreeNode) {
 /** The remark plugin behind `wikilinks`: each one becomes a link or an image on a private scheme. */
 function remarkWikilinks() {
   return rewriteWikilinks;
+}
+
+/**
+ * The remark plugin behind `collapsible`: each heading at the top of the document, with the blocks
+ * after it up to the next heading of its level or higher, becomes a `<section>` holding the heading
+ * and a body. Deeper headings nest inside. Only the document's own top level is cut; a heading in
+ * a quotation or a list item is left where it is.
+ */
+function remarkSections() {
+  return (tree: TreeNode) => {
+    const open: { depth: number; blocks: TreeNode[] }[] = [{ depth: 0, blocks: [] }];
+    for (const child of tree.children ?? []) {
+      if (child.type !== "heading" || child.depth === undefined) {
+        open[open.length - 1]?.blocks.push(child);
+        continue;
+      }
+      while (open.length > 1 && (open[open.length - 1]?.depth ?? 0) >= child.depth) {
+        open.pop();
+      }
+      const blocks: TreeNode[] = [];
+      open[open.length - 1]?.blocks.push({
+        type: "markdownSection",
+        data: { hName: "section", hProperties: { [SECTION]: "" } },
+        children: [
+          child,
+          {
+            type: "markdownSectionBody",
+            data: { hName: "div", hProperties: { [SECTION_BODY]: "" } },
+            children: blocks,
+          },
+        ],
+      });
+      open.push({ depth: child.depth, blocks });
+    }
+    tree.children = open[0]?.blocks ?? [];
+  };
 }
 
 /** The target a private-scheme URL carries, or `undefined` for any other URL. */
@@ -382,7 +532,7 @@ function BrokenLink({ reason, children }: { reason: string | undefined; children
     <span
       data-slot="markdown-broken-link"
       title={reason}
-      className="font-medium text-negative underline decoration-dashed underline-offset-4"
+      className="font-semibold text-negative underline decoration-dashed underline-offset-4"
     >
       {children}
       <span className="sr-only"> (broken link)</span>
@@ -477,7 +627,7 @@ function ImagePlaceholder({
       {...(missing ? {} : { "aria-busy": "true" as const })}
       className={cn(
         "inline-flex max-w-full items-center gap-1.5 rounded-md border border-dashed px-2 py-0.5 align-middle text-xs",
-        missing ? "border-negative/40 text-negative" : "border-foreground/15 text-foreground/60",
+        missing ? "border-negative/40 text-negative" : "border-foreground/50 text-foreground/60",
       )}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -607,6 +757,8 @@ const ELEMENTS: Components = {
   // rearranged. The last newline is the fence's, not the code's.
   pre: ({ node }) => <CodeBlock content={textOf(node).replace(/\n$/, "")} />,
   hr: () => <Separator decorative={false} />,
+  section: DocumentSection,
+  div: DocumentDiv,
   // `node` is react-markdown's, not the anchor's. The rest is kept: a footnote's reference and its
   // way back are links whose ids and labels remark-gfm wrote.
   a: ({ node: _node, ...anchor }) => <DocumentLink {...anchor} />,
@@ -690,6 +842,12 @@ export type MarkdownProps = {
    * `resolveLink` gets the URL as written. Wikilinks are names, and are never resolved against it.
    */
   basePath?: string | undefined;
+  /**
+   * Each heading folds the blocks under it, up to the next heading of its level or higher, with a
+   * chevron button beside it. Every section starts open. Off by default: a short note has nothing
+   * worth folding, and the button is one more stop for the keyboard per heading.
+   */
+  collapsible?: boolean | undefined;
   /** The document's root: its width, its margin. */
   className?: string | undefined;
 };
@@ -714,6 +872,7 @@ export function Markdown({
   wikilinks = false,
   resolveLink,
   basePath,
+  collapsible = false,
   className,
 }: MarkdownProps) {
   const elements = useMemo(
@@ -721,8 +880,14 @@ export function Markdown({
     [components],
   );
   const plugins = useMemo(
-    () => [...GFM, ...(wikilinks ? [remarkWikilinks] : []), ...(remarkPlugins ?? [])],
-    [remarkPlugins, wikilinks],
+    () => [
+      ...GFM,
+      ...(wikilinks ? [remarkWikilinks] : []),
+      ...(remarkPlugins ?? []),
+      // Last, so a caller's plugin sees the headings where the document wrote them.
+      ...(collapsible ? [remarkSections] : []),
+    ],
+    [remarkPlugins, wikilinks, collapsible],
   );
   // The private schemes are let past the policy only while the plugin that writes them is on, so
   // a document cannot reach them by spelling one out.

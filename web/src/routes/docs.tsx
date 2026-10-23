@@ -835,7 +835,7 @@ function DocPreview({
           </div>
         ) : (
           <>
-            <MarkdownPreview content={parsed.body} path={path} known={known} />
+            <MarkdownPreview content={parsed.body} path={path} known={known} collapsible />
             <Backlinks folder={folder} path={path} />
           </>
         )
