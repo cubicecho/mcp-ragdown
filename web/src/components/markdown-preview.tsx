@@ -43,6 +43,7 @@ export function MarkdownPreview({
   content,
   path,
   known,
+  collapsible = false,
   className,
 }: {
   content: string;
@@ -50,6 +51,11 @@ export function MarkdownPreview({
   path: string;
   /** Root-relative paths the index holds; a link to one of them stays in the app. */
   known: ReadonlySet<string>;
+  /**
+   * Each heading folds what is under it. For a document being read; off in an editor's preview,
+   * where a new heading would shift which section a fold belongs to.
+   */
+  collapsible?: boolean;
   className?: string;
 }) {
   // Held steady while the document is the same one: react-markdown mounts what it is handed as
@@ -95,6 +101,7 @@ export function MarkdownPreview({
       components={components}
       remarkPlugins={PLUGINS}
       urlTransform={urlTransform}
+      collapsible={collapsible}
       className={className}
     />
   );
