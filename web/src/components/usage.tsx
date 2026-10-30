@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { CardLayout } from "@/components/card-layout";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DescriptionList, PropertyRow } from "@/components/description-list";
@@ -19,19 +20,21 @@ import {
 import { useToast } from "@/components/ui/toast";
 import type { QueryLogSummary, UsageGap } from "@/lib/api";
 import { formatAgo, formatCount } from "@/lib/format";
-import { useClearQueryLog, useQueryLog } from "@/lib/queries";
+import { useClearQueryLog, useQueryLog, useWritable } from "@/lib/queries";
 
 type Summary = QueryLogSummary["summary"];
 
 /**
  * What the query log says about search on real queries: the questions nothing answered, how often
  * the hook injects, and which documents agents read after a search showed them. The log is opt-in
- * and stays on the server, so with it off this says how to turn it on.
+ * and stays on the server, so with it off this says how to turn it on: in the server settings, or
+ * by its variable when the server is read-only.
  */
 export function UsageSection() {
   const log = useQueryLog();
   const clear = useClearQueryLog();
   const toast = useToast();
+  const writable = useWritable();
   const summary = log.data?.summary;
   const empty = summary !== undefined && summary.searches === 0 && summary.reads.total === 0;
 
@@ -71,8 +74,26 @@ export function UsageSection() {
                 title="The query log is off"
                 description={
                   <>
-                    Turn on <em>Log searches</em> under Server, or set{" "}
-                    <Code>RAGDOWN_QUERY_LOG=true</Code>.{" "}
+                    {writable ? (
+                      <>
+                        Turn it on in{" "}
+                        <Link
+                          to="/settings"
+                          search={{ tab: "server" }}
+                          className="underline underline-offset-4"
+                        >
+                          Server settings
+                        </Link>
+                        : choose <em>Edit settings</em> and switch on <em>Log searches</em>. Or set{" "}
+                        <Code>RAGDOWN_QUERY_LOG=true</Code> on the server; a value saved in the
+                        settings wins over it.
+                      </>
+                    ) : (
+                      <>
+                        This server is read-only, so its settings cannot be changed here. Set{" "}
+                        <Code>RAGDOWN_QUERY_LOG=true</Code> on the server to turn it on.
+                      </>
+                    )}{" "}
                     {empty ? "" : "What it logged before is below."}
                   </>
                 }
