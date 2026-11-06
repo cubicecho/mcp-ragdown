@@ -100,6 +100,8 @@ export const defaults = Object.freeze({
   linkedSections: 2,
   /** `RAGDOWN_QUERY_LOG`: off, since what it records are the user's prompts. */
   queryLog: false,
+  /** `RAGDOWN_LAN_ADVERTISE`: off, since announcing the server to the network is the user's call. */
+  lanAdvertise: false,
   /** The query log's size before it is rotated; one rotated file is kept beside it. */
   queryLogMaxBytes: 10 * 1024 * 1024,
   /** How soon after a search a read of one of its hits counts as that hit having been used. */

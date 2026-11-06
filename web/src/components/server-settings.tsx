@@ -108,6 +108,12 @@ export function EditServerSettings({
             label="Log searches"
             description="Each search, hook call and document read is written to a file in the data directory, for the Usage tab. Nothing is sent anywhere."
           />
+          <SwitchField
+            form={form}
+            name="lan_advertise"
+            label="Advertise on the local network"
+            description="Announces this server over mDNS, so tools on the same network, such as mcp-router, can find it without being given its address."
+          />
           <Section
             title="Search defaults"
             level={3}

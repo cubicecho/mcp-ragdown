@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { hostname } from "node:os";
 import { basename } from "node:path";
 import { parseArgs } from "node:util";
 import { type Config, loadConfig } from "./shared/config.ts";
@@ -84,15 +85,22 @@ async function stdio(config: Config): Promise<void> {
   process.on("SIGINT", () => void shutdown());
 }
 
+/**
+ * `serve`: the HTTP server, and the LAN announcement while the setting asks for one.
+ *
+ * @param config - The environment's config, with the web UI's saved settings laid over it here.
+ */
 async function serve(config: Config): Promise<void> {
   const [
     { Ragdown },
     { assertAuthConfigured, createHttpServer },
     { applySettings, readServerSettings },
+    { createAdvertiser },
   ] = await Promise.all([
     import("./serving/engine.ts"),
     import("./serving/http.ts"),
     import("./shared/server-settings.ts"),
+    import("@cubicecho/mcp-discovery/mdns"),
   ]);
   assertAuthConfigured(config);
   // What the web UI saved wins over the environment it was started with.
@@ -102,14 +110,27 @@ async function serve(config: Config): Promise<void> {
     console.error(`[ragdown] startup failed: ${errorMessage(error)}`);
     process.exit(1);
   });
-  const server = createHttpServer(ready, config);
+  // Follows `config.lanAdvertise`, which a settings change updates in place; the HTTP server
+  // listens on every interface, so an announcement always names an address the LAN can reach.
+  const advertiser = createAdvertiser({
+    isWanted: () => config.lanAdvertise,
+    options: () => ({ name: `MCP Ragdown on ${hostname()}`, port: config.http.port }),
+    log: (message) => console.error(`[ragdown] ${message}`),
+  });
+  const server = createHttpServer(ready, config, {
+    onSettingsChange: () => void advertiser.sync(),
+  });
   // Listening before the model loads: /api/status answers `ready: false` rather than refusing.
   await new Promise<void>((done) => server.listen(config.http.port, done));
   console.error(
     `[ragdown] http on :${config.http.port}/mcp/<folder>${config.rootMcp ? " and /mcp" : ""} (docs: ${config.docsDir}, auth: ${config.http.secureLocalNet ? "off" : "bearer"})`,
   );
+  // After listen, so a watcher that hears the announcement can already read the catalog.
+  void advertiser.sync();
 
   const shutdown = async () => {
+    // First, so the goodbye goes out while the server can still answer.
+    await advertiser.close();
     server.close();
     await (await ready.catch(() => undefined))?.close();
     process.exit(0);

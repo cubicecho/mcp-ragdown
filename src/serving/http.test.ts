@@ -1,7 +1,13 @@
 import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
+import {
+  cardConnection,
+  parseAiCatalog,
+  parseServerCard,
+  SERVER_CARD_PATH,
+} from "@cubicecho/mcp-discovery";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -15,7 +21,7 @@ import {
 } from "../shared/server-settings.ts";
 import { eventually, tempSetup } from "../shared/testing.ts";
 import { Ragdown } from "./engine.ts";
-import { assertAuthConfigured, createHttpServer } from "./http.ts";
+import { assertAuthConfigured, createHttpServer, type HttpOptions } from "./http.ts";
 
 const closers: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -25,7 +31,7 @@ afterEach(async () => {
 });
 
 /** A server in folders mode over one folder, `ops`, with MCP on. */
-async function serve(env: Record<string, string>) {
+async function serve(env: Record<string, string>, options: HttpOptions = {}) {
   const t = await tempSetup(env, "folders");
   closers.push(t.cleanup);
   await t.write("ops/backups.md", "# Backups\n\n## Restore\n\nRun pg_restore twice on postgres.");
@@ -37,7 +43,7 @@ async function serve(env: Record<string, string>) {
   await mkdir(join(webDir, "assets"), { recursive: true });
   await writeFile(join(webDir, "index.html"), "<!doctype html><title>ragdown</title>");
   await writeFile(join(webDir, "assets", "app-1.js"), "console.log(1)");
-  const server = createHttpServer(Promise.resolve(rag), t.config, webDir);
+  const server = createHttpServer(Promise.resolve(rag), t.config, { webDir, ...options });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   closers.push(() => new Promise((done) => server.close(() => done())));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -45,6 +51,28 @@ async function serve(env: Record<string, string>) {
 }
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
+
+/**
+ * A GET with the `Host` header a client on another address would send, which `fetch` cannot set.
+ *
+ * @param url - What to fetch.
+ * @param host - The `Host` header.
+ * @returns The status and the parsed JSON body.
+ */
+function getAs(url: string, host: string): Promise<{ status: number; body: unknown }> {
+  return new Promise((done, fail) => {
+    const req = request(url, { headers: { host } }, (res) => {
+      let text = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => {
+        text += chunk;
+      });
+      res.on("end", () => done({ status: res.statusCode ?? 0, body: JSON.parse(text) }));
+    });
+    req.on("error", fail);
+    req.end();
+  });
+}
 
 describe("HTTP server", () => {
   it("refuses to start with no token and no SECURE_LOCAL_NET", async () => {
@@ -906,5 +934,117 @@ describe("HTTP server", () => {
 
     expect(await usage("DELETE")).toMatchObject({ enabled: true, summary: { searches: 0 } });
     expect((await fetch(`${t.url}/api/query-log`, { method: "PUT", headers })).status).toBe(405);
+  });
+});
+
+describe("discovery documents", () => {
+  /** The server's AI Catalog, read without a token, as the card URLs' paths. */
+  const catalogPaths = async (url: string) => {
+    const response = await fetch(`${url}/.well-known/ai-catalog.json`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/ai-catalog+json");
+    const catalog = parseAiCatalog(await response.json(), "test");
+    return catalog.entries.map((entry) => new URL(entry.url ?? "").pathname);
+  };
+
+  it("serves the catalog without a token, while the MCP endpoints still ask for one", async () => {
+    const t = await serve({ RAGDOWN_TOKEN: "secret" });
+    expect(await catalogPaths(t.url)).toEqual([`/mcp/ops${SERVER_CARD_PATH}`]);
+    const post = await fetch(`${t.url}/mcp/ops`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(post.status).toBe(401);
+    // Nothing secret rides along on a public document.
+    const card = await fetch(`${t.url}/mcp/ops${SERVER_CARD_PATH}`);
+    expect(await card.text()).not.toContain("secret");
+  });
+
+  it("lists every folder with MCP on, and the root only while it is served", async () => {
+    const t = await serve({ RAGDOWN_TOKEN: "secret" });
+    await t.write("people/a.md", "# A");
+    await t.write("My Notes/.ragdown.json", JSON.stringify({ mcp: true }));
+    expect(await catalogPaths(t.url)).toEqual([
+      `/mcp/My%20Notes${SERVER_CARD_PATH}`,
+      `/mcp/ops${SERVER_CARD_PATH}`,
+    ]);
+    // A human-only folder has no card, and its path falls through to the guarded MCP route.
+    expect((await fetch(`${t.url}/mcp/people${SERVER_CARD_PATH}`)).status).toBe(401);
+
+    await fetch(`${t.url}/api/settings`, {
+      method: "PATCH",
+      headers: { ...auth("secret"), "content-type": "application/json" },
+      body: JSON.stringify({ root_mcp: true }),
+    });
+    expect((await catalogPaths(t.url))[0]).toBe(`/mcp${SERVER_CARD_PATH}`);
+  });
+
+  it("names the URL the client came in on, and says a token is needed", async () => {
+    const t = await serve({ RAGDOWN_TOKEN: "secret" });
+    const { status, body } = await getAs(`${t.url}/mcp/ops${SERVER_CARD_PATH}`, "nas.local:4102");
+    expect(status).toBe(200);
+    const card = parseServerCard(body, "test");
+    expect(card).toMatchObject({ title: "Operations", version: pkg.version });
+    expect(card.name).toMatch(/^io\.github\.cubicecho\.ragdown\.[a-z0-9-]+\/f-ops$/);
+    expect(cardConnection(card)).toEqual({
+      url: "http://nas.local:4102/mcp/ops",
+      requiredHeaders: ["Authorization"],
+    });
+  });
+
+  it("asks for no token when SECURE_LOCAL_NET is on", async () => {
+    const t = await serve({ SECURE_LOCAL_NET: "true" });
+    const card = parseServerCard(
+      await (await fetch(`${t.url}/mcp/ops${SERVER_CARD_PATH}`)).json(),
+      "test",
+    );
+    expect(cardConnection(card)?.requiredHeaders).toEqual([]);
+  });
+
+  it("saves lan_advertise like any setting, and tells the server it changed", async () => {
+    let changes = 0;
+    const t = await serve(
+      { RAGDOWN_TOKEN: "secret" },
+      {
+        onSettingsChange: () => {
+          changes += 1;
+        },
+      },
+    );
+    const patch = (body: unknown) =>
+      fetch(`${t.url}/api/settings`, {
+        method: "PATCH",
+        headers: { ...auth("secret"), "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    expect((await patch({ lan_advertise: "yes" })).status).toBe(400);
+    expect(changes).toBe(0);
+    // Off unless asked for.
+    expect(t.config.lanAdvertise).toBe(false);
+
+    const saved = await patch({ lan_advertise: true });
+    expect(((await saved.json()) as { settings: unknown }).settings).toMatchObject({
+      lan_advertise: true,
+      saved: { lan_advertise: true },
+      env: { lan_advertise: false },
+    });
+    expect(t.config.lanAdvertise).toBe(true);
+    expect(changes).toBe(1);
+    expect(JSON.parse(await readFile(join(t.docsDir, SERVER_SETTINGS_FILE), "utf8"))).toEqual({
+      lan_advertise: true,
+    });
+
+    await patch({ lan_advertise: null });
+    expect(t.config.lanAdvertise).toBe(false);
+    expect(changes).toBe(2);
+  });
+
+  it("starts with advertising on when RAGDOWN_LAN_ADVERTISE says so", async () => {
+    const t = await serve({ SECURE_LOCAL_NET: "true", RAGDOWN_LAN_ADVERTISE: "true" });
+    const status = (await (await fetch(`${t.url}/api/status`)).json()) as {
+      settings: { lan_advertise: boolean };
+    };
+    expect(status.settings.lan_advertise).toBe(true);
   });
 });

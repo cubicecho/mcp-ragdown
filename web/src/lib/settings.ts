@@ -15,6 +15,7 @@ export type SettingsForm = {
   max_per_document: number | null;
   follow_links: number | null;
   query_log: boolean;
+  lan_advertise: boolean;
   top_k: number | null;
   min_score: number | null;
   min_ratio: number | null;
@@ -29,6 +30,7 @@ export const settingsForm = (settings: Settings): SettingsForm => ({
   max_per_document: settings.saved.max_per_document ?? null,
   follow_links: settings.saved.follow_links ?? null,
   query_log: settings.query_log,
+  lan_advertise: settings.lan_advertise,
   top_k: settings.saved.hook?.top_k ?? null,
   min_score: settings.saved.hook?.min_score ?? null,
   min_ratio: settings.saved.hook?.min_ratio ?? null,
@@ -61,6 +63,10 @@ export function settingsPatch(settings: Settings, values: SettingsForm): ServerS
   }
   if (values.query_log !== settings.query_log) {
     patch.query_log = values.query_log === settings.env.query_log ? null : values.query_log;
+  }
+  if (values.lan_advertise !== settings.lan_advertise) {
+    patch.lan_advertise =
+      values.lan_advertise === settings.env.lan_advertise ? null : values.lan_advertise;
   }
   const hook: NonNullable<ServerSettingsPatch["hook"]> = {};
   for (const key of HOOK_KEYS) {

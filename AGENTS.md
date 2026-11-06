@@ -82,6 +82,8 @@ is a "document" everywhere in the code; a "file" is anything on disk, attachment
     `/api/backlinks`, `/api/file`), `api-settings.ts` (`/api/settings`) and `api-query-log.ts`
     (`/api/query-log`). `http-io.ts` is what
     they share; `web-ui.ts` serves the built UI for every other `GET`.
+  - `discovery.ts`: the MCP Server Card of each folder with MCP on (and of the root while it is
+    served), which `http.ts` serves with the AI Catalog through `@cubicecho/mcp-discovery`.
 - `src/shared/`: what every concept uses.
   - `config.ts`: the only reader of `process.env`. `mode` is `folders` (`serve`) or `single`
     (`stdio`).
@@ -95,6 +97,17 @@ is a "document" everywhere in the code; a "file" is anything on disk, attachment
 - `web/`: the web UI (React, TanStack Query/Router, Tailwind, cubeui/shadcn). Its own tsconfig;
   `components/ui` and the cubeui shells are registry-generated, so prefer re-adding to hand edits.
 - `Dockerfile`: model baked in, unused native binaries pruned. `serve` is the entrypoint.
+
+## Network discovery
+
+`serve` is discoverable: `http.ts` answers `/.well-known/ai-catalog.json` and each endpoint's
+`<path>/server-card` (built in `discovery.ts`) **before the auth check**, because the documents are
+public. They never carry the token; a card only says `Authorization` is required when auth is on.
+The mDNS announcement (`_mcp._tcp`) is opt-in: `RAGDOWN_LAN_ADVERTISE`, or `lan_advertise` saved from
+the web UI, default false. `cli.ts` holds the `createAdvertiser` (from
+`@cubicecho/mcp-discovery/mdns`), syncs it after `listen` and after every settings change
+(`createHttpServer`'s `onSettingsChange`), and closes it first on shutdown so the goodbye goes out.
+The library needs zod 4, which is why the MCP tool schemas are zod 4 too.
 
 ## Conventions
 

@@ -25,6 +25,7 @@ export function publicSettings(config: Config) {
     max_per_document: config.maxPerDocument,
     follow_links: config.followLinks,
     query_log: config.queryLog,
+    lan_advertise: config.lanAdvertise,
     hook: {
       top_k: config.hook.topK,
       min_score: config.hook.minScore,
@@ -43,6 +44,7 @@ export function publicSettings(config: Config) {
       max_per_document: config.env.maxPerDocument,
       follow_links: config.env.followLinks,
       query_log: config.env.queryLog,
+      lan_advertise: config.env.lanAdvertise,
       hook: {
         top_k: config.env.hook.topK,
         min_score: config.env.hook.minScore,
@@ -93,8 +95,13 @@ async function changeSettings(rag: Ragdown, config: Config, changes: SettingsCha
   rag.setWatch();
 }
 
-/** `PATCH /api/settings`: save the server settings and answer with what now applies. */
-export async function handleSettings(request: ApiRequest): Promise<void> {
+/**
+ * `PATCH /api/settings`: save the server settings and answer with what now applies.
+ *
+ * @param request - The authorized request.
+ * @param onChange - Told once a change is applied, for state outside the server (the LAN advert).
+ */
+export async function handleSettings(request: ApiRequest, onChange: () => void): Promise<void> {
   const { rag, config, req, res } = request;
   allow(request, "PATCH");
   assertWritable(config);
@@ -102,5 +109,6 @@ export async function handleSettings(request: ApiRequest): Promise<void> {
   const change = settingsChange.then(() => changeSettings(rag, config, changes));
   settingsChange = change.catch(() => undefined);
   await change;
+  onChange();
   json(res, 200, { settings: publicSettings(config) });
 }

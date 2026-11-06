@@ -29,6 +29,7 @@ export interface ServerSettings {
   max_per_document?: number;
   follow_links?: number;
   query_log?: boolean;
+  lan_advertise?: boolean;
   hook?: HookOverrides;
 }
 
@@ -41,6 +42,7 @@ export interface SettingsChanges {
   max_per_document?: number | null;
   follow_links?: number | null;
   query_log?: boolean | null;
+  lan_advertise?: boolean | null;
   hook?: HookChanges;
 }
 
@@ -137,6 +139,14 @@ export function parseChanges(body: Record<string, unknown> | undefined): Setting
     }
     out.query_log = body.query_log;
   }
+  const lanAdvertise = body?.lan_advertise;
+  if (lanAdvertise !== undefined) {
+    const isBooleanOrNull = lanAdvertise === null || typeof lanAdvertise === "boolean";
+    if (isBooleanOrNull === false) {
+      throw invalid("lan_advertise must be true or false");
+    }
+    out.lan_advertise = lanAdvertise;
+  }
   if (body?.hook !== undefined) {
     out.hook = parseHookChanges(body.hook);
   }
@@ -181,6 +191,11 @@ export function applyChanges(saved: ServerSettings, changes: SettingsChanges): S
   } else if (changes.query_log !== undefined) {
     out.query_log = changes.query_log;
   }
+  if (changes.lan_advertise === null) {
+    delete out.lan_advertise;
+  } else if (changes.lan_advertise !== undefined) {
+    out.lan_advertise = changes.lan_advertise;
+  }
   if (changes.hook) {
     const hook = mergeHookChanges(saved.hook ?? {}, changes.hook);
     if (Object.keys(hook).length > 0) {
@@ -195,7 +210,8 @@ export function applyChanges(saved: ServerSettings, changes: SettingsChanges): S
 /**
  * Lay the saved settings over what the environment said, in place: the routes and tools read
  * `config` on each call, so a change is in effect as soon as this returns. The embedder and the
- * watcher also have state of their own, which the engine changes (`switchEmbedder`, `setWatch`).
+ * watcher also have state of their own, which the engine changes (`switchEmbedder`, `setWatch`),
+ * and so does the LAN advertisement, which `serve` syncs after a change.
  */
 export function applySettings(config: Config, saved: ServerSettings): void {
   const env = config.env;
@@ -207,6 +223,7 @@ export function applySettings(config: Config, saved: ServerSettings): void {
   config.maxPerDocument = saved.max_per_document ?? env.maxPerDocument;
   config.followLinks = saved.follow_links ?? env.followLinks;
   config.queryLog = saved.query_log ?? env.queryLog;
+  config.lanAdvertise = saved.lan_advertise ?? env.lanAdvertise;
   config.hook = resolveHook({}, saved.hook ?? {}, {
     ...env.hook,
     // Unset everywhere, the floor is the embedder's own, so it moves when the embedder does.

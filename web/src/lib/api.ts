@@ -9,6 +9,7 @@ export interface ServerSettings {
   max_per_document?: number;
   follow_links?: number;
   query_log?: boolean;
+  lan_advertise?: boolean;
   hook?: HookOverrides;
 }
 
@@ -21,6 +22,7 @@ export interface ServerSettingsPatch {
   max_per_document?: number | null;
   follow_links?: number | null;
   query_log?: boolean | null;
+  lan_advertise?: boolean | null;
   hook?: { [K in keyof HookOverrides]?: number | null };
 }
 
@@ -44,6 +46,8 @@ export interface Status {
     follow_links: number;
     /** On, searches and reads are logged in the data dir for the Usage tab. */
     query_log: boolean;
+    /** On, the server announces itself on the local network over mDNS. */
+    lan_advertise: boolean;
     /** `ragdown_context`'s defaults, which a hook's own arguments override. */
     hook: {
       top_k: number;
@@ -64,6 +68,7 @@ export interface Status {
       max_per_document: number;
       follow_links: number;
       query_log: boolean;
+      lan_advertise: boolean;
       hook: { top_k: number; min_score: number | null; min_ratio: number; max_chars: number };
     };
     /** The embedders a form can offer, with each one's own floor and unrelated score. */
