@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { tempSetup } from "../shared/testing.ts";
-import { discoveryEndpoints, hostSlug } from "./discovery.ts";
+import { discoveryEndpoints } from "./discovery.ts";
 
 describe("discoveryEndpoints", () => {
   it("names cards after the host, so two servers on one network stay apart", async () => {
@@ -28,15 +28,5 @@ describe("discoveryEndpoints", () => {
     } finally {
       await t.cleanup();
     }
-  });
-});
-
-describe("hostSlug", () => {
-  it.each([
-    ["NAS", "nas"],
-    ["my_box.lan", "my-box"],
-    ["---", "host"],
-  ])("%s → %s", (input, expected) => {
-    expect(hostSlug(input)).toBe(expected);
   });
 });
