@@ -3,6 +3,10 @@ services:
   ragdown:
     image: vantreeseba/mcp-ragdown:latest
     # To build from this checkout instead, replace the line above with `build: .`
+    # mDNS multicast does not leave Docker's default bridge network. To advertise on the LAN
+    # (RAGDOWN_LAN_ADVERTISE=true), use the host's network instead; `ports` then no longer
+    # applies, and the server listens on PORT (3000) on the host.
+    # network_mode: host
     ports:
       # host:container — change the left side only.
       - '3300:3000'
@@ -18,6 +22,7 @@ services:
       RAGDOWN_TOKEN: ${RAGDOWN_TOKEN:-}
       SECURE_LOCAL_NET: ${SECURE_LOCAL_NET:-false}
       RAGDOWN_READ_ONLY: ${RAGDOWN_READ_ONLY:-false}
+      RAGDOWN_LAN_ADVERTISE: ${RAGDOWN_LAN_ADVERTISE:-false}
     restart: unless-stopped
 
 volumes:

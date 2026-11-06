@@ -304,6 +304,7 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `RAGDOWN_MAX_PER_DOCUMENT` | `0` | Most sections of one document a search returns and `ragdown_context` injects; the rest are filled from other documents. `0` is no cap. See [Design](#design). |
 | `RAGDOWN_FOLLOW_LINKS` | `0` | How many of a search's best hits have the wikilinks in their own section followed: each linked document's two closest sections are placed right after the hit, within its folder and under the search's filters. `0` is off. See [Design](#design). |
 | `RAGDOWN_QUERY_LOG` | `false` | Log every search, hook call and `ragdown_read_doc` to `query-log.jsonl` in the data dir, for the web UI's **Settings → Usage**. Never sent anywhere. See [Design](#design). |
+| `RAGDOWN_LAN_ADVERTISE` | `false` | `serve` only. Announce the server on the local network over mDNS (`_mcp._tcp`). See [Network discovery](#network-discovery). |
 | `RAGDOWN_HOOK_TOP_K` | `4` | `ragdown_context`: most sections per prompt. |
 | `RAGDOWN_HOOK_MIN_SCORE` | the embedder's own | `ragdown_context`: lowest cosine similarity returned. Defaults to the `MIN_SCORE` of the embedder in use (`0.8` for the default one), so leave it unset unless you measured a better number. |
 | `RAGDOWN_HOOK_MIN_RATIO` | `0.95` | `ragdown_context`: lowest share of the best hit's similarity a hit may have and still be injected; `0` disables it. Being a ratio, it carries across embedders as `MIN_SCORE` does not. See [Design](#design). |
@@ -314,7 +315,7 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `SECURE_LOCAL_NET` | `false` | `serve` only. Skip the token on a trusted network. `serve` refuses to start with neither. |
 
 Under `serve`, the embedder, watching, the `/mcp` root, the characters per hit, the sections per
-document, the query log and the four `ragdown_context` defaults can also be changed while the server runs, under **Settings → Server** in the web UI. What
+document, the query log, advertising on the LAN and the four `ragdown_context` defaults can also be changed while the server runs, under **Settings → Server** in the web UI. What
 is saved there is kept in `.ragdown-server.json` in the docs directory and wins over the variable of
 the same setting, at once and after every restart, until it is cleared there; the variable is the
 value it goes back to. A new embedder is loaded first (so one that cannot load changes nothing),
@@ -331,14 +332,16 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 
 | Route | Auth | |
 | --- | --- | --- |
-| `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. `settings` holds the non-secret tuning values (`RAGDOWN_EMBEDDER`, `RAGDOWN_WATCH`, `RAGDOWN_ROOT_MCP`, `RAGDOWN_TEXT_LIMIT`, `RAGDOWN_MAX_PER_DOCUMENT`, `RAGDOWN_FOLLOW_LINKS`, `RAGDOWN_QUERY_LOG`, `RAGDOWN_HOOK_*`) for the web UI's Settings page: the ones in effect, the ones `saved` there, and what the `env` says. |
+| `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. `settings` holds the non-secret tuning values (`RAGDOWN_EMBEDDER`, `RAGDOWN_WATCH`, `RAGDOWN_ROOT_MCP`, `RAGDOWN_TEXT_LIMIT`, `RAGDOWN_MAX_PER_DOCUMENT`, `RAGDOWN_FOLLOW_LINKS`, `RAGDOWN_QUERY_LOG`, `RAGDOWN_LAN_ADVERTISE`, `RAGDOWN_HOOK_*`) for the web UI's Settings page: the ones in effect, the ones `saved` there, and what the `env` says. |
 | `/mcp/<folder>[/<subfolder...>]` | bearer | Streamable HTTP MCP, stateless, for a folder with MCP on. 404 otherwise. See [Folders](#folders). |
 | `/mcp` | bearer | The same over every folder with MCP on, while `RAGDOWN_ROOT_MCP` is on. 404 otherwise. See [Every folder at once](#every-folder-at-once). |
+| `GET /.well-known/ai-catalog.json` | none | The AI Catalog: one entry per MCP endpoint, each pointing at its Server Card. See [Network discovery](#network-discovery). |
+| `GET /mcp/<folder>/server-card`, `GET /mcp/server-card` | none | One endpoint's MCP Server Card, for a folder with MCP on and for the root while it is served. |
 | `GET /api/folders` | bearer | Each folder's `name`, `title`, `mcp`, `mcp_path`, `files` and `chunks`, with `created_by` on one an agent made, and `loose_files`: the Markdown outside every folder. |
 | `POST /api/folders` | bearer | Create a folder: JSON `{ name, title?, mcp? }`. 201; 409 when it exists, 400 for a bad name. |
 | `PATCH /api/folders/<name>` | bearer | JSON `{ title?, mcp?, hook?, name? }`: change its settings, or rename it with `name` (which re-indexes it). `hook` takes any of `top_k`, `min_score`, `min_ratio` and `max_chars`; `null` takes the folder's own value away. Unknown keys in `.ragdown.json` are kept. |
 | `DELETE /api/folders/<name>?confirm=<name>` | bearer | Delete a folder and everything in it. 400 unless `confirm` repeats the name. |
-| `PATCH /api/settings` | bearer | JSON `{ embedder?, watch?, root_mcp?, text_limit?, max_per_document?, follow_links?, query_log?, hook? }`: save server settings over their variables and apply them at once. `null` gives a value back to its variable. 400 for a value that is not valid or an embedder that cannot load, 409 when this process is not the one that owns the index. Answers with the new `settings`. |
+| `PATCH /api/settings` | bearer | JSON `{ embedder?, watch?, root_mcp?, text_limit?, max_per_document?, follow_links?, query_log?, lan_advertise?, hook? }`: save server settings over their variables and apply them at once. `null` gives a value back to its variable. 400 for a value that is not valid or an embedder that cannot load, 409 when this process is not the one that owns the index. Answers with the new `settings`. |
 | `GET /api/query-log` | bearer | The query log summed up for **Settings → Usage**: `enabled`, and a `summary` of the searches, the `gaps` (queries whose best hit was under the minimum score), the hook's injection rate, and the documents read most with how many reads followed a search that showed them. `DELETE` empties the log, read-only or not. |
 | `DELETE /api/loose?name=` | bearer | Delete one of the `loose_files`: a Markdown file directly in the docs directory. 404 for any other name. |
 | `GET /api/docs?folder=` | bearer | The indexed files, of one folder or all: `path`, `folder`, `title`, `description`, `tags`, `aliases`, `created_by`, `session`, `superseded_by`, `mtime_ms`, `size`, `chunks`. |
@@ -360,6 +363,33 @@ write with `ragdown_remember`, `ragdown_write` and `ragdown_edit`.
 The web UI asks for the token once and keeps it in the browser's local storage. Its static files
 hold no documents, so they need none; everything it shows comes from the bearer routes. It is built by
 `npm run build` (the image does this) and only `serve` serves it.
+
+## Network discovery
+
+`serve` describes its MCP endpoints, so tools such as
+[mcp-router](https://github.com/cubicecho/mcp-router) can find them without being given each URL:
+
+- `GET /.well-known/ai-catalog.json` lists `/mcp/<folder>` for every folder with MCP on, and `/mcp`
+  while the root is served.
+- `GET /mcp/<folder>/server-card` (and `GET /mcp/server-card`) describes one endpoint
+  ([MCP Server Cards](https://modelcontextprotocol.io/seps/2127-mcp-server-cards)): its name
+  (`io.github.cubicecho.ragdown.<host>/f-<folder>`, or `/root`), the version, and the URL the
+  client reached it at.
+
+These are public, with no token needed, like `/api/status`. They name the folders with MCP on and
+say whether a bearer token is required, but never carry the token. A human-only folder is not
+listed. Both come from [`@cubicecho/mcp-discovery`](https://github.com/cubicecho/mcp-discovery).
+
+**Advertise on the local network** (`RAGDOWN_LAN_ADVERTISE=true`, or the switch under
+**Settings → Server**; off by default) also announces the server over mDNS as an `_mcp._tcp`
+service named `MCP Ragdown on <hostname>`, so it can be found without knowing its address. A change
+in the UI starts or stops the announcement at once, and the server says goodbye when it stops.
+Only `serve` advertises; `stdio` has no HTTP to find.
+
+mDNS needs multicast, which Docker's default bridge network drops: in a container, use
+`network_mode: host` (the commented line in [`docker-compose.yml`](docker-compose.yml)) for the
+announcement to reach the LAN. With host networking the `ports:` mapping no longer applies and the
+server listens on `PORT` (3000) on the host itself.
 
 ## Upgrading from 4.x
 

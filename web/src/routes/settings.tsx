@@ -130,7 +130,7 @@ export function SettingsPage() {
             </TabsContent>
             <TabsContent value="server" className="mt-0">
               <Section
-                description="What the index is doing, then how the server is set up. Each setting starts as an environment variable; the embedder, watching, the /mcp address, the query log and the search defaults can be changed here, and a value saved here wins over its variable."
+                description="What the index is doing, then how the server is set up. Each setting starts as an environment variable; the embedder, watching, the /mcp address, the query log, advertising on the network and the search defaults can be changed here, and a value saved here wins over its variable."
                 actionSlot={
                   writable && status.data ? (
                     <Button
@@ -598,6 +598,22 @@ function IndexSettingsCard({ status, loading }: { status: Status | undefined; lo
                         content="Copy MCP config"
                       />
                     ) : null
+                  }
+                />,
+                <PropertyRow
+                  key="lan-advertise"
+                  label="Advertise on the local network"
+                  value={<YesNo value={status.settings.lan_advertise} />}
+                  hint={
+                    <>
+                      <Env
+                        name="RAGDOWN_LAN_ADVERTISE"
+                        saved={status.settings.saved.lan_advertise !== undefined}
+                      />
+                      . On, the server announces itself over mDNS, so tools on the same network can
+                      find it. <Code>/.well-known/ai-catalog.json</Code> describes its endpoints
+                      either way.
+                    </>
                   }
                 />,
               ]}

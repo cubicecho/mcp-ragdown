@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { discoveryMiddleware } from "@cubicecho/mcp-discovery";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { Root } from "../documents/root.ts";
@@ -12,24 +13,47 @@ import { handleDocuments } from "./api-documents.ts";
 import { handleFolders } from "./api-folders.ts";
 import { handleQueryLog } from "./api-query-log.ts";
 import { handleSettings, publicSettings } from "./api-settings.ts";
+import { discoveryEndpoints } from "./discovery.ts";
 import type { Ragdown } from "./engine.ts";
 import { type ApiRequest, json, readJson } from "./http-io.ts";
 import { createMcpServer, SERVER_NAME, VERSION } from "./mcp-tools.ts";
 import { serveWeb, WEB_DIR } from "./web-ui.ts";
 
+/** What `createHttpServer` can be told beyond the engine and the config. */
+export interface HttpOptions {
+  /**
+   * Where the built web UI is.
+   *
+   * @defaultValue `WEB_DIR`
+   */
+  webDir?: string;
+  /** Called once a settings change is applied, for state outside the server: the LAN advert. */
+  onSettingsChange?: () => void;
+}
+
 /**
  * The HTTP face of the server, for running it in a container: `/mcp/<folder>` (and `/mcp`, when
- * the root is served) for agents and hooks, `/api` for the web UI and the health check, and the built UI for every other `GET`. The
- * README's "Commands and HTTP" lists every route and what it answers. Plain `node:http` rather than
- * Express: a handful of routes do not need a framework.
+ * the root is served) for agents and hooks, `/api` for the web UI and the health check, the
+ * discovery documents, and the built UI for every other `GET`. The README's "Commands and HTTP"
+ * lists every route and what it answers. Plain `node:http` rather than Express: a handful of
+ * routes do not need a framework.
+ *
+ * @param ready - The engine, once it has started.
+ * @param config - The running config; a settings change updates it in place.
+ * @param [options] - Where the web UI is, and who to tell about a settings change.
+ * @returns The server, not yet listening.
  */
 export function createHttpServer(
   ready: Promise<Ragdown>,
   config: Config,
-  webDir: string = WEB_DIR,
+  options: HttpOptions = {},
 ): Server {
+  const { webDir = WEB_DIR, onSettingsChange = () => undefined } = options;
+  // Public by design, so answered ahead of the auth check: the AI Catalog and each MCP endpoint's
+  // Server Card. They say a token is needed, never what it is.
+  const discovery = discoveryMiddleware(() => discoveryEndpoints(config));
   return createServer({ keepAliveTimeout: config.http.keepAliveTimeoutMs }, (req, res) => {
-    handle(ready, config, webDir, req, res).catch((error: unknown) => {
+    const fail = (error: unknown) => {
       const status = error instanceof Refusal ? error.status : 500;
       if (status >= 500) {
         console.error(`[http] ${req.method} ${req.url}: ${errorMessage(error)}`);
@@ -43,6 +67,14 @@ export function createHttpServer(
       } else {
         res.end();
       }
+    };
+    // `next` without an error means the request is not a discovery document's.
+    discovery(req, res, (error?: unknown) => {
+      if (error !== undefined) {
+        fail(error);
+        return;
+      }
+      handle(ready, config, { webDir, onSettingsChange }, req, res).catch(fail);
     });
   });
 }
@@ -62,7 +94,7 @@ export function assertAuthConfigured(config: Config): void {
 async function handle(
   ready: Promise<Ragdown>,
   config: Config,
-  webDir: string,
+  { webDir, onSettingsChange }: Required<HttpOptions>,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -105,7 +137,7 @@ async function handle(
     await handleMcp(await ready, config, path, req, res);
     return;
   }
-  await handleApi(await ready, config, path, req, res);
+  await handleApi(await ready, config, path, req, res, onSettingsChange);
 }
 
 const API_ROUTES = new Set([
@@ -190,6 +222,7 @@ async function handleApi(
   path: string,
   req: IncomingMessage,
   res: ServerResponse,
+  onSettingsChange: () => void,
 ): Promise<void> {
   const request: ApiRequest = {
     rag,
@@ -203,7 +236,7 @@ async function handleApi(
   if (path === "/api/folders" || path.startsWith("/api/folders/") || path === "/api/loose") {
     await handleFolders(request);
   } else if (path === "/api/settings") {
-    await handleSettings(request);
+    await handleSettings(request, onSettingsChange);
   } else if (path === "/api/query-log") {
     await handleQueryLog(request);
   } else {

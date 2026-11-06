@@ -45,6 +45,8 @@ export interface Config {
   followLinks: number;
   /** Whether searches, hook calls and reads are recorded in the data dir (`src/usage/`). */
   queryLog: boolean;
+  /** Whether `serve` announces itself on the LAN over mDNS (`_mcp._tcp`). `serve` only. */
+  lanAdvertise: boolean;
   http: {
     port: number;
     /** Bearer token for `/mcp` and the web UI's `/api` routes; null when unset. */
@@ -58,8 +60,8 @@ export interface Config {
   hook: HookSettings;
   /**
    * What the environment said for the settings the web UI can change. `embedder`, `watch`,
-   * `rootMcp`, `textLimit`, `maxPerDocument`, `followLinks`, `queryLog` and `hook` above are these
-   * with `saved` laid over them (`server-settings.ts`).
+   * `rootMcp`, `textLimit`, `maxPerDocument`, `followLinks`, `queryLog`, `lanAdvertise` and `hook`
+   * above are these with `saved` laid over them (`server-settings.ts`).
    */
   env: {
     embedder: string;
@@ -69,6 +71,7 @@ export interface Config {
     maxPerDocument: number;
     followLinks: number;
     queryLog: boolean;
+    lanAdvertise: boolean;
     /** `minScore` is null when `RAGDOWN_HOOK_MIN_SCORE` is unset and the embedder's own applies. */
     hook: { topK: number; minScore: number | null; minRatio: number; maxChars: number };
   };
@@ -131,6 +134,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
   const maxPerDocument = int(env, "RAGDOWN_MAX_PER_DOCUMENT", defaults.maxPerDocument);
   const followLinks = int(env, "RAGDOWN_FOLLOW_LINKS", defaults.followLinks);
   const queryLog = bool(env, "RAGDOWN_QUERY_LOG", defaults.queryLog);
+  const lanAdvertise = bool(env, "RAGDOWN_LAN_ADVERTISE", defaults.lanAdvertise);
   const explicitMinScore =
     env.RAGDOWN_HOOK_MIN_SCORE === undefined || env.RAGDOWN_HOOK_MIN_SCORE === ""
       ? null
@@ -165,6 +169,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
     maxPerDocument,
     followLinks,
     queryLog,
+    lanAdvertise,
     http: {
       port: int(env, "PORT", defaults.port),
       token: env.RAGDOWN_TOKEN || null,
@@ -183,6 +188,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
       maxPerDocument,
       followLinks,
       queryLog,
+      lanAdvertise,
       hook: { ...hook, minScore: explicitMinScore },
     },
     saved: {},
