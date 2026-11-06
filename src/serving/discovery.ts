@@ -3,6 +3,7 @@ import {
   type AdvertisedEndpoint,
   airIdentifier,
   createServerCard,
+  hostSlug,
   type KeyValueInput,
 } from "@cubicecho/mcp-discovery";
 import { listFolders } from "../folders/folder-settings.ts";
@@ -23,9 +24,6 @@ const ROOT_NAME = "root";
 
 /** What a folder's endpoint name starts with. */
 const FOLDER_PREFIX = "f-";
-
-/** A hostname's slug when nothing is left of it once cut down. */
-const FALLBACK_HOST_SLUG = "host";
 
 /** A folder name's slug when nothing is left of it once cut down. */
 const FALLBACK_FOLDER_SLUG = "folder";
@@ -54,17 +52,6 @@ function slugOf(text: string, fallback: string): string {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return slug === "" ? fallback : slug;
-}
-
-/**
- * A hostname's first label as a slug, which keeps two servers' card names apart on one network.
- *
- * @param name - The machine's hostname.
- * @returns E.g. `nas` for `NAS`, `my-box` for `my_box.lan`, and `host` when nothing is left.
- */
-export function hostSlug(name: string): string {
-  const [first = ""] = name.split(".");
-  return slugOf(first, FALLBACK_HOST_SLUG);
 }
 
 /**

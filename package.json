@@ -22,7 +22,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@cubicecho/mcp-discovery": "^0.2.0",
+    "@cubicecho/mcp-discovery": "^0.3.0",
     "@huggingface/transformers": "^4.2.0",
     "@lancedb/lancedb": "^0.38.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
