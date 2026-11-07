@@ -1,9 +1,8 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ActionButton } from "@/components/action-button";
 import { CardLayout } from "@/components/card-layout";
 import { ConfirmButton } from "@/components/confirm-button";
-import { DescriptionList, PropertyRow } from "@/components/description-list";
+import { EmptyState } from "@/components/empty-state";
 import {
   CreateFolder,
   DeleteFolder,
@@ -13,9 +12,11 @@ import {
   RenameFolder,
   RootMcpConfig,
 } from "@/components/folder-actions";
-import { EmptyState } from "@/components/page";
+import { List } from "@/components/list";
+import { ListItem } from "@/components/list-item";
+import { LoadError, LoadState } from "@/components/load-state";
 import { PageLayout } from "@/components/page-layout";
-import { QueryError, QueryState } from "@/components/query-state";
+import { PropertyList, PropertyRow } from "@/components/property-list";
 import { Section } from "@/components/section";
 import { EditServerSettings } from "@/components/server-settings";
 import { Alert } from "@/components/ui/alert";
@@ -91,7 +92,7 @@ export function SettingsPage() {
         title="Settings"
         description="Folders, how this device shows ragdown, how the server is set up, and how search is used."
         width="prose"
-        breadcrumbsSlot={
+        backSlot={
           // Under `md` the sidebar is gone, and its folder links with it.
           <Link to="/" className="inline-flex items-center gap-1 md:hidden">
             <ArrowLeft className="size-3.5" aria-hidden />
@@ -107,8 +108,9 @@ export function SettingsPage() {
             ))}
           </TabsList>
         }
+        contentClassName="py-6"
         contentSlot={
-          <div className="py-6">
+          <>
             <TabsContent value="folders" className="mt-0">
               <FoldersSection writable={writable} />
             </TabsContent>
@@ -144,7 +146,7 @@ export function SettingsPage() {
                 }
                 contentSlot={
                   status.isError ? (
-                    <QueryError
+                    <LoadError
                       error={status.error}
                       onRetry={status.refetch}
                       what="the server status"
@@ -168,7 +170,7 @@ export function SettingsPage() {
             <TabsContent value="usage" className="mt-0">
               <UsageSection />
             </TabsContent>
-          </div>
+          </>
         }
       />
     </Tabs>
@@ -220,14 +222,14 @@ function FoldersSection({ writable }: { writable: boolean }) {
               description={`An unrelated prompt scores up to ${unrelated} on this embedder, so a minimum score at or under that injects documents into prompts they have nothing to do with. Edit the folder and clear its minimum score, or raise it.`}
             />
           ) : null}
-          <QueryState
+          <LoadState
             query={folders}
             what="the folders"
             count={list.length}
             rows={2}
             emptySlot={
               <EmptyState
-                icon={FolderIcon}
+                iconSlot={<FolderIcon />}
                 title="No folders yet"
                 description="Make one, or add a directory to the docs directory."
               />
@@ -288,33 +290,36 @@ function LooseFiles({ files, writable }: { files: string[]; writable: boolean })
         title={`${formatCount(files.length, "file")} outside every folder ${files.length === 1 ? "is" : "are"} not indexed`}
         description={`Markdown directly in the docs directory belongs to no folder. Move it into one to index it${writable ? ", or delete it here" : ""}.`}
       />
-      <ul
-        aria-label="Files outside every folder"
-        className="flex flex-col divide-y rounded-lg border"
-      >
-        {files.map((file) => (
-          <li key={file} className="flex min-h-11 items-center justify-between gap-2 px-3 py-1.5">
-            <Code className="min-w-0 truncate">{file}</Code>
-            {writable ? (
-              <ConfirmButton
-                label={`Delete ${file}`}
-                variant="outline"
-                size="icon-xs"
-                disabled={remove.isPending}
-                title={`Delete ${file}?`}
-                description={`${file} is deleted from the docs directory on disk. It was never indexed, so no folder or agent loses anything.`}
-                onConfirm={() =>
-                  remove.mutate(file, {
-                    onSuccess: () => toast(`Deleted ${file}`, "positive"),
-                    onError: (error) => toast(`Could not delete ${file}: ${error.message}`),
-                  })
-                }
-                iconSlot={<Trash2 className="text-destructive" />}
-              />
-            ) : null}
-          </li>
+      <List
+        label="Files outside every folder"
+        className="rounded-lg border border-foreground/10"
+        contentSlot={files.map((file) => (
+          <ListItem
+            key={file}
+            title={file}
+            titleClassName="font-mono"
+            actionSlot={
+              writable ? (
+                <ConfirmButton
+                  aria-label={`Delete ${file}`}
+                  variant="outline"
+                  size="icon-xs"
+                  disabled={remove.isPending}
+                  title={`Delete ${file}?`}
+                  description={`${file} is deleted from the docs directory on disk. It was never indexed, so no folder or agent loses anything.`}
+                  onConfirm={() =>
+                    remove.mutate(file, {
+                      onSuccess: () => toast(`Deleted ${file}`, "positive"),
+                      onError: (error) => toast(`Could not delete ${file}: ${error.message}`),
+                    })
+                  }
+                  iconSlot={<Trash2 className="text-destructive" />}
+                />
+              ) : undefined
+            }
+          />
         ))}
-      </ul>
+      />
     </div>
   );
 }
@@ -353,33 +358,33 @@ function FolderRow({
       </TableCell>
       <TableCell>
         <div className="flex justify-end gap-1">
-          <ActionButton
+          <Button
             variant="outline"
             size="icon-sm"
-            label={`Copy MCP config for ${folder.title}`}
+            aria-label={`Copy MCP config for ${folder.title}`}
             onClick={() => onOpen("mcp")}
             iconSlot={<Copy />}
           />
           {writable ? (
             <>
-              <ActionButton
+              <Button
                 variant="outline"
                 size="icon-sm"
-                label={`Edit ${folder.title}`}
+                aria-label={`Edit ${folder.title}`}
                 onClick={() => onOpen("edit")}
                 iconSlot={<Pencil />}
               />
-              <ActionButton
+              <Button
                 variant="outline"
                 size="icon-sm"
-                label={`Rename ${folder.name}`}
+                aria-label={`Rename ${folder.name}`}
                 onClick={() => onOpen("rename")}
                 iconSlot={<FolderPen />}
               />
-              <ActionButton
+              <Button
                 variant="outline"
                 size="icon-sm"
-                label={`Delete ${folder.title}`}
+                aria-label={`Delete ${folder.title}`}
                 onClick={() => onOpen("delete")}
                 iconSlot={<Trash2 className="text-destructive" />}
               />
@@ -407,7 +412,7 @@ function AccessCard({ status, loading }: { status: Status | undefined; loading: 
       loading={loading}
       contentSlot={
         status?.auth_required ? (
-          <DescriptionList
+          <PropertyList
             contentSlot={[
               <PropertyRow key="required" label="Token required" value={<YesNo value />} />,
               <PropertyRow
@@ -416,10 +421,8 @@ function AccessCard({ status, loading }: { status: Status | undefined; loading: 
                 value={<YesNo value={stored} />}
                 actionSlot={
                   <ConfirmButton
-                    label="Forget token"
                     variant="outline"
                     size="sm"
-                    tooltip={false}
                     disabled={!stored}
                     title="Forget the token?"
                     description="This device stops sending it, and asks for it again before it shows anything. Keep a copy: the server cannot show it to you."
@@ -457,7 +460,7 @@ function IndexStatusCard({ status, loading }: { status: Status | undefined; load
       loading={loading}
       contentSlot={
         status ? (
-          <DescriptionList
+          <PropertyList
             contentSlot={[
               <PropertyRow
                 key="indexed"
@@ -515,7 +518,7 @@ function IndexSettingsCard({ status, loading }: { status: Status | undefined; lo
         loading={loading}
         contentSlot={
           status ? (
-            <DescriptionList
+            <PropertyList
               contentSlot={[
                 <PropertyRow
                   key="docs"
@@ -641,7 +644,7 @@ function HookCard({ status, loading }: { status: Status | undefined; loading: bo
       loading={loading}
       contentSlot={
         settings ? (
-          <DescriptionList
+          <PropertyList
             contentSlot={[
               <PropertyRow
                 key="top-k"

@@ -1,8 +1,5 @@
-import type { ComponentProps } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Button } from "@/components/ui/button";
-
-type ButtonProps = ComponentProps<typeof Button>;
+import type { ButtonProps } from "@/components/ui/button";
 
 export type CopyButtonProps = {
   /** The text that goes on the clipboard. */
@@ -10,7 +7,8 @@ export type CopyButtonProps = {
   /**
    * The accessible name before the press: say what is copied when the screen has more than one
    * thing that could be — "Copy endpoint URL". The default is `Copy`. For the moment after a
-   * press the name is `Copied`, whatever this says.
+   * press the name is `Copied`, whatever this says. Inside a `CodeBlock` with a `title`, the
+   * default is "Copy {title}".
    */
   label?: string | undefined;
   /** The button's variant. The default is `outline`. */
@@ -25,6 +23,16 @@ export type CopyButtonProps = {
    * the caller says so, since a shell holds no toasts.
    */
   onError?: ((error: unknown) => void) | undefined;
+  /**
+   * Off: a press copies nothing and calls neither `onCopied` nor `onError`. Say why with `hint`,
+   * as on `Button` — "Give the webhook an id first".
+   */
+  disabled?: boolean | undefined;
+  /**
+   * The button's tooltip, as on `Button`. With `disabled` it keeps the button focusable and
+   * hoverable (`aria-disabled`), so the reason it is off can still be read.
+   */
+  hint?: ButtonProps["hint"] | undefined;
   /** The button's class: its position, say `absolute top-2 right-2` over a snippet. */
   className?: string | undefined;
 };

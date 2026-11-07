@@ -30,21 +30,28 @@ const theme = EditorView.theme({
   },
   ".cm-content": { caretColor: "var(--foreground)", padding: "0.5rem 0" },
   ".cm-line": { padding: "0 0.75rem" },
-  ".cm-activeLine": { backgroundColor: "var(--hover)" },
+  // The caret's line is current, so it is the chosen-row tint (`bg-active/40`), and only while the
+  // editor has focus: drawn in `hover` at all times, an unfocused editor showed a hover that stuck.
+  ".cm-activeLine": { backgroundColor: "transparent" },
+  "&.cm-focused .cm-activeLine": {
+    backgroundColor: "color-mix(in oklab, var(--active) 40%, transparent)",
+  },
   ".cm-placeholder": { color: "color-mix(in oklab, var(--foreground) 60%, transparent)" },
   // What an app's own completion or lint extension draws: a popover, in the popover's colours.
   ".cm-tooltip": {
-    backgroundColor: "var(--popover)",
-    color: "var(--popover-foreground)",
-    border: "1px solid var(--border)",
+    backgroundColor: "var(--secondary)",
+    color: "var(--foreground)",
+    border: "1px solid color-mix(in oklab, var(--foreground) 10%, transparent)",
     borderRadius: "var(--radius-md)",
     overflow: "hidden",
   },
   ".cm-tooltip.cm-tooltip-autocomplete > ul": { fontFamily: "inherit", maxHeight: "16rem" },
   ".cm-tooltip.cm-tooltip-autocomplete > ul > li": { padding: "0.25rem 0.5rem" },
+  // The highlighted completion is the list's keyboard highlight, as a command palette's is: the
+  // hover grey, not a chosen fill. Nothing is chosen until Enter takes it.
   ".cm-tooltip-autocomplete ul li[aria-selected]": {
-    backgroundColor: "var(--active)",
-    color: "var(--active-foreground)",
+    backgroundColor: "var(--hover)",
+    color: "var(--foreground)",
   },
   ".cm-completionDetail": {
     color: "color-mix(in oklab, currentColor 60%, transparent)",
@@ -259,7 +266,7 @@ export function MarkdownCodeEditor({
       ref={host}
       data-slot="markdown-code-editor"
       className={cn(
-        "min-h-64 w-full min-w-0 overflow-hidden rounded-md border border-foreground/15 bg-background text-foreground focus-within:border-active",
+        "min-h-64 w-full min-w-0 overflow-hidden rounded-md border border-foreground/50 bg-background text-foreground focus-within:border-active",
         // The view fills the box, so a click below the last line still lands in the editor.
         "[&>.cm-editor]:h-full [&>.cm-editor]:min-h-[inherit]",
         className,

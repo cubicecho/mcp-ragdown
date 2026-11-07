@@ -22,7 +22,7 @@ export const itemVariants = cva(
       },
       size: {
         default: "gap-4 p-4",
-        sm: "gap-2.5 px-4 py-3",
+        sm: "gap-2 px-4 py-3",
       },
     },
     defaultVariants: { variant: "default", size: "default" },
@@ -37,6 +37,12 @@ export const itemVariants = cva(
 export const ITEM_SELECTED_CLASS = "bg-active/40";
 
 /**
+ * The muted line's ink on the chosen row. `text-foreground/60` is 4.2:1 on the tint, short of the
+ * 4.5:1 text needs, so on that row the description is full `foreground`, as ListItem's is.
+ */
+export const ITEM_SELECTED_DESCRIPTION_CLASS = "text-foreground";
+
+/**
  * The start of the row: an icon in a small tile, an image, or whatever is passed. On the web an
  * `<svg>` or `<img>` inside is sized for you; on a device pass it sized (`size-4`, `size-full`).
  */
@@ -44,7 +50,8 @@ export const itemMediaVariants = cva("shrink-0 flex-row items-center justify-cen
   variants: {
     variant: {
       default: "bg-transparent",
-      icon: "size-8 rounded-sm border border-foreground/10 bg-foreground/10",
+      // The fill alone, as EmptyMedia's tile: a ring on top of it was a second edge on one boundary.
+      icon: "size-8 rounded-sm bg-foreground/10",
       image: "size-10 overflow-hidden rounded-sm",
     },
   },
@@ -58,7 +65,7 @@ export const ITEM_CONTENT_CLASS = "flex-1 gap-1";
 export const ITEM_TITLE_CLASS = "flex-row items-center gap-2";
 
 /** The title's type. On a device it goes on the `Text` a string is wrapped in, with its ink. */
-export const ITEM_TITLE_TEXT = "text-sm leading-snug font-medium";
+export const ITEM_TITLE_TEXT = "text-sm leading-snug font-semibold";
 
 /** The muted line under the title, two lines at most. */
 export const ITEM_DESCRIPTION_CLASS =

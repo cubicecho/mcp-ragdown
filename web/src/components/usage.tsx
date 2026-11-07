@@ -1,9 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { CardLayout } from "@/components/card-layout";
 import { ConfirmButton } from "@/components/confirm-button";
-import { DescriptionList, PropertyRow } from "@/components/description-list";
-import { EmptyState } from "@/components/page";
-import { QueryError } from "@/components/query-state";
+import { EmptyState } from "@/components/empty-state";
+import { LoadError } from "@/components/load-state";
+import { PropertyList, PropertyRow } from "@/components/property-list";
 import { Section } from "@/components/section";
 import { Alert } from "@/components/ui/alert";
 import { Code } from "@/components/ui/code";
@@ -44,10 +44,8 @@ export function UsageSection() {
       actionSlot={
         summary && !empty ? (
           <ConfirmButton
-            label="Clear log"
             variant="outline"
             size="sm"
-            tooltip={false}
             disabled={clear.isPending}
             title="Clear the query log?"
             description="Every logged search and read is deleted. Logging carries on if it is on."
@@ -65,7 +63,7 @@ export function UsageSection() {
       }
       contentSlot={
         log.isError ? (
-          <QueryError error={log.error} onRetry={log.refetch} what="the query log" />
+          <LoadError error={log.error} onRetry={log.refetch} what="the query log" />
         ) : (
           <div className="flex flex-col gap-4">
             {log.data && !log.data.enabled ? (
@@ -133,7 +131,7 @@ function OverviewCard({ summary, loading }: { summary: Summary | undefined; load
       loading={loading}
       contentSlot={
         summary ? (
-          <DescriptionList
+          <PropertyList
             contentSlot={[
               <PropertyRow
                 key="searches"
@@ -191,9 +189,9 @@ function GapsCard({
       loading={loading}
       emptySlot={
         searched ? (
-          <EmptyState compact icon={CircleCheck} title="Every search found something" />
+          <EmptyState compact iconSlot={<CircleCheck />} title="Every search found something" />
         ) : (
-          <EmptyState compact icon={Search} title="No searches logged" />
+          <EmptyState compact iconSlot={<Search />} title="No searches logged" />
         )
       }
       contentSlot={
@@ -244,7 +242,7 @@ function DocumentsCard({
       title="Most read"
       description="The documents agents read most with ragdown_read_doc, and how often a search showed each."
       loading={loading}
-      emptySlot={<EmptyState compact icon={FileText} title="No reads logged" />}
+      emptySlot={<EmptyState compact iconSlot={<FileText />} title="No reads logged" />}
       contentSlot={
         documents && documents.length > 0 ? (
           <Table>

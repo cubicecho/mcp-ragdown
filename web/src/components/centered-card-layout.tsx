@@ -1,7 +1,7 @@
 import { CardLayout, type CardLayoutProps } from "@/components/card-layout";
 import { cn, type SlotNode } from "@/lib/utils";
 
-export type CenteredLayoutProps = Omit<CardLayoutProps, "className"> & {
+export type CenteredCardLayoutProps = Omit<CardLayoutProps, "className"> & {
   /** The body of the card: the form, the message. */
   contentSlot?: SlotNode | undefined;
   /**
@@ -30,14 +30,34 @@ const CARD = "w-full max-w-sm";
  * `contentSlot`, `footerSlot`, `footerActionsSlot` and the rest — and hands them to it unchanged.
  * `className` is the page around the card; `cardClassName` is the card.
  */
-export function CenteredLayout({ className, cardClassName, ...card }: CenteredLayoutProps) {
-  const body = <CardLayout {...card} className={cn(CARD, cardClassName)} />;
+export function CenteredCardLayout({
+  className,
+  cardClassName,
+  titleClassName,
+  level = 1,
+  ...card
+}: CenteredCardLayoutProps) {
+  // The card is the page here, so its title is the page's: an h1 at PageHeader level 1's text-xl,
+  // not a card title barely over the field labels under it. A caller's titleClassName still wins.
+  const body = (
+    <CardLayout
+      {...card}
+      level={level}
+      titleClassName={cn("text-xl", titleClassName)}
+      className={cn(CARD, cardClassName)}
+    />
+  );
   return (
     <main
-      data-slot="centered-layout"
+      data-slot="centered-card-layout"
       className={cn("cube-rn-view", "min-h-svh w-full", CENTRE, className)}
     >
       {body}
     </main>
   );
 }
+
+/** @deprecated Use `CenteredCardLayout`; this name goes in the next release. */
+export const CenteredLayout = CenteredCardLayout;
+/** @deprecated Use `CenteredCardLayoutProps`; this name goes in the next release. */
+export type CenteredLayoutProps = CenteredCardLayoutProps;

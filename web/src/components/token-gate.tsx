@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useAppForm } from "@/components/app-form";
-import { CenteredLayout } from "@/components/centered-layout";
+import { CenteredCardLayout } from "@/components/centered-card-layout";
 import { PasswordField } from "@/components/password-field";
 import { Code } from "@/components/ui/code";
 import { KeyRound } from "@/components/ui/icons";
@@ -33,7 +33,7 @@ export function TokenGate({ children }: { children: ReactNode }) {
         void form.handleSubmit();
       }}
     >
-      <CenteredLayout
+      <CenteredCardLayout
         className="min-h-full"
         iconSlot={<KeyRound aria-hidden />}
         title="Token required"

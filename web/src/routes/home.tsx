@@ -1,7 +1,7 @@
 import { Navigate, useNavigate } from "@tanstack/react-router";
+import { EmptyState } from "@/components/empty-state";
 import { CreateFolder } from "@/components/folder-actions";
-import { EmptyState } from "@/components/page";
-import { QueryError } from "@/components/query-state";
+import { LoadError } from "@/components/load-state";
 import { Button } from "@/components/ui/button";
 import { Folder, Plus } from "@/components/ui/icons";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,7 +21,7 @@ export function HomePage() {
   if (folders.isError)
     return (
       <div className="p-6">
-        <QueryError
+        <LoadError
           error={folders.error}
           onRetry={() => void folders.refetch()}
           what="the folders"
@@ -45,7 +45,7 @@ export function HomePage() {
   return (
     <EmptyState
       className="h-full min-h-60"
-      icon={Folder}
+      iconSlot={<Folder />}
       level={1}
       title="No folders yet"
       description={

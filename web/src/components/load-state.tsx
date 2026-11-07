@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { EmptyState } from "@/components/empty-state";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { RefreshCw, TriangleAlert } from "@/components/ui/icons";
+import { RefreshCw, Search, TriangleAlert } from "@/components/ui/icons";
 import { cn, type SlotNode } from "@/lib/utils";
 
 /** What a list screen needs off its query, and nothing more. */
@@ -44,30 +45,11 @@ const settles = (value: unknown): value is PromiseLike<unknown> =>
   value !== null &&
   typeof (value as { then?: unknown }).then === "function";
 
-/** Draws a query's error, loading or empty state, and `contentSlot` once there are rows. */
-export function QueryState({
-  query,
-  what,
-  count,
-  emptySlot,
-  rows = 3,
-  compact = false,
-  describe,
-  className,
-}: {
+/** What every screen passes, whether it draws a list or one record. */
+type LoadStateCommon = {
   query: QueryLike;
   /** What could not be fetched, in the reader's words: "your agents", "the archive". */
   what: string;
-  /**
-   * How many rows the screen is about to draw.
-   *
-   * Passed rather than derived, because the rows a screen draws are usually a filtered or paged
-   * view of what came back: an empty *result* and an empty *view* are different states, and only
-   * the screen knows which one it is showing.
-   */
-  count: number;
-  /** What to say when there are none — whatever invites the first one. */
-  emptySlot?: SlotNode | undefined;
   /** How many placeholder rows stand in for the list while it loads. */
   rows?: number | undefined;
   /**
@@ -76,13 +58,75 @@ export function QueryState({
    * sidebar, where a card-sized error would be taller than the list it replaced.
    */
   compact?: boolean | undefined;
-  /** What the failure means, in the app's words — handed through to `QueryError`. */
+  /** What the failure means, in the app's words — handed through to `LoadError`. */
   describe?: ((error: unknown) => string) | undefined;
   className?: string | undefined;
-}) {
+};
+
+/** A list screen: the last rung is empty. */
+type LoadStateList = {
+  /**
+   * How many rows the screen is about to draw. Pass this or `record`.
+   *
+   * Passed rather than derived, because the rows a screen draws are usually a filtered or paged
+   * view of what came back: an empty *result* and an empty *view* are different states, and only
+   * the screen knows which one it is showing.
+   */
+  count: number;
+  /** What to say when there are none — whatever invites the first one. */
+  emptySlot?: SlotNode | undefined;
+  record?: never;
+  notFoundLabel?: never;
+  level?: never;
+};
+
+/** A detail screen: the last rung is a record that is not there. */
+type LoadStateRecord = {
+  /**
+   * The one record the screen asked for, once the query has answered. `null` or `undefined` is a
+   * record that is not there. Pass this or `count`.
+   */
+  record: unknown;
+  /**
+   * What the screen says when `record` is not there: "Project not found". It is drawn as the
+   * screen's heading — an `EmptyState` with the Search icon, at `level` — because the whole screen
+   * is that state.
+   */
+  notFoundLabel: string;
+  /**
+   * Which heading `notFoundLabel` is. `1`, the default, is a guard that is the whole screen. `2` is
+   * a guard inside a page that already has its level-1 title — a `PageLayout`'s body — so the
+   * page does not have two `h1`s. The size is the same at every level.
+   */
+  level?: 1 | 2 | 3 | undefined;
+  count?: never;
+  emptySlot?: never;
+};
+
+export type LoadStateProps = LoadStateCommon & (LoadStateList | LoadStateRecord);
+
+/**
+ * Draws a query's failed, loading or empty state, and nothing once there is something to draw.
+ *
+ * A detail screen passes `record` and `notFoundLabel` instead of `count`, and the last rung is
+ * then "not found" rather than "empty".
+ */
+export function LoadState({
+  query,
+  what,
+  count,
+  emptySlot,
+  record,
+  notFoundLabel,
+  level = 1,
+  rows = 3,
+  compact = false,
+  describe,
+  className,
+}: LoadStateProps) {
   if (query.isError) {
     return (
-      <QueryError
+      <LoadError
         error={query.error}
         onRetry={() => query.refetch()}
         what={what}
@@ -97,6 +141,25 @@ export function QueryState({
       <RowSkeleton
         rows={rows}
         compact={compact}
+        {...(className === undefined ? {} : { className })}
+      />
+    );
+  }
+  if (notFoundLabel !== undefined) {
+    if (record !== null && record !== undefined) {
+      return null;
+    }
+    return compact ? (
+      <EmptyState
+        compact
+        title={notFoundLabel}
+        {...(className === undefined ? {} : { className })}
+      />
+    ) : (
+      <EmptyState
+        icon={Search}
+        title={notFoundLabel}
+        level={level}
         {...(className === undefined ? {} : { className })}
       />
     );
@@ -126,7 +189,7 @@ export function QueryState({
  * somebody who triggered a load and cannot see the screen hears that it failed, rather than finding
  * the card later by moving through the page.
  */
-export function QueryError({
+export function LoadError({
   error,
   onRetry,
   what,
@@ -138,7 +201,7 @@ export function QueryError({
   /** A promise returned here is awaited — see above. */
   onRetry: () => unknown;
   what: string;
-  /** No card, smaller type, a small outline retry — see `QueryState`'s `compact`. */
+  /** No card, smaller type, a small outline retry — see `LoadState`'s `compact`. */
   compact?: boolean | undefined;
   /**
    * What the failure means, in the app's words. Without it the line under the heading is the
@@ -169,12 +232,12 @@ export function QueryError({
     return (
       <div
         role="alert"
-        data-slot="query-error"
+        data-slot="load-error"
         className={cn("cube-rn-view", "min-w-0 gap-1 px-2 py-1", className)}
       >
         <div className="cube-rn-view min-w-0 flex-row items-center gap-1.5">
-          <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-negative" aria-hidden />
-          <span className="cube-rn-text min-w-0 flex-1 font-medium text-negative text-xs">
+          <TriangleAlert className="size-4 shrink-0 text-negative" aria-hidden />
+          <span className="cube-rn-text min-w-0 flex-1 font-semibold text-negative text-xs">
             Could not load {what}
           </span>
         </div>
@@ -185,7 +248,7 @@ export function QueryError({
             size="xs"
             onClick={retry}
             disabled={retrying}
-            iconSlot={<RefreshCw className="h-3.5 w-3.5" aria-hidden />}
+            iconSlot={<RefreshCw className="size-4" aria-hidden />}
             content={label}
           />
         </div>
@@ -193,46 +256,36 @@ export function QueryError({
     );
   }
 
+  // Alert's destructive callout rather than a second error box of its own: the hue on the tint,
+  // the edge and the icon, the words in ink (red text on the red tint is under 4.5:1 in light),
+  // and Alert's own `role="alert"`.
   return (
-    <Card
-      role="alert"
-      data-slot="query-error"
-      // No tinted ground behind it. The version this was lifted from washed the card with
-      // `bg-negative/5`, which drops both the red heading and the grey message under 4.5:1
-      // against their own background — 4.36 and 4.33, caught by the story's axe run. The border
-      // and the icon say "this failed" without moving the ground the words sit on.
-      className={cn("gap-2 border-negative/40 p-4", className)}
-    >
-      {/* `flex-row` is explicit because a column is Yoga's default, and the icon carries its own
-          colour because native inherits none — the two standing conversion rules. */}
-      <div className="cube-rn-view flex-row items-center gap-2">
-        <TriangleAlert className="h-4 w-4 text-negative" aria-hidden />
-        <span className="cube-rn-text font-medium text-negative text-sm">
-          Could not load {what}
-        </span>
-      </div>
-      <span className="cube-rn-text text-foreground/60 text-sm">{reason}</span>
-      <div className="cube-rn-view flex-row">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={retry}
-          disabled={retrying}
-          iconSlot={<RefreshCw className="h-3.5 w-3.5" aria-hidden />}
-          content={label}
-        />
-      </div>
-    </Card>
+    <div data-slot="load-error" className={cn("cube-rn-view", "min-w-0", className)}>
+      <Alert
+        variant="destructive"
+        title={`Could not load ${what}`}
+        description={reason}
+        actionSlot={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={retry}
+            disabled={retrying}
+            iconSlot={<RefreshCw className="size-4" aria-hidden />}
+            content={label}
+          />
+        }
+      />
+    </div>
   );
 }
 
 /**
  * What a list shows before its first answer.
  *
- * Drawn as the row it stands in for — a bordered `Card`, which is what these lists are lists of
- * on device — so the screen does not change shape underneath the reader when the answer lands.
- * The web half of `main` drew an outlined `Item` here; `Item` is a DOM-only primitive, and a
- * placeholder that matches the row is the point rather than which component draws it.
+ * Drawn as the row it stands in for — a title bar over a line bar — so the screen does not change
+ * shape underneath the reader when the answer lands: a placeholder that matches the row is the
+ * point, rather than which component draws it.
  *
  * The placeholders are `aria-hidden` under one `role="status"` saying "Loading", because three
  * cards' worth of placeholder text is three cards' worth of nothing to a screen reader. `main`
@@ -250,7 +303,7 @@ export function RowSkeleton({
   className,
 }: {
   rows?: number | undefined;
-  /** Bars the height of a nav row instead of cards — see `QueryState`'s `compact`. */
+  /** Bars the height of a nav row instead of cards — see `LoadState`'s `compact`. */
   compact?: boolean | undefined;
   className?: string | undefined;
 }) {
@@ -263,30 +316,37 @@ export function RowSkeleton({
             key={index}
             data-slot="row-skeleton"
             aria-hidden
-            className="cube-rn-view h-8 animate-pulse rounded-md bg-hover"
+            className="cube-rn-view h-8 animate-pulse rounded-md bg-foreground/10"
           />
         ))}
       </div>
     );
   }
 
+  // Bars in the shape of a row, not a bordered card per row: a list of plain rows that loaded as
+  // stacked cards jumped to flat rows when the answer landed.
   return (
     <div role="status" aria-label="Loading" className={cn("cube-rn-view", "gap-2", className)}>
       {Array.from({ length: rows }, (_, index) => (
-        <Card
+        <div
           // biome-ignore lint/suspicious/noArrayIndexKey: placeholders, in a list with no identity
           key={index}
           data-slot="row-skeleton"
           aria-hidden
-          className="gap-2 p-4"
+          className="cube-rn-view gap-2 py-2"
         >
-          {/* `animate-pulse` resolves to nothing on device and is kept for the same reason
-              `page.tsx` keeps `container mx-auto`: the class is what the compiled web half needs,
-              and dropping it here to tidy the native file would quietly regress the DOM. */}
-          <div className="cube-rn-view h-4 w-1/3 animate-pulse rounded-md bg-hover" />
-          <div className="cube-rn-view h-3 w-2/3 animate-pulse rounded-md bg-hover" />
-        </Card>
+          {/* `animate-pulse` resolves to nothing on device; the compiled web half needs it. */}
+          <div className="cube-rn-view h-4 w-1/3 animate-pulse rounded-md bg-foreground/10" />
+          <div className="cube-rn-view h-3 w-2/3 animate-pulse rounded-md bg-foreground/10" />
+        </div>
       ))}
     </div>
   );
 }
+
+/** @deprecated Use `LoadState`; this name goes in the next release. */
+export const QueryState = LoadState;
+/** @deprecated Use `LoadStateProps`; this name goes in the next release. */
+export type QueryStateProps = LoadStateProps;
+/** @deprecated Use `LoadError`; this name goes in the next release. */
+export const QueryError = LoadError;

@@ -1,10 +1,6 @@
-/**
- * The copy button itself, with the clipboard left out: `copy-button.tsx` and
- * `copy-button.web.tsx` each hand it their own `write`. One component, so a prop
- * added here reaches both platforms, and the compiler turns this file into the
- * web one like any other.
- */
+import { useContext } from "react";
 import { Button } from "@/components/ui/button";
+import { CodeBlockTitleContext } from "@/components/ui/code";
 import { type CopyButtonProps, useCopy } from "@/components/ui/copy-button-base";
 import { Check, Copy } from "@/components/ui/icons";
 
@@ -17,23 +13,36 @@ type CopyButtonViewProps = CopyButtonProps & {
 export function CopyButtonView({
   write,
   value,
-  label = "Copy",
+  label,
   variant = "outline",
   size = "icon-sm",
   onCopied,
   onError,
+  disabled,
+  hint,
   className,
 }: CopyButtonViewProps) {
   const { copied, copy } = useCopy(write, { value, onCopied, onError });
+  // Inside a titled `CodeBlock`, the block's title says what is copied.
+  const title = useContext(CodeBlockTitleContext);
+  const name = label ?? (title === undefined ? "Copy" : `Copy ${title}`);
 
   return (
     <Button
       data-slot="copy-button"
       variant={variant}
       size={size}
-      aria-label={copied ? "Copied" : label}
+      aria-label={copied ? "Copied" : name}
       className={className}
-      onClick={() => void copy()}
+      disabled={disabled}
+      hint={hint}
+      onClick={() => {
+        // `Button` already refuses the press; this keeps a disabled copy from writing regardless.
+        if (disabled === true) {
+          return;
+        }
+        void copy();
+      }}
       iconSlot={copied ? <Check aria-hidden /> : <Copy aria-hidden />}
     />
   );

@@ -1,17 +1,15 @@
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActionButton } from "@/components/action-button";
 import { FilePlus } from "@/components/app-icons";
 import { Backlinks } from "@/components/backlinks";
 import { DeleteDoc, NewDocument, RenameDoc, UploadDocs } from "@/components/doc-actions";
 import { DocEditor } from "@/components/doc-editor";
+import { EmptyState } from "@/components/empty-state";
 import { FileTree } from "@/components/file-tree";
 import { McpOffHint } from "@/components/folder-actions";
-import { StickyHeaderContentFooter } from "@/components/header-content-footer";
+import { LoadError, LoadState } from "@/components/load-state";
 import { MarkdownPreview } from "@/components/markdown-preview";
-import { EmptyState } from "@/components/page";
-import { PageHeader } from "@/components/page-header";
-import { QueryError, QueryState } from "@/components/query-state";
+import { PageLayout } from "@/components/page-layout";
 import { SidebarLayout } from "@/components/split-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -222,94 +220,90 @@ function DocList({
   const searching = mode === "search" && query !== "";
 
   return (
-    <StickyHeaderContentFooter
-      headerSlot={
-        <PageHeader
-          level={2}
-          // A narrow pane: the folder's name keeps 10rem, not the page header's 16, before its two
-          // buttons drop to a line of their own.
-          className="[&_[data-slot=page-header-titles]]:basis-40"
-          title={title}
-          iconSlot={<FolderIcon className="size-4 text-muted-foreground" aria-hidden />}
-          actionSlot={
-            writable ? (
-              <div className="flex shrink-0 items-center gap-1">
-                <NewDocument folder={folder} title={title} dir={dirOf(selected)} />
-                <UploadDocs folder={folder} title={title} />
-              </div>
-            ) : undefined
-          }
-          loading={docs.isPending}
-          description={
-            docs.data ? (
-              <>
-                {formatCount(docs.data.length, "file")} · {formatCount(chunks, "chunk")}
-                {info ? (info.mcp ? " · on MCP" : " · human-only") : null}
-              </>
-            ) : undefined
-          }
-          contentSlot={
-            <div className="flex flex-col gap-2">
-              <McpOffHint />
-              <div className="flex items-center gap-2">
-                <SegmentedGroup
-                  aria-label="Find by"
-                  variant="framed"
-                  value={mode}
-                  onValueChange={setMode}
-                >
-                  <SegmentedButton value="filter">Filter</SegmentedButton>
-                  <SegmentedButton value="search">Search</SegmentedButton>
-                </SegmentedGroup>
-                <div className="ml-auto flex items-center gap-1">
-                  <SortMenu folder={folder} active={sort} />
-                  <TagMenu folder={folder} tags={tags} active={tag} />
-                </div>
-              </div>
-              <SearchInput
-                label={mode === "search" ? `Search ${title}` : "Filter documents"}
-                placeholder={
-                  mode === "search"
-                    ? "Search what the documents say"
-                    : "Filter by title, path or tag"
-                }
-                value={text}
-                onChangeText={setText}
-              />
-              {tag ? (
-                <div>
-                  <Badge
-                    variant="secondary"
-                    removeLabel={`Clear the tag filter #${tag}`}
-                    onRemove={() =>
-                      void navigate({
-                        to: "/f/$folder",
-                        params: { folder },
-                        search: ({ tag: _, ...rest }) => rest,
-                      })
-                    }
-                  >
-                    #{tag}
-                  </Badge>
-                </div>
-              ) : null}
-            </div>
-          }
-        />
+    <PageLayout
+      width="full"
+      level={2}
+      // A narrow pane: the folder's name keeps 10rem, not the page header's 16, before its two
+      // buttons drop to a line of their own.
+      headerClassName="[&_[data-slot=page-header-titles]]:basis-40"
+      title={title}
+      iconSlot={<FolderIcon className="size-4 text-muted-foreground" aria-hidden />}
+      actionSlot={
+        writable ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <NewDocument folder={folder} title={title} dir={dirOf(selected)} />
+            <UploadDocs folder={folder} title={title} />
+          </div>
+        ) : undefined
       }
-      contentClassName="px-2 pb-4"
+      loading={docs.isPending}
+      description={
+        docs.data ? (
+          <>
+            {formatCount(docs.data.length, "file")} · {formatCount(chunks, "chunk")}
+            {info ? (info.mcp ? " · on MCP" : " · human-only") : null}
+          </>
+        ) : undefined
+      }
+      headerContentSlot={
+        <div className="flex flex-col gap-2">
+          <McpOffHint />
+          <div className="flex items-center gap-2">
+            <SegmentedGroup
+              aria-label="Find by"
+              variant="framed"
+              value={mode}
+              onValueChange={setMode}
+            >
+              <SegmentedButton value="filter">Filter</SegmentedButton>
+              <SegmentedButton value="search">Search</SegmentedButton>
+            </SegmentedGroup>
+            <div className="ml-auto flex items-center gap-1">
+              <SortMenu folder={folder} active={sort} />
+              <TagMenu folder={folder} tags={tags} active={tag} />
+            </div>
+          </div>
+          <SearchInput
+            label={mode === "search" ? `Search ${title}` : "Filter documents"}
+            placeholder={
+              mode === "search" ? "Search what the documents say" : "Filter by title, path or tag"
+            }
+            value={text}
+            onChangeText={setText}
+          />
+          {tag ? (
+            <div>
+              <Badge
+                variant="secondary"
+                removeLabel={`Clear the tag filter #${tag}`}
+                onRemove={() =>
+                  void navigate({
+                    to: "/f/$folder",
+                    params: { folder },
+                    search: ({ tag: _, ...rest }) => rest,
+                  })
+                }
+              >
+                #{tag}
+              </Badge>
+            </div>
+          ) : null}
+        </div>
+      }
+      // The list starts right under the search row, with no room above its first row.
+      contentClassName="px-2 pt-0 pb-4"
       contentSlot={
         searching ? (
           <SearchResults folder={folder} search={search} selected={selected} />
         ) : (
           <div className="flex flex-col gap-1">
-            <QueryState
+            <LoadState
               query={docs}
               what="the documents"
               count={rows.length}
               emptySlot={
                 <EmptyState
-                  icon={FileText}
+                  iconSlot={<FileText />}
                   title={
                     text && mode === "filter"
                       ? "No document matches that filter."
@@ -366,10 +360,10 @@ function DocList({
                       title={title}
                       dir={node.path}
                       triggerSlot={
-                        <ActionButton
+                        <Button
                           variant="ghost"
                           size="icon-xs"
-                          label={`New document in ${node.path}`}
+                          aria-label={`New document in ${node.path}`}
                           iconSlot={<FilePlus />}
                         />
                       }
@@ -440,7 +434,6 @@ function SortMenu({ folder, active }: { folder: string; active: "recent" | undef
           variant="outline"
           size="icon-sm"
           aria-label={active === "recent" ? "Sorted by recently changed" : "Sorted by path"}
-          title={active === "recent" ? "Sorted by recently changed" : "Sorted by path"}
           iconSlot={<ArrowDownWideNarrow />}
         />
       </MenuTrigger>
@@ -481,11 +474,13 @@ function SearchResults({
   const hits = search.data ?? [];
   return (
     <div className="flex flex-col gap-1" aria-busy={search.isFetching}>
-      <QueryState
+      <LoadState
         query={search}
         what="the search"
         count={hits.length}
-        emptySlot={<EmptyState icon={Search} title="Nothing in this folder matches that." />}
+        emptySlot={
+          <EmptyState iconSlot={<Search />} title="Nothing in this folder matches that." />
+        }
       />
       <ItemGroup role="list">
         {hits.map((hit) => (
@@ -602,7 +597,7 @@ function NothingSelected({
   return (
     <EmptyState
       className="h-full min-h-60"
-      icon={FileText}
+      iconSlot={<FileText />}
       title="Pick a document to preview it"
       description={
         count
@@ -628,7 +623,7 @@ function NoSuchFolder({ name }: { name: string }) {
   return (
     <EmptyState
       className="h-full min-h-60"
-      icon={FolderIcon}
+      iconSlot={<FolderIcon />}
       level={1}
       title={`There is no folder called ${name}`}
       description={
@@ -716,116 +711,110 @@ function DocPreview({
   }
 
   return (
-    <StickyHeaderContentFooter
+    <PageLayout
       width="prose"
-      headerSlot={
-        <PageHeader
-          title={title}
-          breadcrumbsSlot={
-            <p className="break-all font-mono text-muted-foreground text-xs">
-              {withinFolder(path)}
-            </p>
-          }
-          description={
-            summary ? (
-              <>
-                {formatAgo(summary.mtime_ms)} · {formatBytes(summary.size)}
-                {doc.data ? ` · ${formatCount(doc.data.total_lines, "line")}` : null} ·{" "}
-                {formatCount(summary.chunks, "chunk")}
-              </>
-            ) : undefined
-          }
-          actionSlot={
-            <>
-              <CopyButton variant="outline" value={path} label="Copy path" />
-              <DownloadDoc path={path} />
-              {writable && doc.data ? (
-                <ActionButton
-                  variant="outline"
-                  size="icon-sm"
-                  label="Edit"
-                  onClick={() => setEditing(true)}
-                  iconSlot={<Pencil />}
-                />
-              ) : null}
-              {writable && summary ? <RenameDoc path={path} /> : null}
-              {writable && summary ? <DeleteDoc path={path} /> : null}
-            </>
-          }
-          contentSlot={
-            hasBadges ? (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {replacedBy.length > 0 ? (
-                  // Search already leaves this document out; this is for whoever opened it anyway.
-                  <p className="w-full text-muted-foreground text-sm">
-                    <Badge variant="outline" className="mr-1.5 font-normal">
-                      superseded
-                    </Badge>
-                    by{" "}
-                    {replacedBy.map((next, index) => (
-                      <span key={next.path}>
-                        {index > 0 ? ", " : null}
-                        <Link
-                          to="/f/$folder"
-                          params={{ folder }}
-                          search={(prev) => ({ ...prev, doc: withinFolder(next.path) })}
-                          className="font-medium text-foreground underline underline-offset-4"
-                        >
-                          {next.title}
-                        </Link>
-                      </span>
-                    ))}
-                  </p>
-                ) : null}
-                {description ? (
-                  <p className="w-full text-muted-foreground text-sm">{description}</p>
-                ) : null}
-                {createdBy ? (
-                  <p className="w-full text-muted-foreground text-sm">
-                    <Badge variant="outline" className="mr-1.5 font-normal">
-                      agent
-                    </Badge>
-                    written with <span className="font-mono text-xs">{createdBy}</span>
-                    {session ? (
-                      <>
-                        {" "}
-                        in session <span className="font-mono text-xs">{session}</span>
-                      </>
-                    ) : null}
-                  </p>
-                ) : null}
-                {aliases.length > 0 ? (
-                  <span className="text-muted-foreground text-xs">
-                    Also called {aliases.join(", ")}
-                  </span>
-                ) : null}
-                {tags.map((tag) => (
-                  <Badge key={tag} variant="secondary" asChild>
+      title={title}
+      backSlot={
+        <p className="break-all font-mono text-muted-foreground text-xs">{withinFolder(path)}</p>
+      }
+      description={
+        summary ? (
+          <>
+            {formatAgo(summary.mtime_ms)} · {formatBytes(summary.size)}
+            {doc.data ? ` · ${formatCount(doc.data.total_lines, "line")}` : null} ·{" "}
+            {formatCount(summary.chunks, "chunk")}
+          </>
+        ) : undefined
+      }
+      actionSlot={
+        <>
+          <CopyButton variant="outline" value={path} label="Copy path" />
+          <DownloadDoc path={path} />
+          {writable && doc.data ? (
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Edit"
+              onClick={() => setEditing(true)}
+              iconSlot={<Pencil />}
+            />
+          ) : null}
+          {writable && summary ? <RenameDoc path={path} /> : null}
+          {writable && summary ? <DeleteDoc path={path} /> : null}
+        </>
+      }
+      headerContentSlot={
+        hasBadges ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {replacedBy.length > 0 ? (
+              // Search already leaves this document out; this is for whoever opened it anyway.
+              <p className="w-full text-muted-foreground text-sm">
+                <Badge variant="outline" className="mr-1.5 font-normal">
+                  superseded
+                </Badge>
+                by{" "}
+                {replacedBy.map((next, index) => (
+                  <span key={next.path}>
+                    {index > 0 ? ", " : null}
                     <Link
                       to="/f/$folder"
                       params={{ folder }}
-                      search={(prev) => ({ ...prev, tag })}
-                      aria-label={`Show documents tagged #${tag}`}
-                      className="hover:underline"
+                      search={(prev) => ({ ...prev, doc: withinFolder(next.path) })}
+                      className="font-medium text-foreground underline underline-offset-4"
                     >
-                      #{tag}
+                      {next.title}
                     </Link>
-                  </Badge>
+                  </span>
                 ))}
-                {otherFields.map(([key, value]) => (
-                  <Badge key={key} variant="outline" className="font-normal">
-                    <span className="text-muted-foreground">{key}</span> {value}
-                  </Badge>
-                ))}
-              </div>
-            ) : undefined
-          }
-        />
+              </p>
+            ) : null}
+            {description ? (
+              <p className="w-full text-muted-foreground text-sm">{description}</p>
+            ) : null}
+            {createdBy ? (
+              <p className="w-full text-muted-foreground text-sm">
+                <Badge variant="outline" className="mr-1.5 font-normal">
+                  agent
+                </Badge>
+                written with <span className="font-mono text-xs">{createdBy}</span>
+                {session ? (
+                  <>
+                    {" "}
+                    in session <span className="font-mono text-xs">{session}</span>
+                  </>
+                ) : null}
+              </p>
+            ) : null}
+            {aliases.length > 0 ? (
+              <span className="text-muted-foreground text-xs">
+                Also called {aliases.join(", ")}
+              </span>
+            ) : null}
+            {tags.map((tag) => (
+              <Badge key={tag} variant="secondary" asChild>
+                <Link
+                  to="/f/$folder"
+                  params={{ folder }}
+                  search={(prev) => ({ ...prev, tag })}
+                  aria-label={`Show documents tagged #${tag}`}
+                  className="hover:underline"
+                >
+                  #{tag}
+                </Link>
+              </Badge>
+            ))}
+            {otherFields.map(([key, value]) => (
+              <Badge key={key} variant="outline" className="font-normal">
+                <span className="text-muted-foreground">{key}</span> {value}
+              </Badge>
+            ))}
+          </div>
+        ) : undefined
       }
       contentClassName="pb-10"
       contentSlot={
         doc.isError ? (
-          <QueryError error={doc.error} onRetry={() => void doc.refetch()} what={path} />
+          <LoadError error={doc.error} onRetry={() => void doc.refetch()} what={path} />
         ) : doc.isPending ? (
           <div className="flex flex-col gap-3" aria-busy>
             <Skeleton className="h-6 w-1/2" />
@@ -849,10 +838,10 @@ function DownloadDoc({ path }: { path: string }) {
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   return (
-    <ActionButton
+    <Button
       variant="outline"
       size="icon-sm"
-      label="Download .md"
+      aria-label="Download .md"
       disabled={busy}
       onClick={() => {
         setBusy(true);
