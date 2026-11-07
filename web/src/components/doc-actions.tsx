@@ -1,6 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { ActionButton } from "@/components/action-button";
 import { InputField, useAppForm } from "@/components/app-form";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DialogLayout } from "@/components/dialog-layout";
@@ -112,8 +111,8 @@ export function UploadDocs({ folder, title }: { folder: string; title: string })
       open={open}
       onOpenChange={reset}
       triggerSlot={
-        <ActionButton
-          label="Upload Markdown files"
+        <Button
+          aria-label="Upload Markdown files"
           variant="outline"
           size="icon-sm"
           iconSlot={<Upload />}
@@ -182,8 +181,8 @@ export function UploadDocs({ folder, title }: { folder: string; title: string })
                       content="Overwrite"
                     />
                   ) : null}
-                  <ActionButton
-                    label={`Remove ${file.name}`}
+                  <Button
+                    aria-label={`Remove ${file.name}`}
                     variant="outline"
                     size="icon-sm"
                     disabled={busy}
@@ -306,7 +305,7 @@ export function NewDocument({
       onOpenChange={reset}
       triggerSlot={
         triggerSlot ?? (
-          <ActionButton label="New document" variant="outline" size="icon-sm" iconSlot={<Plus />} />
+          <Button aria-label="New document" variant="outline" size="icon-sm" iconSlot={<Plus />} />
         )
       }
       title="New document"
@@ -442,8 +441,8 @@ export function RenameDoc({ path }: { path: string }) {
       open={open}
       onOpenChange={reset}
       triggerSlot={
-        <ActionButton
-          label="Rename or move"
+        <Button
+          aria-label="Rename or move"
           variant="outline"
           size="icon-sm"
           iconSlot={<FilePen />}
@@ -511,7 +510,7 @@ export function DeleteDoc({ path }: { path: string }) {
   const navigate = useNavigate();
   return (
     <ConfirmButton
-      label="Delete document"
+      aria-label="Delete document"
       variant="outline"
       size="icon-sm"
       disabled={remove.isPending}

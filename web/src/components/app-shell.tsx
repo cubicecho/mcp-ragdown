@@ -1,13 +1,12 @@
 import { createLink, Link, Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
-import { ActionButton } from "@/components/action-button";
+import { EmptyState } from "@/components/empty-state";
 import { CreateFolder } from "@/components/folder-actions";
-import { EmptyState } from "@/components/page";
-import { QueryState } from "@/components/query-state";
+import { LoadState } from "@/components/load-state";
 import {
-  BarNavItem,
+  AppBarItem,
   Sidebar,
-  SidebarNavItem,
-  type SidebarNavItemStatus,
+  SidebarItem,
+  type SidebarItemStatus,
   SidebarSection,
 } from "@/components/sidebar";
 import { SidebarLayout } from "@/components/split-layout";
@@ -30,9 +29,9 @@ import { formatAgo, formatCount } from "@/lib/format";
 import { useFolders, useStatus, useWritable } from "@/lib/queries";
 
 /** The row, handed the router's `href` and click handler so it navigates without a reload. */
-const SidebarLink = createLink(SidebarNavItem);
+const SidebarLink = createLink(SidebarItem);
 /** The same, for the bar that stands in for the sidebar on a narrow screen. */
-const BarLink = createLink(BarNavItem);
+const BarLink = createLink(AppBarItem);
 
 /** What the index is doing, at the foot of the sidebar: the one thing every page wants to know. */
 function IndexStatus() {
@@ -79,10 +78,10 @@ function LockButton() {
   const status = useStatus();
   if (!status.data?.auth_required) return null;
   return (
-    <ActionButton
+    <Button
       variant="outline"
       size="icon-sm"
-      label="Lock"
+      aria-label="Lock"
       hint="Forget the stored token"
       side="right"
       onClick={() => {
@@ -119,7 +118,7 @@ function Brand() {
 /** Plug for a folder on MCP, a person for a human-only one: the one fact the rail adds. */
 const markerOf = (mcp: boolean) => (mcp ? <Plug /> : <UserRound />);
 const markerText = (mcp: boolean) => (mcp ? "on MCP" : "human-only");
-const statusOf = (mcp: boolean): SidebarNavItemStatus => ({
+const statusOf = (mcp: boolean): SidebarItemStatus => ({
   label: markerText(mcp),
   iconSlot: markerOf(mcp),
 });
@@ -139,10 +138,10 @@ function Nav() {
         writable ? (
           <CreateFolder
             triggerSlot={
-              <ActionButton
+              <Button
                 variant="outline"
                 size="icon-sm"
-                label="Create folder"
+                aria-label="Create folder"
                 side="right"
                 iconSlot={<Plus />}
               />
@@ -154,7 +153,7 @@ function Nav() {
         ) : undefined
       }
       status={
-        <QueryState
+        <LoadState
           query={folders}
           what="the folders"
           count={list.length}

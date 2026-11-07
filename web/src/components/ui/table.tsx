@@ -52,7 +52,10 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
     >
       <table
         data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
+        // `border-collapse` here rather than trusting Tailwind's preflight to set it: without it
+        // a row's border does not paint, and an app that skips preflight drew no row rules.
+        // `tabular-nums` so a column of figures lines up by digit.
+        className={cn("w-full caption-bottom border-collapse text-sm tabular-nums", className)}
         {...props}
       />
     </div>
@@ -92,7 +95,7 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
     <tfoot
       data-slot="table-footer"
       className={cn(
-        "border-foreground/10 border-t bg-foreground/10 font-medium [&>tr]:last:border-b-0",
+        "border-foreground/10 border-t bg-foreground/10 font-semibold [&>tr]:last:border-b-0",
         className,
       )}
       {...props}
@@ -106,7 +109,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "border-foreground/10 border-b transition-colors hover:bg-hover has-aria-expanded:bg-foreground/10 data-[state=selected]:bg-active/40",
+        "border-foreground/10 border-b transition-colors hover:bg-hover has-aria-expanded:bg-foreground/10 data-[state=selected]:bg-active/40 data-[state=selected]:hover:bg-active/60",
         className,
       )}
       {...props}
@@ -122,7 +125,9 @@ function TableHead({ className, scope, ...props }: React.ComponentProps<"th">) {
       data-slot="table-head"
       scope={scope ?? (inHeader ? "col" : "row")}
       className={cn(
-        "h-10 whitespace-nowrap px-2 text-left align-middle font-medium text-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        // A label quieter than the data under it: weight says it is a header, the grey that it is
+        // not the content. It was the loudest text in the table.
+        "h-10 whitespace-nowrap px-2 text-left align-middle font-semibold text-foreground/60 [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
         className,
       )}
       {...props}

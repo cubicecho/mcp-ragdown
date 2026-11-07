@@ -1,9 +1,8 @@
 import { useBlocker } from "@tanstack/react-router";
 import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
-import { StickyHeaderContentFooter } from "@/components/header-content-footer";
 import { LeaveDialog } from "@/components/leave-dialog";
 import { MarkdownPreview } from "@/components/markdown-preview";
-import { PageHeader } from "@/components/page-header";
+import { PageLayout } from "@/components/page-layout";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { TriangleAlert } from "@/components/ui/icons";
@@ -103,63 +102,52 @@ export function DocEditor({
 
   return (
     <>
-      <StickyHeaderContentFooter
+      <PageLayout
         width="prose"
-        headerSlot={
-          <PageHeader
-            title={title}
-            breadcrumbsSlot={
-              <p className="break-all font-mono text-muted-foreground text-xs">
-                {withinFolder(path)}
-              </p>
-            }
-            description={busy ? "Saving…" : dirty ? "Unsaved changes" : "No unsaved changes"}
-            actionSlot={
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <SegmentedGroup
-                  aria-label="Editor view"
-                  variant="framed"
-                  value={view}
-                  onValueChange={setView}
-                >
-                  <SegmentedButton value="write">Write</SegmentedButton>
-                  <SegmentedButton value="preview">Preview</SegmentedButton>
-                </SegmentedGroup>
-                <Button
-                  variant="outline"
-                  onClick={() => (dirty ? setConfirmClose(true) : onClose())}
-                  content="Close"
-                />
-                <Button disabled={!dirty || busy} onClick={onSave} content="Save" />
-              </div>
-            }
-            contentSlot={
-              conflict ? (
-                <Alert
-                  variant="destructive"
-                  iconSlot={<TriangleAlert />}
-                  description={`${conflict}. Saving yours replaces it; discarding reopens the file as it is now.`}
-                  actionSlot={
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        onClick={onClose}
-                        content="Discard mine"
-                      />
-                      <Button
-                        variant="destructive"
-                        size="xs"
-                        disabled={busy}
-                        onClick={keepMine}
-                        content="Save mine anyway"
-                      />
-                    </div>
-                  }
-                />
-              ) : undefined
-            }
-          />
+        title={title}
+        backSlot={
+          <p className="break-all font-mono text-muted-foreground text-xs">{withinFolder(path)}</p>
+        }
+        description={busy ? "Saving…" : dirty ? "Unsaved changes" : "No unsaved changes"}
+        actionSlot={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <SegmentedGroup
+              aria-label="Editor view"
+              variant="framed"
+              value={view}
+              onValueChange={setView}
+            >
+              <SegmentedButton value="write">Write</SegmentedButton>
+              <SegmentedButton value="preview">Preview</SegmentedButton>
+            </SegmentedGroup>
+            <Button
+              variant="outline"
+              onClick={() => (dirty ? setConfirmClose(true) : onClose())}
+              content="Close"
+            />
+            <Button disabled={!dirty || busy} onClick={onSave} content="Save" />
+          </div>
+        }
+        headerContentSlot={
+          conflict ? (
+            <Alert
+              variant="destructive"
+              iconSlot={<TriangleAlert />}
+              description={`${conflict}. Saving yours replaces it; discarding reopens the file as it is now.`}
+              actionSlot={
+                <div className="flex gap-2">
+                  <Button variant="outline" size="xs" onClick={onClose} content="Discard mine" />
+                  <Button
+                    variant="destructive"
+                    size="xs"
+                    disabled={busy}
+                    onClick={keepMine}
+                    content="Save mine anyway"
+                  />
+                </div>
+              }
+            />
+          ) : undefined
         }
         contentClassName="pb-10"
         contentSlot={

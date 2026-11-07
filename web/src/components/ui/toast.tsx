@@ -1,14 +1,37 @@
 import type { ReactNode } from "react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { cn } from "@/lib/utils";
+import { CircleAlert, CircleCheck, Info, TriangleAlert, X } from "@/components/ui/icons";
+import { IconClassContext } from "@/components/ui/icons-base";
+import { type BottomBarUntil, useBottomBar } from "@/lib/bottom-bar";
+import { cn, type SlotNode } from "@/lib/utils";
 
 /** What kind of message a toast is, which picks its colour and how long it stays. */
 export type ToastTone = "error" | "warning" | "positive" | "info";
 
-type Toast = { id: number; message: string; tone: ToastTone };
+/**
+ * What a toast carries besides its words: elements to act on the message with. A function is handed
+ * the toast's `dismiss`, for content that should close it — a link that navigates away.
+ */
+export type ToastActionSlot = SlotNode | ((dismiss: () => void) => SlotNode);
+
+/** What else a toast can carry. */
+export type ToastOptions = {
+  /**
+   * Elements under the message: a link-styled `Button`, an Undo, anything. Pressing them does not
+   * dismiss the toast; a function `(dismiss) => …` gets the toast's `dismiss` to do that.
+   */
+  actionSlot?: ToastActionSlot | undefined;
+};
+
+type Toast = {
+  id: number;
+  message: string;
+  tone: ToastTone;
+  actionSlot: ToastActionSlot | undefined;
+};
 
 /** Show a message. Defaults to `error`, which is what nearly every caller wants. */
-type ShowToast = (message: string, tone?: ToastTone) => void;
+type ShowToast = (message: string, tone?: ToastTone, options?: ToastOptions) => void;
 
 const ToastContext = createContext<ShowToast | null>(null);
 
@@ -20,18 +43,23 @@ const DURATION_MS: Record<ToastTone, number> = {
   info: 3000,
 };
 
-const TONE_CLASS: Record<ToastTone, string> = {
-  error: "bg-negative",
-  warning: "bg-warning",
-  positive: "bg-positive",
-  info: "bg-info",
-};
+/**
+ * The least time a toast with an `actionSlot` stays up: a confirmation's three seconds is enough to
+ * read "Moved." and not enough to move the pointer to "Go to Media".
+ */
+const ACTION_MIN_DURATION_MS = 10000;
 
-const TONE_TEXT_CLASS: Record<ToastTone, string> = {
-  error: "text-negative-foreground",
-  warning: "text-warning-foreground",
-  positive: "text-positive-foreground",
-  info: "text-info-foreground",
+/**
+ * The tone's glyph and its ink: the only place the tone's hue reaches the toast. The box is a
+ * raised surface and the words are the foreground, so a toast does not read as a filled button —
+ * which a block of `bg-negative` with white text beside an ✕ was — and the tone is said by a shape
+ * as well as a colour.
+ */
+const TONE_ICON: Record<ToastTone, { glyph: ReactNode; ink: string }> = {
+  error: { glyph: <CircleAlert />, ink: "text-negative" },
+  warning: { glyph: <TriangleAlert />, ink: "text-warning" },
+  positive: { glyph: <CircleCheck />, ink: "text-positive" },
+  info: { glyph: <Info />, ink: "text-info" },
 };
 
 /**
@@ -45,14 +73,31 @@ const VIEWPORT_STYLE = {
   position: "fixed",
   right: 16,
   bottom: 16,
+  width: 384,
+  maxWidth: "calc(100vw - 32px)",
   zIndex: 50,
 } as React.CSSProperties;
+
+/**
+ * How far the stack rises off the bottom while a layout draws a bar there — `SidebarLayout`'s
+ * `barPosition="bottom"` on a phone — so a toast is never laid over the places. The bar's own
+ * `min-h-14`, under the bar's own breakpoint; a margin, which a fixed or absolute box keeps from
+ * the edge it is pinned to. Literal classes, per rule 3.
+ */
+const LIFT: Record<BottomBarUntil, string> = {
+  always: "mb-14",
+  sm: "mb-14 sm:mb-0",
+  md: "mb-14 md:mb-0",
+  lg: "mb-14 lg:mb-0",
+  xl: "mb-14 xl:mb-0",
+};
 
 /** Holds the toasts and draws them over the app. Put it once, near the root. */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(0);
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const bottomBar = useBottomBar();
 
   const dismiss = useCallback((id: number) => {
     const timer = timers.current.get(id);
@@ -64,12 +109,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const show = useCallback<ShowToast>(
-    (message, tone = "error") => {
+    (message, tone = "error", options = {}) => {
       const id = nextId.current++;
-      setToasts((prev) => [...prev, { id, message, tone }]);
+      const { actionSlot } = options;
+      const hasAction = actionSlot !== undefined && actionSlot !== null && actionSlot !== false;
+      const duration = hasAction
+        ? Math.max(DURATION_MS[tone], ACTION_MIN_DURATION_MS)
+        : DURATION_MS[tone];
+      setToasts((prev) => [
+        ...prev,
+        { id, message, tone, actionSlot: hasAction ? actionSlot : undefined },
+      ]);
       timers.current.set(
         id,
-        setTimeout(() => dismiss(id), DURATION_MS[tone]),
+        setTimeout(() => dismiss(id), duration),
       );
     },
     [dismiss],
@@ -91,7 +144,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={show}>
       {children}
       {toasts.length > 0 && (
-        <div style={VIEWPORT_STYLE} className="cube-rn-view cube-rn-pe-box-none gap-2">
+        <div
+          style={VIEWPORT_STYLE}
+          className={cn("cube-rn-view cube-rn-pe-box-none", "gap-2", bottomBar && LIFT[bottomBar])}
+        >
           {/*
            * The announcement and the dismiss target are two elements, not one. They were one — a
            * `Pressable` with `accessibilityRole="alert"` — and `rn2web` is what showed that to be
@@ -100,35 +156,52 @@ export function ToastProvider({ children }: { children: ReactNode }) {
            * was true on device, where the role told the screen reader it was looking at a
            * message and not at something to activate.
            */}
-          {toasts.map((toast) => (
-            <div
-              key={toast.id}
-              role="alert"
-              className={cn(
-                "cube-rn-view",
-                `max-w-sm flex-row items-start gap-3 rounded-lg px-4 py-3 shadow-lg ${TONE_CLASS[toast.tone]}`,
-              )}
-            >
-              <span className={cn("cube-rn-text", `flex-1 text-sm ${TONE_TEXT_CLASS[toast.tone]}`)}>
-                {toast.message}
-              </span>
-              <button
-                type="button"
-                onClick={() => dismiss(toast.id)}
-                aria-label="Dismiss"
-                className="cube-rn-view cube-rn-pressable shrink-0"
+          {toasts.map((toast) => {
+            const { glyph, ink } = TONE_ICON[toast.tone];
+            return (
+              <div
+                key={toast.id}
+                role="alert"
+                className="cube-rn-view w-full flex-row items-start gap-3 rounded-lg border border-foreground/10 bg-secondary px-4 py-3 shadow-md"
               >
-                <span
-                  className={cn(
-                    "cube-rn-text",
-                    `text-sm font-medium ${TONE_TEXT_CLASS[toast.tone]}`,
-                  )}
+                {/* `[&_svg]:size-4` for the web, where an icon does not read the context below and
+                    drew at its own 24px beside 14px text; the context sizes it on a device. */}
+                <div
+                  aria-hidden
+                  className={cn("cube-rn-view", "mt-0.5 shrink-0 [&_svg]:size-4", ink)}
                 >
-                  ×
-                </span>
-              </button>
-            </div>
-          ))}
+                  <IconClassContext.Provider value={cn("size-4 shrink-0", ink)}>
+                    {glyph}
+                  </IconClassContext.Provider>
+                </div>
+                {/* The action sits under the words rather than beside them: the toast is a set width,
+                    and a link beside the message would squeeze it to a column. */}
+                <div className="cube-rn-view min-w-0 flex-1 gap-1.5">
+                  <span className="cube-rn-text text-sm text-foreground">{toast.message}</span>
+                  {toast.actionSlot === undefined ? null : (
+                    <div className="cube-rn-view flex-row flex-wrap items-center gap-2">
+                      {typeof toast.actionSlot === "function"
+                        ? toast.actionSlot(() => dismiss(toast.id))
+                        : toast.actionSlot}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => dismiss(toast.id)}
+                  aria-label="Dismiss"
+                  // The ink is on the press target too, not only in the context: the glyph draws in
+                  // `currentColor`, and a `<button>` resets that to the UA's black.
+                  // Under the pointer, the keyboard and a finger it looks the same: hovered.
+                  className="cube-rn-view cube-rn-pressable -m-1 shrink-0 rounded-md p-1 text-foreground/60 hover:bg-hover hover:text-foreground focus-visible:bg-hover focus-visible:text-foreground focus-visible:outline-none active:bg-hover [&_svg]:size-4"
+                >
+                  <IconClassContext.Provider value="size-4 text-foreground/60">
+                    <X />
+                  </IconClassContext.Provider>
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </ToastContext.Provider>

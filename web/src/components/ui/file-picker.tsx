@@ -2,6 +2,10 @@ import { type DragEvent, type ReactNode, useRef, useState } from "react";
 import { buttonTextVariants, buttonVariants } from "@/components/ui/button";
 import {
   acceptsFile,
+  FILE_PICKER_HINT_CLASS,
+  FILE_PICKER_ICON_CLASS,
+  FILE_PICKER_TITLE_CLASS,
+  FILE_PICKER_ZONE_CLASS,
   type FilePickerButtonProps,
   type FilePickerProps,
   type PickedFile,
@@ -67,6 +71,36 @@ async function walk(entries: FileSystemEntry[]): Promise<Found[]> {
 }
 
 /**
+ * What a drop carries, files and folders alike, in drop order. Issue #400: a
+ * dropped folder sits in `dataTransfer.files` as one empty `File`, so a zone
+ * without `directory` handed it on and the upload failed on it. Each item is
+ * taken as an entry and walked, which yields a dropped file as itself with
+ * `path` equal to its name, and a dropped folder as the files under it.
+ *
+ * The entries and the files are taken before the first `await`, because a
+ * drop's items are gone once the event returns. An item with no entry (a
+ * browser without the entry API, or a file made in script) is taken as a file.
+ */
+function fromDrop(data: DataTransfer): Promise<Found[]> {
+  const items = Array.from(data.items ?? []).filter((item) => item.kind === "file");
+  if (items.length === 0) {
+    return Promise.resolve(fromList(data.files));
+  }
+  const dropped = items.map((item) => item.webkitGetAsEntry?.() ?? item.getAsFile?.() ?? null);
+  return (async () => {
+    const found: Found[] = [];
+    for (const item of dropped) {
+      if (item instanceof File) {
+        found.push({ file: item, path: item.name });
+      } else if (item) {
+        found.push(...(await walk([item])));
+      }
+    }
+    return found;
+  })();
+}
+
+/**
  * The picking, apart from the look: the hidden input, what a click and a drop
  * do, and whether something is being dragged over. The zone and the button are
  * two faces on this one hook, so they cannot disagree about what a pick is.
@@ -118,14 +152,9 @@ function useFilePick({ onPick, onPickMany, accept, multiple, read, directory }: 
     onDrop: (e: DragEvent) => {
       e.preventDefault();
       setDragging(false);
-      // Read before the first `await` either way: a drop's files and items are
-      // gone once the event returns.
-      if (directory) {
-        const entries = Array.from(e.dataTransfer.items, (item) => item.webkitGetAsEntry());
-        void walk(entries.filter((entry) => entry !== null)).then(take);
-      } else {
-        void take(fromList(e.dataTransfer.files));
-      }
+      // A folder is walked whether or not `directory` is set: that prop is
+      // what the click opens, and a drop can carry files and folders at once.
+      void fromDrop(e.dataTransfer).then(take);
     },
   };
 
@@ -158,15 +187,21 @@ export function FilePicker({ label, hint, ...options }: FilePickerProps) {
       <button
         {...trigger}
         className={cn(
-          "flex w-full flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-12 text-center transition-colors",
-          dragging
-            ? "border-active bg-active/40"
-            : "border-foreground/15 hover:border-foreground/60",
+          FILE_PICKER_ZONE_CLASS,
+          "flex text-center transition-colors focus-visible:bg-hover focus-visible:outline-none",
+          dragging ? "border-active bg-active/40" : "hover:border-foreground/60",
         )}
       >
-        <Upload className="h-8 w-8 text-foreground/60" />
-        <span className="cube-rn-text font-medium text-sm">{label}</span>
-        {hint ? <span className="cube-rn-text text-xs text-foreground/60">{hint}</span> : null}
+        {/* On the drop tint the muted grey is under 4.5:1, so the hint and icon take full ink. */}
+        <Upload className={cn(FILE_PICKER_ICON_CLASS, dragging && "text-foreground")} />
+        <span className={cn("cube-rn-text", FILE_PICKER_TITLE_CLASS)}>{label}</span>
+        {hint ? (
+          <span
+            className={cn("cube-rn-text", FILE_PICKER_HINT_CLASS, dragging && "text-foreground")}
+          >
+            {hint}
+          </span>
+        ) : null}
       </button>
       {input}
     </>

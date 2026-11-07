@@ -11,9 +11,9 @@ import { cn, type SlotNode } from "@/lib/utils";
  */
 export function segmentedItemClass(active: boolean, className?: string) {
   return cn(
-    "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+    "rounded-md px-3 py-1.5 text-sm font-semibold transition-colors",
     active
-      ? "bg-active text-active-foreground"
+      ? "bg-active/40 text-foreground hover:bg-active/60"
       : "text-foreground/60 hover:bg-hover hover:text-foreground",
     className,
   );
@@ -27,11 +27,18 @@ export function segmentedItemClass(active: boolean, className?: string) {
  */
 export function segmentedTextClass(active: boolean, className?: string) {
   return cn(
-    "text-sm font-medium",
-    active ? "text-active-foreground" : "text-foreground/60",
+    "text-sm font-semibold",
+    active ? "text-foreground" : ["text-foreground/60", HOVER_INK],
     className,
   );
 }
+
+/**
+ * A quiet label lifted to full ink under the pointer, as the web halves' `hover:text-foreground`
+ * does. The colour sits on each `Text`, which a container's `hover:` cannot reach, so it reads the
+ * pressable's `group` instead. Web only: a device has no pointer to hover with.
+ */
+const HOVER_INK = "group-hover:text-foreground";
 
 /**
  * Where a pill with an `iconSlot` stops drawing its label: at every width, or under
@@ -75,7 +82,7 @@ const SegmentedGroupContext = React.createContext<SegmentedGroupContextValue | n
  * page with nothing round them, for a toolbar or a nav bar.
  */
 const SEGMENTED_GROUP_VARIANTS = {
-  framed: "h-10 rounded-md border border-foreground/15 bg-background p-1",
+  framed: "h-10 rounded-md border border-foreground/50 bg-background p-1",
   plain: "",
 } as const;
 
@@ -223,7 +230,8 @@ const SegmentedButton = React.forwardRef<HTMLButtonElement, SegmentedButtonProps
   ({ active, value, iconSlot, className, children, onClick: onPress, ...props }, ref) => {
     const group = React.useContext(SegmentedGroupContext);
     const current = active ?? (group !== null && value !== undefined && group.value === value);
-    const ink = current ? "text-active-foreground" : "text-foreground/60";
+    // The pill's own ink, for the container and the icon.
+    const ink = current ? "text-foreground" : "text-foreground/60";
     // Only a pill with an icon has something left to draw once its label is gone.
     const labelHideBelow = iconSlot ? group?.labelHideBelow : undefined;
     const iconOnlyHeight = group?.framed ? "min-h-7" : "min-h-8";
@@ -253,9 +261,13 @@ const SegmentedButton = React.forwardRef<HTMLButtonElement, SegmentedButtonProps
         className={cn(
           // Inside the frame a pill is 4px shorter, so it fits the input-height
           // box instead of spilling past its padding.
+          // Inside the frame, `rounded-sm`: the radius nested in the frame's, as a tab's is.
           "cube-rn-view cube-rn-pressable",
-          group?.framed ? "rounded-md px-3 py-1" : "rounded-md px-3 py-1.5",
-          current ? "bg-active" : "hover:bg-hover",
+          group?.framed ? "rounded-sm px-3 py-1" : "rounded-md px-3 py-1.5",
+          // The current pill is the chosen tint, a step further under the pointer and focused.
+          current
+            ? "bg-active/40 hover:bg-active/60 focus-visible:bg-active/60"
+            : "group hover:bg-hover",
           // The label colour on the container too, which native ignores and web
           // reads: an element child passes through untouched below, so on web its
           // colour can only come from inheriting it here.

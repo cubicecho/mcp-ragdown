@@ -31,7 +31,10 @@ export type MenuContentProps = {
 };
 
 export type MenuItemProps = {
-  /** An icon from `@cubeui/icons`. It takes the row's colour — `text-negative` on a destructive row. */
+  /**
+   * An icon from `@cubeui/icons`. Drawn quieter than the label, at `/60` as Command's row icons are,
+   * so the words lead; on a destructive row it is `text-negative` with the label.
+   */
   iconSlot?: SlotNode;
   /** The row's text, and what typeahead matches on the web. */
   label: string;
@@ -70,14 +73,19 @@ export type MenuSeparatorProps = {
   className?: string | undefined;
 };
 
-/** The menu's box: its minimum width and padding. */
-export const MENU_CONTENT_CLASS = "min-w-[8rem] p-1";
+/**
+ * The menu's box: its surface, minimum width and padding. The surface is the popover's, said here
+ * so the web half cannot drift from it: it once wore a bare `border`, which takes the text colour
+ * and drew a black frame where every other floating surface has a 10% edge.
+ */
+export const MENU_CONTENT_CLASS =
+  "min-w-48 gap-0 rounded-md border border-foreground/10 bg-secondary p-1 shadow-md";
 /** One menu row's layout. */
 export const MENU_ITEM_CLASS = "w-full flex-row items-center gap-2 rounded-sm px-2 py-1.5";
 /** The type of a menu row's label. */
 export const MENU_ITEM_TEXT_CLASS = "flex-1 text-sm";
 /** What sits at the far end of a menu row, such as a shortcut. */
-export const MENU_TRAILING_CLASS = "ml-auto text-xs text-foreground/60";
+export const MENU_TRAILING_CLASS = "ml-auto text-xs tracking-widest text-foreground/60";
 /** The rule between groups of menu rows. */
 export const MENU_SEPARATOR_CLASS = "-mx-1 my-1 h-px bg-foreground/10";
 
