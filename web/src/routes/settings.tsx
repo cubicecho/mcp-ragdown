@@ -12,6 +12,8 @@ import {
   RenameFolder,
   RootMcpConfig,
 } from "@/components/folder-actions";
+import { List } from "@/components/list";
+import { ListItem } from "@/components/list-item";
 import { LoadError, LoadState } from "@/components/load-state";
 import { PageLayout } from "@/components/page-layout";
 import { PropertyList, PropertyRow } from "@/components/property-list";
@@ -288,33 +290,36 @@ function LooseFiles({ files, writable }: { files: string[]; writable: boolean })
         title={`${formatCount(files.length, "file")} outside every folder ${files.length === 1 ? "is" : "are"} not indexed`}
         description={`Markdown directly in the docs directory belongs to no folder. Move it into one to index it${writable ? ", or delete it here" : ""}.`}
       />
-      <ul
-        aria-label="Files outside every folder"
-        className="flex flex-col divide-y rounded-lg border"
-      >
-        {files.map((file) => (
-          <li key={file} className="flex min-h-11 items-center justify-between gap-2 px-3 py-1.5">
-            <Code className="min-w-0 truncate">{file}</Code>
-            {writable ? (
-              <ConfirmButton
-                aria-label={`Delete ${file}`}
-                variant="outline"
-                size="icon-xs"
-                disabled={remove.isPending}
-                title={`Delete ${file}?`}
-                description={`${file} is deleted from the docs directory on disk. It was never indexed, so no folder or agent loses anything.`}
-                onConfirm={() =>
-                  remove.mutate(file, {
-                    onSuccess: () => toast(`Deleted ${file}`, "positive"),
-                    onError: (error) => toast(`Could not delete ${file}: ${error.message}`),
-                  })
-                }
-                iconSlot={<Trash2 className="text-destructive" />}
-              />
-            ) : null}
-          </li>
+      <List
+        label="Files outside every folder"
+        className="rounded-lg border border-foreground/10"
+        contentSlot={files.map((file) => (
+          <ListItem
+            key={file}
+            title={file}
+            titleClassName="font-mono"
+            actionSlot={
+              writable ? (
+                <ConfirmButton
+                  aria-label={`Delete ${file}`}
+                  variant="outline"
+                  size="icon-xs"
+                  disabled={remove.isPending}
+                  title={`Delete ${file}?`}
+                  description={`${file} is deleted from the docs directory on disk. It was never indexed, so no folder or agent loses anything.`}
+                  onConfirm={() =>
+                    remove.mutate(file, {
+                      onSuccess: () => toast(`Deleted ${file}`, "positive"),
+                      onError: (error) => toast(`Could not delete ${file}: ${error.message}`),
+                    })
+                  }
+                  iconSlot={<Trash2 className="text-destructive" />}
+                />
+              ) : undefined
+            }
+          />
         ))}
-      </ul>
+      />
     </div>
   );
 }

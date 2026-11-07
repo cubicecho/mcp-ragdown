@@ -3,6 +3,8 @@ import { useState } from "react";
 import { InputField, useAppForm } from "@/components/app-form";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DialogLayout } from "@/components/dialog-layout";
+import { List } from "@/components/list";
+import { ListItem } from "@/components/list-item";
 import { Button } from "@/components/ui/button";
 import { FilePicker } from "@/components/ui/file-picker";
 import { FilePen, Plus, Trash2, Upload, X } from "@/components/ui/icons";
@@ -153,47 +155,56 @@ export function UploadDocs({ folder, title }: { folder: string; title: string })
             }}
           />
           {files.length > 0 ? (
-            <ul className="flex flex-col divide-y rounded-md border text-sm">
-              {files.map((file) => (
-                <li key={file.name} className="flex items-center gap-2 px-3 py-2">
-                  <div className="min-w-0 flex-1">
+            <List
+              label="Files to upload"
+              className="rounded-md border border-foreground/10"
+              contentSlot={files.map((file) => (
+                <ListItem
+                  key={file.name}
+                  title={
                     <form.Subscribe selector={(state) => state.values.subfolder}>
                       {(subfolder) => (
-                        <p className="truncate font-mono text-xs">
+                        <span className="block truncate font-mono text-xs">
                           {joinPath(subfolder, file.name)}
-                        </p>
+                        </span>
                       )}
                     </form.Subscribe>
-                    {file.state === "exists" ? (
-                      <p className="text-muted-foreground text-xs">Already exists.</p>
+                  }
+                  description={
+                    file.state === "exists" ? (
+                      <span className="text-muted-foreground text-xs">Already exists.</span>
                     ) : file.state === "failed" ? (
-                      <p className="text-destructive text-xs">{file.error}</p>
+                      <span className="text-destructive text-xs">{file.error}</span>
                     ) : file.state === "uploading" ? (
-                      <p className="text-muted-foreground text-xs">Uploading…</p>
-                    ) : null}
-                  </div>
-                  {file.state === "exists" ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => void send([file], true)}
-                      content="Overwrite"
-                    />
-                  ) : null}
-                  <Button
-                    aria-label={`Remove ${file.name}`}
-                    variant="outline"
-                    size="icon-sm"
-                    disabled={busy}
-                    onClick={() =>
-                      setFiles((prev) => prev.filter((other) => other.name !== file.name))
-                    }
-                    iconSlot={<X />}
-                  />
-                </li>
+                      <span className="text-muted-foreground text-xs">Uploading…</span>
+                    ) : undefined
+                  }
+                  actionSlot={
+                    <>
+                      {file.state === "exists" ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => void send([file], true)}
+                          content="Overwrite"
+                        />
+                      ) : null}
+                      <Button
+                        aria-label={`Remove ${file.name}`}
+                        variant="outline"
+                        size="icon-sm"
+                        disabled={busy}
+                        onClick={() =>
+                          setFiles((prev) => prev.filter((other) => other.name !== file.name))
+                        }
+                        iconSlot={<X />}
+                      />
+                    </>
+                  }
+                />
               ))}
-            </ul>
+            />
           ) : null}
         </form>
       }
