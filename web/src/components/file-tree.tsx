@@ -5,7 +5,7 @@ import { rowFillClass, rowLink } from "@/components/list-item";
 import { File, Folder } from "@/components/ui/icons";
 import { IconClassContext } from "@/components/ui/icons-base";
 import { buildTree, isValidMove, type TreeEntry, type TreeNode } from "@/lib/tree";
-import { cn, type SlotNode } from "@/lib/utils";
+import { actionGap, cn, type SlotNode, touchRowClass } from "@/lib/utils";
 
 type FileTreeProps<T extends TreeEntry> = {
   /** What the list is, for a screen reader: "Files", "Notes". Read, not drawn. */
@@ -22,8 +22,9 @@ type FileTreeProps<T extends TreeEntry> = {
    */
   pinned?: readonly T[] | undefined;
   /**
-   * The open file's path. Its row is tinted, a step further under the pointer, and its link or
-   * button says it is the current one.
+   * The open file: its key as `entries` listed it, which `onSelect` hands back. Its row is tinted,
+   * a step further under the pointer, and its link or button says it is the current one. The
+   * node's cleaned `path` is matched too, so `a/b.md` still finds the file listed as `a//b.md`.
    */
   selected?: string | undefined;
   /**
@@ -32,8 +33,13 @@ type FileTreeProps<T extends TreeEntry> = {
    * `<a href>` that a middle click opens. Given this, `onSelect` is not called.
    */
   linkSlot?: ((node: TreeNode<T>) => ReactElement) | undefined;
-  /** A file's row was pressed. For an app that holds the open file in state; the row is a button. */
-  onSelect?: ((path: string) => void) | undefined;
+  /**
+   * A file's row was pressed. For an app that holds the open file in state; the row is a button.
+   * `path` is the file's key exactly as `entries` listed it (`entry.path`), so an object store's
+   * `a//b.md` comes back as `a//b.md` and not as the tree's cleaned `a/b.md`. The node is the
+   * row's, for the rest of its entry.
+   */
+  onSelect?: ((path: string, node: TreeNode<T>) => void) | undefined;
   /**
    * The small facts after a row's name: a size, a count, a badge. A string is drawn muted and extra
    * small; an element is placed as it is. Inside the pressed area. Called for folders too.
@@ -60,13 +66,17 @@ type FileTreeProps<T extends TreeEntry> = {
   defaultOpen?: readonly string[] | "all" | undefined;
   /**
    * A row was dropped on a folder. `from` is the dragged file's or folder's path; `into` is the
-   * folder's path, and `""` for the top level. Given this, rows can be dragged: on the web, with a
-   * pointer. The tree reorders nothing itself — move the file and hand back new `entries`. While a
-   * returned promise is pending the row is drawn muted; a rejection is the caller's to report.
+   * folder's path, and `""` for the top level. Both are the tree's cleaned paths, so `into/name`
+   * is where the row lands. `node` is the dragged row: its `type` says whether `from` was the file
+   * or the folder when the two share a path, and its `entry.path` is the key as listed. Given
+   * this, rows can be dragged: on the web, with a pointer. The tree reorders nothing itself — move
+   * the file and hand back new `entries`. While a returned promise is pending the row is drawn
+   * muted; a rejection is the caller's to report.
    */
-  onMove?: ((from: string, into: string) => void | Promise<void>) | undefined;
+  onMove?: ((from: string, into: string, node: TreeNode<T>) => void | Promise<void>) | undefined;
   /** Whether this row may be dropped there. Asked while dragging; a refused folder is not tinted. */
   canMove?: ((node: TreeNode<T>, into: string) => boolean) | undefined;
+  /** On the tree's outer list. A dragged row can be dropped on it to move to the top level. */
   className?: string | undefined;
 };
 
@@ -82,6 +92,9 @@ const INDENT = 16;
 const EDGE = 8;
 
 const NO_PATHS: ReadonlySet<string> = new Set();
+
+/** Which row a node is: a file and a folder can share a path (see `buildTree`). */
+const nodeKey = (node: TreeNode) => `${node.type}:${node.path}`;
 
 /** How long a dragged row rests on a shut folder before it opens, so a drop can go deeper. */
 const SPRING_OPEN_MS = 600;
@@ -162,11 +175,12 @@ export function FileTree<T extends TreeEntry>({
   const [dragged, setDragged] = React.useState<TreeNode<T> | null>(null);
   // The folder under the pointer while a row is dragged, `""` for the top level.
   const [over, setOver] = React.useState<string | null>(null);
+  // The rows whose move is pending, by `nodeKey`.
   const [moving, setMoving] = React.useState(NO_PATHS);
 
   const droppable = (node: TreeNode<T>, into: string) =>
-    isValidMove(node.path, into) &&
-    moving.has(node.path) === false &&
+    isValidMove(node.path, into, node.type) &&
+    moving.has(nodeKey(node)) === false &&
     (canMove?.(node, into) ?? true);
   const dropInto = dragged && over !== null && droppable(dragged, over) ? over : null;
 
@@ -175,16 +189,17 @@ export function FileTree<T extends TreeEntry>({
     setOver(null);
   };
 
-  const move = (from: string, into: string) => {
-    const done: unknown = onMove?.(from, into);
+  const move = (node: TreeNode<T>, into: string) => {
+    const done: unknown = onMove?.(node.path, into, node);
     if (done instanceof Promise === false) {
       return;
     }
-    setMoving((before) => new Set(before).add(from));
+    const key = nodeKey(node);
+    setMoving((before) => new Set(before).add(key));
     const settle = () =>
       setMoving((before) => {
         const after = new Set(before);
-        after.delete(from);
+        after.delete(key);
         return after;
       });
     // Both arms: a failed move is the caller's to report, and must not leave the row muted.
@@ -227,7 +242,7 @@ export function FileTree<T extends TreeEntry>({
       // Here as well as on `dragend`, which never arrives once the move has taken the row away.
       endDrag();
       if (droppable(dragged, into)) {
-        move(dragged.path, into);
+        move(dragged, into);
       }
     },
   });
@@ -253,7 +268,12 @@ export function FileTree<T extends TreeEntry>({
   const canDrop = onMove !== undefined;
 
   const springOpen =
-    dragged && over && over !== dragged.path && folders.includes(over) && isOpen(over) === false
+    dragged &&
+    over &&
+    // The file `logs` can go into the folder `logs`; the folder cannot go into itself.
+    (dragged.type === "file" || over !== dragged.path) &&
+    folders.includes(over) &&
+    isOpen(over) === false
       ? over
       : null;
   // biome-ignore lint/correctness/useExhaustiveDependencies: `toggle` is this render's, taken when the row came to rest; the timer is dropped if anything it read changes
@@ -270,13 +290,18 @@ export function FileTree<T extends TreeEntry>({
   const hasFolders = folders.length > 0;
 
   const renderRow = (node: TreeNode<T>, depth: number, isFile: boolean, isPinned = false) => {
-    const isSelected = isFile && selected === node.path;
+    const isSelected =
+      isFile && selected !== undefined && (selected === node.entry?.path || selected === node.path);
     // On the chosen tint, and inside the folder a drag is over (the same tint), /60 is under 4.5:1.
     const inDrop =
       dropInto !== null &&
-      (dropInto === "" || node.path === dropInto || node.path.startsWith(`${dropInto}/`));
+      (dropInto === "" ||
+        (isFile === false && node.path === dropInto) ||
+        node.path.startsWith(`${dropInto}/`));
     const muted = inDrop || isSelected ? "text-foreground" : "text-foreground/60";
     const indent = { paddingLeft: depth * INDENT + EDGE };
+    // A finger's 44pt on device, where the web's 32px row is too small to aim at (#470).
+    const rowClass = cn(ROW_CLASS, touchRowClass());
     const pressable = isFile === false || linkSlot !== undefined || onSelect !== undefined;
     const facts = meta?.(node);
     const actions = actionSlot?.(node);
@@ -337,7 +362,7 @@ export function FileTree<T extends TreeEntry>({
           open={expanded}
           onClick={() => toggle(node.path)}
           controls={expanded && node.children.length > 0 ? childrenId(node.path) : undefined}
-          className={ROW_CLASS}
+          className={rowClass}
           // Centred on the row rather than set down to a first line of text, and muted as the
           // folder's icon is.
           chevronClassName={cn("mt-0", muted)}
@@ -352,7 +377,7 @@ export function FileTree<T extends TreeEntry>({
         linkSlot(node),
         {
           slot: "file-tree-file",
-          className: ROW_CLASS,
+          className: rowClass,
           selected: isSelected,
           style: indent,
           webProps: drag,
@@ -365,8 +390,8 @@ export function FileTree<T extends TreeEntry>({
           type="button"
           data-slot="file-tree-file"
           aria-current={isSelected ? true : undefined}
-          onClick={() => onSelect(node.path)}
-          className={cn("cube-rn-view cube-rn-pressable", ROW_CLASS)}
+          onClick={() => onSelect(node.entry?.path ?? node.path, node)}
+          className={cn("cube-rn-view cube-rn-pressable", rowClass)}
           style={indent}
           {...(drag as React.ComponentPropsWithoutRef<"button">)}
         >
@@ -377,7 +402,7 @@ export function FileTree<T extends TreeEntry>({
       row = (
         <div
           data-slot="file-tree-file"
-          className={cn("cube-rn-view", ROW_CLASS)}
+          className={cn("cube-rn-view", rowClass)}
           style={indent}
           {...(drag as React.ComponentPropsWithoutRef<"div">)}
         >
@@ -395,7 +420,7 @@ export function FileTree<T extends TreeEntry>({
           "group",
           rowFillClass(isSelected, pressable),
           // A slow move is not a failed one: the row waits where it was, drawn as unavailable.
-          moving.has(node.path) && "opacity-50",
+          moving.has(nodeKey(node)) && "opacity-50",
         )}
       >
         {row}
@@ -404,7 +429,9 @@ export function FileTree<T extends TreeEntry>({
             data-slot="file-tree-action"
             className={cn(
               "cube-rn-view",
-              "shrink-0 flex-row items-center gap-0.5 pr-1",
+              "shrink-0 flex-row items-center pr-1",
+              // The rhythm's action gap: 4px between the `icon-xs` buttons a tree row takes.
+              actionGap(actions),
               // Hidden only where a pointer can bring them back. An open menu keeps its trigger on
               // screen after the pointer has left the row for the menu.
               "transition-opacity focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0",
@@ -420,12 +447,13 @@ export function FileTree<T extends TreeEntry>({
   const renderItems = (nodes: readonly TreeNode<T>[], depth: number): ReactNode =>
     nodes.map((node) => (
       <li
-        key={node.path}
+        // A file and a folder can share a path (see `buildTree`).
+        key={`${node.type}:${node.path}`}
         data-slot="file-tree-item"
         className={cn(
           "cube-rn-view",
           "min-w-0 gap-0.5",
-          dropInto === node.path && DROP_TARGET_CLASS,
+          node.type === "dir" && dropInto === node.path && DROP_TARGET_CLASS,
         )}
         {...(canDrop && node.type === "dir" ? dropProps(node.path) : {})}
       >

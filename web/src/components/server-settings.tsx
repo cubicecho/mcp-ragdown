@@ -218,9 +218,9 @@ export function EditServerSettings({
               {(unchanged) => (
                 <form.SubmitButton
                   form="edit-server-settings"
-                  pendingLabel="Saving…"
+                  loadingLabel="Saving…"
                   disabled={unchanged}
-                  content="Save"
+                  createLabel="Save"
                 />
               )}
             </form.Subscribe>

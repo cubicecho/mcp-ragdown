@@ -61,7 +61,11 @@ export function TokenGate({ children }: { children: ReactNode }) {
           <form.AppForm>
             <form.Subscribe selector={(state) => !state.values.token.trim()}>
               {(empty) => (
-                <form.SubmitButton pendingLabel="Unlocking…" disabled={empty} content="Unlock" />
+                <form.SubmitButton
+                  loadingLabel="Unlocking…"
+                  disabled={empty}
+                  createLabel="Unlock"
+                />
               )}
             </form.Subscribe>
           </form.AppForm>

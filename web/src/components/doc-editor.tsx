@@ -73,7 +73,7 @@ export function DocEditor({
         },
         onError: (error) => {
           if (error instanceof ApiError && error.code === "changed") setConflict(error.message);
-          else toast(error instanceof Error ? error.message : String(error), "error");
+          else toast(error instanceof Error ? error.message : String(error), "negative");
         },
       },
     );
@@ -89,7 +89,8 @@ export function DocEditor({
           setConflict(null);
           toast("Saved over the version on disk", "positive");
         },
-        onError: (error) => toast(error instanceof Error ? error.message : String(error), "error"),
+        onError: (error) =>
+          toast(error instanceof Error ? error.message : String(error), "negative"),
       },
     );
   };

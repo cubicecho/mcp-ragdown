@@ -224,9 +224,9 @@ export function UploadDocs({ folder, title }: { folder: string; title: string })
           <form.AppForm>
             <form.SubmitButton
               form="upload-docs"
-              pendingLabel="Uploading…"
+              loadingLabel="Uploading…"
               disabled={busy || ready.length === 0}
-              content={`Upload ${ready.length > 0 ? formatCount(ready.length, "file") : ""}`}
+              createLabel={`Upload ${ready.length > 0 ? formatCount(ready.length, "file") : ""}`}
             />
           </form.AppForm>
         </>
@@ -389,7 +389,7 @@ export function NewDocument({
         <>
           <Button variant="outline" onClick={close} content="Cancel" />
           <form.AppForm>
-            <form.SubmitButton form="new-note" pendingLabel="Creating…" content="Create" />
+            <form.SubmitButton form="new-note" loadingLabel="Creating…" createLabel="Create" />
           </form.AppForm>
         </>
       )}
@@ -506,7 +506,7 @@ export function RenameDoc({ path }: { path: string }) {
         <>
           <Button variant="outline" onClick={close} content="Cancel" />
           <form.AppForm>
-            <form.SubmitButton form="rename-doc" pendingLabel="Moving…" content="Move" />
+            <form.SubmitButton form="rename-doc" loadingLabel="Moving…" createLabel="Move" />
           </form.AppForm>
         </>
       )}

@@ -11,38 +11,46 @@ import {
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
-import { cn } from "@/lib/utils";
+import { CODE_TEXT, cn } from "@/lib/utils";
+
+/**
+ * Tailwind's `shadow-md`, the elevation of everything floating over the page, spelled out: a
+ * CodeMirror theme is a style object and cannot take the class.
+ */
+const FLOATING_SHADOW = "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)";
 
 /**
  * The editor's colours, read from the theme's variables and nothing else: it follows light, dark
  * and the palette with the rest of the page, and there is no CodeMirror theme to keep in step.
  *
  * The selection is the browser's own, so it is drawn by the same `::selection` rule as the text
- * around the editor.
+ * around the editor. The type is inherited from the host's `CODE_TEXT`: CodeMirror's base theme
+ * sets a face and a line of its own, which `inherit` undoes.
  */
 const theme = EditorView.theme({
-  "&": { color: "var(--foreground)", backgroundColor: "transparent", fontSize: "0.875rem" },
+  "&": { color: "var(--foreground)", backgroundColor: "transparent" },
   "&.cm-focused": { outline: "none" },
-  ".cm-scroller": {
-    fontFamily:
-      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-    lineHeight: "1.6",
-  },
+  ".cm-scroller": { fontFamily: "inherit", lineHeight: "inherit" },
   ".cm-content": { caretColor: "var(--foreground)", padding: "0.5rem 0" },
   ".cm-line": { padding: "0 0.75rem" },
-  // The caret's line is current, so it is the chosen-row tint (`bg-active/40`), and only while the
-  // editor has focus: drawn in `hover` at all times, an unfocused editor showed a hover that stuck.
+  // The caret's line is drawn in `hover`, as a focused thing is, and only while the editor has
+  // focus: drawn at all times, an unfocused editor showed a hover that stuck. It was the chosen
+  // tint (`bg-active/40`) until the syntax colours on it measured 3.1–4.2:1 (#471); on `hover`
+  // they are 4.5:1 or more in every palette, which `palette-contrast.test.mjs` holds.
   ".cm-activeLine": { backgroundColor: "transparent" },
-  "&.cm-focused .cm-activeLine": {
-    backgroundColor: "color-mix(in oklab, var(--active) 40%, transparent)",
-  },
+  "&.cm-focused .cm-activeLine": { backgroundColor: "var(--hover)" },
+  // Except the placeholder's line. An empty document has one line, so there is no current line to
+  // pick out until there is text, and a tinted line under the placeholder looked like a value.
+  "&.cm-focused .cm-activeLine:has(.cm-placeholder)": { backgroundColor: "transparent" },
   ".cm-placeholder": { color: "color-mix(in oklab, var(--foreground) 60%, transparent)" },
-  // What an app's own completion or lint extension draws: a popover, in the popover's colours.
+  // What an app's own completion or lint extension draws: a popover, in the popover's colours, and
+  // with its shadow, since it floats over the text as a popover does (#486).
   ".cm-tooltip": {
     backgroundColor: "var(--secondary)",
     color: "var(--foreground)",
     border: "1px solid color-mix(in oklab, var(--foreground) 10%, transparent)",
     borderRadius: "var(--radius-md)",
+    boxShadow: FLOATING_SHADOW,
     overflow: "hidden",
   },
   ".cm-tooltip.cm-tooltip-autocomplete > ul": { fontFamily: "inherit", maxHeight: "16rem" },
@@ -61,7 +69,11 @@ const theme = EditorView.theme({
 
 const QUIET = "color-mix(in oklab, var(--foreground) 60%, transparent)";
 
-/** Markdown's structure, muted, so the prose stays the thing you read. */
+/**
+ * Markdown's structure, muted, so the prose stays the thing you read. Every colour here is a pair
+ * in `palette-contrast.test.mjs`, on the page, on a card and on `hover` (the caret's line): one
+ * added here goes there too.
+ */
 const HIGHLIGHT_RULES: readonly TagStyle[] = [
   { tag: tags.heading, fontWeight: "600" },
   // A tag takes the one most specific rule, not every rule that fits: without the weight here a
@@ -267,6 +279,7 @@ export function MarkdownCodeEditor({
       data-slot="markdown-code-editor"
       className={cn(
         "min-h-64 w-full min-w-0 overflow-hidden rounded-md border border-foreground/50 bg-background text-foreground focus-within:border-active",
+        CODE_TEXT,
         // The view fills the box, so a click below the last line still lands in the editor.
         "[&>.cm-editor]:h-full [&>.cm-editor]:min-h-[inherit]",
         className,
