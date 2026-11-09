@@ -194,7 +194,7 @@ function DocList({
         });
       }
     } catch (error) {
-      toast(`Could not move ${name}: ${errorMessage(error)}`, "error");
+      toast(`Could not move ${name}: ${errorMessage(error)}`, "negative");
     }
   };
 
@@ -855,7 +855,9 @@ function DownloadDoc({ path }: { path: string }) {
             // After the click has handed the URL to the download, not before.
             setTimeout(() => URL.revokeObjectURL(url), 0);
           })
-          .catch((error) => toast(error instanceof Error ? error.message : String(error), "error"))
+          .catch((error) =>
+            toast(error instanceof Error ? error.message : String(error), "negative"),
+          )
           .finally(() => setBusy(false));
       }}
       iconSlot={<Download />}

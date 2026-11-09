@@ -118,7 +118,7 @@ export function CreateFolder({
         <>
           <Button variant="outline" onClick={close} content="Cancel" />
           <form.AppForm>
-            <form.SubmitButton form="create-folder" pendingLabel="Creating…" content="Create" />
+            <form.SubmitButton form="create-folder" loadingLabel="Creating…" createLabel="Create" />
           </form.AppForm>
         </>
       )}
@@ -271,9 +271,9 @@ export function EditFolder({ folder, onClose }: FolderDialogProps) {
               {(unchanged) => (
                 <form.SubmitButton
                   form="edit-folder"
-                  pendingLabel="Saving…"
+                  loadingLabel="Saving…"
                   disabled={unchanged}
-                  content="Save"
+                  createLabel="Save"
                 />
               )}
             </form.Subscribe>
@@ -347,9 +347,9 @@ export function RenameFolder({ folder, onClose }: FolderDialogProps) {
               {(unchanged) => (
                 <form.SubmitButton
                   form="rename-folder"
-                  pendingLabel="Renaming…"
+                  loadingLabel="Renaming…"
                   disabled={unchanged}
-                  content="Rename"
+                  createLabel="Rename"
                 />
               )}
             </form.Subscribe>
