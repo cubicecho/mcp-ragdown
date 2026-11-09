@@ -1,4 +1,4 @@
-import { ChevronRight, Image as ImageIcon, ImageOff } from "lucide-react";
+import { Image as ImageIcon, ImageOff } from "lucide-react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { createContext, useContext, useEffect, useId, useMemo, useState } from "react";
 import ReactMarkdown, {
@@ -9,8 +9,9 @@ import ReactMarkdown, {
   type UrlTransform,
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Checkbox } from "@/components/ui/checkbox";
+import { CHECKBOX_CLASS } from "@/components/ui/checkbox-base";
 import { Code, CodeBlock } from "@/components/ui/code";
+import { Check, ChevronRight } from "@/components/ui/icons";
 import { Separator } from "@/components/ui/separator";
 import {
   Table,
@@ -20,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { cn, type SlotNode } from "@/lib/utils";
+import { cn, hasSlot, type SlotNode } from "@/lib/utils";
 
 /**
  * How blocks follow one another: a column with one gap, in the document and again inside a
@@ -55,14 +56,18 @@ const DOCUMENT = cn(
 /**
  * The heading scale, which is `PageHeader`'s carried on down: a document's `#` is the same size as
  * a page's title, so a rendered file and the page around it are one hierarchy and not two.
+ *
+ * Every level is a step of its own. `####` is the body's size in its weight, `#####` a size below
+ * it, and `######` that size in secondary ink, so no two levels look alike (#487). Only the three
+ * above the body's size are tightened: at 14px and under, `tracking-tight` only crowds the letters.
  */
 const HEADINGS = {
-  1: "text-xl",
-  2: "text-lg",
-  3: "text-base",
+  1: "text-xl tracking-tight",
+  2: "text-lg tracking-tight",
+  3: "text-base tracking-tight",
   4: "text-sm",
-  5: "text-sm",
-  6: "text-sm text-foreground/60",
+  5: "text-xs",
+  6: "text-xs text-foreground/60",
 } as const;
 
 type Level = keyof typeof HEADINGS;
@@ -119,7 +124,10 @@ function Heading({
       className={cn(
         // More room above than below, so a heading belongs to what follows it. `scroll-mt` is for
         // the heading that is a link's target: it lands clear of the edge rather than under it.
-        "mt-3 mb-0 min-w-0 scroll-mt-4 font-semibold tracking-tight first:mt-0",
+        // Beside a toggle the section holds that room instead: the heading is the second child of
+        // the toggle's row, where `first:mt-0` never applies, and would sit a margin below it.
+        "mb-0 min-w-0 scroll-mt-4 font-semibold",
+        section ? "mt-0" : "mt-3 first:mt-0",
         HEADINGS[level],
       )}
     >
@@ -147,7 +155,10 @@ function Heading({
       >
         <ChevronRight
           aria-hidden
-          className={cn("size-4 transition-transform", section.open && "rotate-90")}
+          className={cn(
+            "size-4 transition-transform motion-reduce:transition-none",
+            section.open && "rotate-90",
+          )}
         />
       </button>
       {heading}
@@ -229,25 +240,23 @@ function DocumentDiv({ node, children, ...rest }: ComponentPropsWithoutRef<"div"
 }
 
 /**
- * A list. A task list drops its bullets and its indent: the checkboxes are the markers.
- * `contains-task-list` is the class remark-gfm puts on a list that holds one.
+ * A list. Every list keeps its bullets and its indent, a task list too: a task item drops its own
+ * bullet and its box hangs in the indent where the bullet was (`ListItem`, `TaskBox`), so a list
+ * that mixes task items and plain ones keeps the plain ones' bullets, as GitHub draws it.
  */
 function List({
   ordered,
-  className,
   start,
   children,
 }: {
   ordered: boolean;
-  className: string | undefined;
   start?: number | undefined;
   children?: ReactNode;
 }) {
-  const tasks = className?.includes("contains-task-list");
   const look = cn(
     // A list stops at about 65 characters a line, however wide the pane, as a paragraph does.
-    "m-0 max-w-prose",
-    tasks ? "list-none pl-0" : ["pl-6", ordered ? "list-decimal" : "list-disc"],
+    "m-0 max-w-prose pl-6",
+    ordered ? "list-decimal" : "list-disc",
   );
   return ordered ? (
     <ol start={start} className={look}>
@@ -268,26 +277,52 @@ function ListItem({ className, children }: ComponentPropsWithoutRef<"li">) {
     return <li className={look}>{children}</li>;
   }
   return (
-    <li id={id} className={look}>
+    <li id={id} className={cn(look, "relative list-none")}>
       <TaskItemContext.Provider value={id}>{children}</TaskItemContext.Provider>
     </li>
   );
 }
 
 /**
- * A task item's box. Markdown writes it as `- [x]`, and it is drawn as the registry's `Checkbox`
- * so a rendered checklist matches a form's — disabled, because the document is being read, not
- * filled in: ticking it here would change nothing in the source.
+ * A task item's box. Markdown writes it as `- [x]`, and it is drawn in the registry's `Checkbox`
+ * look, so a rendered checklist matches a form's: an empty box edged `foreground/50`, or the
+ * chosen tint edged in `active` with a `foreground` check. Each mark is 3:1 or more on the page
+ * and on a card, which `palette-contrast.test.mjs` holds for the checkbox.
+ *
+ * It is not a `Checkbox`. The document is being read, not filled in, and ticking a box here would
+ * change nothing in the source, so it is no control: not a button, not in the tab order. It was a
+ * disabled `Checkbox`, and disabled is drawn at half opacity, where the tick was 2.8:1 and a ticked
+ * box hard to tell from an empty one (#471). It is a read-only `checkbox` role instead, so a
+ * screen reader still says checked or not checked, named by its item.
+ *
+ * It hangs in the list's indent, centred on the item's first line, where a bullet would be, so the
+ * item's text starts where every other item's does, wrapped lines too. It is taken out of the line
+ * rather than pulled back with a negative margin: Markdown writes a space after `[x]`, and beside
+ * an inline box that space is drawn, while a line drops the spaces it starts with. The `span`
+ * makes `1lh` the item's line height rather than the button's.
  */
 function TaskBox({ checked }: ComponentPropsWithoutRef<"input">) {
   const item = useContext(TaskItemContext);
+  const done = Boolean(checked);
   return (
-    <Checkbox
-      checked={Boolean(checked)}
-      disabled
-      aria-labelledby={item}
-      className="mr-2 inline-flex align-text-bottom"
-    />
+    <span className="-left-6 absolute top-0 flex h-[1lh] items-center">
+      {/* biome-ignore lint/a11y/useFocusableInteractive: read-only, in a document: a tab stop would offer an edit that changes nothing */}
+      {/* biome-ignore lint/a11y/useSemanticElements: `<input type="checkbox">` is a control, which `readonly` does not stop and `disabled` dims */}
+      <span
+        role="checkbox"
+        aria-checked={done}
+        aria-readonly
+        aria-labelledby={item}
+        data-slot="markdown-task-box"
+        className={cn(
+          CHECKBOX_CLASS,
+          "flex text-foreground",
+          done ? "border-active bg-active/40" : "border-foreground/50 bg-background",
+        )}
+      >
+        {done ? <Check aria-hidden className="h-3 w-3" /> : null}
+      </span>
+    </span>
   );
 }
 
@@ -735,13 +770,9 @@ const ELEMENTS: Components = {
   // Text blocks stop at `max-w-prose` (65ch): at a page's width a paragraph ran to 160
   // characters a line. Tables, code and images are not capped and keep the full width.
   p: ({ children }) => <p className="m-0 max-w-prose">{children}</p>,
-  ul: ({ className, children }) => (
-    <List ordered={false} className={className}>
-      {children}
-    </List>
-  ),
-  ol: ({ className, start, children }) => (
-    <List ordered className={className} start={start}>
+  ul: ({ children }) => <List ordered={false}>{children}</List>,
+  ol: ({ start, children }) => (
+    <List ordered start={start}>
       {children}
     </List>
   ),
@@ -776,16 +807,17 @@ const ELEMENTS: Components = {
   tbody: ({ children }) => <TableBody>{children}</TableBody>,
   tr: ({ children }) => <TableRow>{children}</TableRow>,
   // `style` is the column's alignment (`:--`, `:-:`, `--:`), which is the only style Markdown can
-  // write. A data table keeps a cell on one line; a document's cell is prose, so it wraps — at
-  // its words, not anywhere as the document's text does, or a column in a narrow pane shrinks to
-  // a letter wide. A table too wide for the pane scrolls inside `Table`'s own container.
+  // write. A data table keeps a column's name on one line; a document's is prose, so it wraps as
+  // its cells do — at its words, not anywhere as the document's text does, or a column in a
+  // narrow pane shrinks to a letter wide. A table too wide for the pane scrolls inside `Table`'s
+  // own container.
   th: ({ style, children }) => (
     <TableHead style={style} className="wrap-normal whitespace-normal">
       {children}
     </TableHead>
   ),
   td: ({ style, children }) => (
-    <TableCell style={style} className="wrap-normal whitespace-normal">
+    <TableCell style={style} className="wrap-normal">
       {children}
     </TableCell>
   ),
@@ -862,8 +894,8 @@ export type MarkdownProps = {
 
 /**
  * A Markdown string, rendered with GitHub-flavoured Markdown on. Every element is drawn from the
- * registry's own primitives (`CodeBlock`, `Code`, `Table`, `Separator`, `Checkbox`), so a rendered
- * document matches the page around it.
+ * registry's own primitives (`CodeBlock`, `Code`, `Table`, `Separator`), and a task item's box in
+ * `Checkbox`'s look, so a rendered document matches the page around it.
  *
  * Raw HTML is never rendered and no prop turns it on, because the content is as often someone
  * else's as the caller's. URLs are filtered by {@link MarkdownProps.urlTransform}. Links between
@@ -911,7 +943,7 @@ export function Markdown({
 
   if (content.trim() === "") {
     // Rule 5 — an absent slot draws nothing, and that includes the root.
-    return emptySlot ? (
+    return hasSlot(emptySlot) ? (
       <div data-slot="markdown" className={cn(DOCUMENT, className)}>
         {emptySlot}
       </div>

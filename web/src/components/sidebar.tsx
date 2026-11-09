@@ -5,12 +5,12 @@ import {
   type HeaderContentFooterProps,
 } from "@/components/header-content-footer";
 import { SectionHeading } from "@/components/section-heading";
-import { SidebarPositionContext } from "@/components/split-layout";
+import { AppBarEdgeContext, SidebarPositionContext } from "@/components/split-layout";
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight } from "@/components/ui/icons";
 import { IconClassContext } from "@/components/ui/icons-base";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn, type SlotNode } from "@/lib/utils";
+import { cn, hasSlot, type SlotNode, touchRowClass } from "@/lib/utils";
 
 /**
  * Hidden under the breakpoint, shown from it up. `flex` is what the root is on both platforms: a
@@ -79,8 +79,8 @@ export type SidebarProps = {
    */
   hideBelow?: keyof typeof HIDE_BELOW | undefined;
   /**
-   * Folded down to a rail of icons: every row is its icon, named and tooltipped by its label, and
-   * a section's title is read but not drawn. Controlled — the sidebar keeps no state, so where the
+   * Folded down to a rail of icons: every row is its icon, named and tooltipped by its label, its
+   * status and its count ("Servers, 2 failing, 5"), and a section's title is read but not drawn. Controlled — the sidebar keeps no state, so where the
    * choice is remembered is the app's.
    */
   collapsed?: boolean | undefined;
@@ -93,8 +93,11 @@ export type SidebarProps = {
   contentRef?: HeaderContentFooterProps["contentRef"];
   /** On the root. A different width is a `w-*` here. */
   className?: string | undefined;
+  /** On the header, above the scrolling nav: the brand, a switcher. */
   headerClassName?: string | undefined;
+  /** On the body that scrolls, which holds the sections. */
   contentClassName?: string | undefined;
+  /** On the footer, below the scrolling nav: the account, a collapse button. */
   footerClassName?: string | undefined;
 };
 
@@ -158,8 +161,10 @@ export function Sidebar({
           // `flex-1` beside `h-full`, not `h-full` alone: the frame's own border is inside its
           // height, and a percentage height would overflow it by the border's width.
           className="h-full min-h-0 flex-1"
-          // Folded, the header's inset is the rows', so what is in it lines up with their icons.
-          headerClassName={cn("gap-2", collapsed ? "p-2" : "p-3", headerClassName)}
+          // The header's inset is the rows' own: 16px open, the body's `p-2` and a row's `px-2`, so
+          // the brand starts where the row icons and the section titles do. Folded, it is the
+          // body's alone, so what is in it centres over the icons.
+          headerClassName={cn("gap-2", collapsed ? "p-2" : "px-4 py-3", headerClassName)}
           contentClassName={cn("gap-4 p-2", contentClassName)}
           footerClassName={cn("gap-0.5 border-foreground/10 border-t p-2", footerClassName)}
         />
@@ -209,7 +214,8 @@ export type SidebarSectionProps = SidebarSectionLandmarkProps & {
    * The title's heading rank. `2` by default — the sidebar sits beside the page, not under its
    * `h1`. Pick it by structure, never by size; the text is the same at every level.
    */
-  level?: 1 | 2 | 3 | 4 | 5 | 6 | undefined;
+  level?: 1 | 2 | 3 | undefined;
+  /** On the whole section, the title row and its list together. */
   className?: string | undefined;
   /** On the list the rows are items of. */
   contentClassName?: string | undefined;
@@ -255,7 +261,7 @@ export function SidebarSection({
   const sectionClassName = cn("min-w-0 gap-1", className);
 
   // Folded, the action is gone, so only a title is worth a heading row.
-  const headed = Boolean(collapsed ? title : title || actionSlot);
+  const headed = collapsed ? hasSlot(title) : hasSlot(title) || hasSlot(actionSlot);
 
   const body = (
     <>
@@ -269,19 +275,18 @@ export function SidebarSection({
           )}
         >
           <div className="cube-rn-view min-w-0 flex-1">
-            {title ? (
+            {hasSlot(title) ? (
               <SectionHeading
                 data-slot="sidebar-section-title"
                 id={titleId}
+                title={title}
                 variant="overline"
                 level={level}
                 className="truncate"
-              >
-                {title}
-              </SectionHeading>
+              />
             ) : null}
           </div>
-          {actionSlot && collapsed === false ? (
+          {hasSlot(actionSlot) && collapsed === false ? (
             <div data-slot="sidebar-section-action" className="cube-rn-view shrink-0">
               {actionSlot}
             </div>
@@ -294,7 +299,7 @@ export function SidebarSection({
       {rows.length > 0 ? (
         <ul
           data-slot="sidebar-section-list"
-          {...(title ? { "aria-labelledby": titleId } : {})}
+          {...(hasSlot(title) ? { "aria-labelledby": titleId } : {})}
           className={cn("cube-rn-view", "min-w-0 gap-0.5", contentClassName)}
         >
           {rows.map((row, index) => (
@@ -315,7 +320,7 @@ export function SidebarSection({
   // Two roots written out rather than one with a chosen role: the compiler picks the tag from the
   // role, and a role it cannot read is one it refuses.
   if (as === "nav") {
-    const titled = title ? { "aria-labelledby": titleId } : {};
+    const titled = hasSlot(title) ? { "aria-labelledby": titleId } : {};
     return (
       <nav
         data-slot="sidebar-section"
@@ -368,6 +373,7 @@ type SidebarItemBaseProps = Omit<PressableProps, "children" | "className" | "sty
    */
   status?: SidebarItemStatus | undefined;
   // Re-declared rather than inherited, for `exactOptionalPropertyTypes` — see `segmented.tsx`.
+  /** On the row: the link or button the reader presses. */
   className?: string | undefined;
 };
 
@@ -418,13 +424,15 @@ export type SidebarItemProps = SidebarItemBaseProps &
 function rowClassName(active: boolean, className: string | undefined) {
   return cn(
     "min-h-8 min-w-0 flex-row items-center gap-2 rounded-md px-2 py-1.5 transition-colors",
+    // A finger's 44pt on device, where rows stack too close for a `hitSlop` (#470).
+    touchRowClass(),
     "focus-visible:outline-none",
     // The web half's icons size from here, as a `Button`'s do; device's from the context below.
     "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
-    // The current place is the chosen tint, a step further under the pointer and focused.
+    // The current place is the chosen tint, a step further under the pointer, focused and pressed.
     active
-      ? "bg-active/40 text-foreground hover:bg-active/60 focus-visible:bg-active/60"
-      : "text-foreground hover:bg-hover focus-visible:bg-hover",
+      ? "bg-active/40 text-foreground hover:bg-active/60 focus-visible:bg-active/60 active:bg-active/60"
+      : "text-foreground hover:bg-hover focus-visible:bg-hover active:bg-hover",
     className,
   );
 }
@@ -482,13 +490,17 @@ function rowName(
 /**
  * A folded row under its tooltip: the label is nowhere on screen, so a pointer or a long press
  * brings it up, on the side the page is on. Its own provider, as `AppBarItem`'s is.
+ *
+ * The tooltip is the row's whole name, as `rowName` joins it, and not only the label: the count
+ * and the status dot on a folded row are marks with no words, and "2 failing" was only in the
+ * `aria-label`, where a sighted reader never sees it (#471).
  */
-function withTooltip(row: React.ReactElement, label: string, side: "start" | "end") {
+function withTooltip(row: React.ReactElement, name: string, side: "start" | "end") {
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>{row}</TooltipTrigger>
-        <TooltipContent side={side === "start" ? "right" : "left"}>{label}</TooltipContent>
+        <TooltipContent side={side === "start" ? "right" : "left"}>{name}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );
@@ -523,7 +535,7 @@ function SidebarItemBody({
     // it is still something to aim at rather than a gap in the rail.
     return (
       <>
-        {iconSlot ? (
+        {hasSlot(iconSlot) ? (
           <IconClassContext.Provider value={cn("size-4 shrink-0", text)}>
             {iconSlot}
           </IconClassContext.Provider>
@@ -543,7 +555,7 @@ function SidebarItemBody({
 
   return (
     <>
-      {iconSlot ? (
+      {hasSlot(iconSlot) ? (
         <IconClassContext.Provider value={cn("size-4 shrink-0", text)}>
           {iconSlot}
         </IconClassContext.Provider>
@@ -559,7 +571,7 @@ function SidebarItemBody({
       >
         {label}
       </span>
-      {status?.iconSlot ? (
+      {status !== undefined && hasSlot(status.iconSlot) ? (
         <div data-slot="sidebar-item-status-icon" aria-hidden className="cube-rn-view shrink-0">
           <IconClassContext.Provider value={cn("size-4 shrink-0", muted)}>
             {status.iconSlot}
@@ -570,7 +582,11 @@ function SidebarItemBody({
       {status ? (
         <span
           data-slot="sidebar-item-status"
-          className={cn("cube-rn-text", "shrink-0 text-xs", status.iconSlot ? SR_ONLY : muted)}
+          className={cn(
+            "cube-rn-text",
+            "shrink-0 text-xs",
+            hasSlot(status.iconSlot) ? SR_ONLY : muted,
+          )}
         >
           {status.label}
         </span>
@@ -603,13 +619,17 @@ function SidebarItemBody({
  * The row forwards its ref and every prop it does not name to the `Pressable`, which is how the
  * router's `href` and press handler land on it. With `onPress` and no `href` it is a button and
  * never carries `aria-current`: the footer's Sign out. In a collapsed `Sidebar` it is its icon,
- * or its first letter, with the label as its name and tooltip.
+ * or its first letter, with its label, status and count as its name and its tooltip.
  */
 const SidebarItem = React.forwardRef<HTMLButtonElement, SidebarItemProps>(
   ({ href, label, iconSlot, count, status, active = false, className, ...props }, ref) => {
     const { collapsed, side } = React.useContext(SidebarContext);
     const name = rowName(label, status, count);
-    const rail = (row: React.ReactElement) => (collapsed ? withTooltip(row, label, side) : row);
+    const rail = (row: React.ReactElement) => (collapsed ? withTooltip(row, name, side) : row);
+    // Folded, the tooltip says what the name says. `aria-describedby` is passed even when empty:
+    // radix points its trigger at the open bubble, `Slot` lets the child's value win, and a row
+    // described by its own name reads it twice.
+    const folded = collapsed ? { "aria-label": name, "aria-describedby": undefined } : {};
     // Folded, the row is a square around its icon, and the markers hang off its corners.
     const box = cn(collapsed && "relative justify-center px-0", className);
 
@@ -622,7 +642,7 @@ const SidebarItem = React.forwardRef<HTMLButtonElement, SidebarItemProps>(
           ref={ref as React.Ref<HTMLButtonElement>}
           className={cn("cube-rn-view cube-rn-pressable", rowClassName(false, box))}
           // Nothing inside a folded row is text, so the web's name is written out too.
-          {...(collapsed ? { "aria-label": name } : {})}
+          {...(folded as React.ComponentPropsWithoutRef<"button">)}
           {...(props as React.ComponentPropsWithoutRef<"button">)}
         >
           <SidebarItemBody
@@ -645,7 +665,7 @@ const SidebarItem = React.forwardRef<HTMLButtonElement, SidebarItemProps>(
         // its name is joined here — before `props`, so a caller's own label still wins.
         href={href}
         aria-current={active ? "page" : undefined}
-        {...(collapsed ? { "aria-label": name } : {})}
+        {...(folded as React.ComponentPropsWithoutRef<"a">)}
         className={cn("cube-rn-view cube-rn-pressable", rowClassName(active, box))}
         {...(props as React.ComponentPropsWithoutRef<"a">)}
       >
@@ -701,7 +721,8 @@ export function SidebarCollapseButton({
 export type AppBarItemProps = Omit<PressableProps, "children" | "className" | "style"> & {
   /**
    * What the place is called. Nothing draws it, so it is the link's accessible name — an icon with
-   * no name is announced as "link" — and the tooltip a pointer or a long press brings up.
+   * no name is announced as "link" — and the tooltip a pointer or a long press brings up, with the
+   * status and the count after it.
    */
   label: string;
   /** The whole of what is drawn. Pass a bare `<Folder />`; the item sizes and colours it. */
@@ -726,6 +747,7 @@ export type AppBarItemProps = Omit<PressableProps, "children" | "className" | "s
    */
   status?: SidebarItemStatus | undefined;
   // Re-declared rather than inherited, for `exactOptionalPropertyTypes` — see `segmented.tsx`.
+  /** On the bar's item: the link or button the reader presses. */
   className?: string | undefined;
 };
 
@@ -742,48 +764,60 @@ export type AppBarItemProps = Omit<PressableProps, "children" | "className" | "s
  * ```
  *
  * `label` is required, because it is the link's only name and its tooltip. The count is a badge on
- * the icon and a `status` is a dot, and both are in the name: "Skills, MCP on, 12". It is always a
- * link; the bar's buttons are icon `Button`s in `actionSlot`.
+ * the icon and a `status` is a dot, and both are in the name and the tooltip: "Skills, MCP on, 12",
+ * so the dot's meaning is on screen and not only read. It is always a link; the bar's buttons are
+ * icon `Button`s in `actionSlot`.
  */
 const AppBarItem = React.forwardRef<HTMLButtonElement, AppBarItemProps>(
   ({ href, label, iconSlot, count, status, active = false, className, ...props }, ref) => {
     // Native inherits no colour, so the icon carries its own; the web half's takes the link's.
-    const text = active ? "text-foreground" : "text-foreground/60";
-
-    return (
+    // Full ink whether current or not, as a sidebar row is: the current place is the tint.
+    const text = "text-foreground";
+    const name = rowName(label, status, count);
+    const edge = React.useContext(AppBarEdgeContext);
+    const inside = (
+      <>
+        <IconClassContext.Provider value={cn("size-4 shrink-0", text)}>
+          {iconSlot}
+        </IconClassContext.Provider>
+        <IconMarkers count={count} status={status} ring="border-background" />
+      </>
+    );
+    const placeTooltip = (place: React.ReactElement) => (
       <TooltipProvider>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <a
-              ref={ref as React.Ref<HTMLAnchorElement>}
-              data-slot="app-bar-item"
-              // Nothing inside is text, so the name is written out on both platforms — joined the
-              // way the row's is, and before `props`, so a caller's own label still wins.
-              aria-label={rowName(label, status, count)}
-              // React Native has no `href` and no `aria-current`; the web has both, and needs both.
-              href={href}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "cube-rn-view cube-rn-pressable",
-                "relative size-8 shrink-0 items-center justify-center rounded-md transition-colors",
-                "focus-visible:outline-none",
-                "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
-                active
-                  ? "bg-active/40 text-foreground hover:bg-active/60 focus-visible:bg-active/60"
-                  : "text-foreground/60 hover:bg-hover hover:text-foreground focus-visible:bg-hover focus-visible:text-foreground",
-                className,
-              )}
-              {...(props as React.ComponentPropsWithoutRef<"a">)}
-            >
-              <IconClassContext.Provider value={cn("size-4 shrink-0", text)}>
-                {iconSlot}
-              </IconClassContext.Provider>
-              <IconMarkers count={count} status={status} ring="border-background" />
-            </a>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{label}</TooltipContent>
+          <TooltipTrigger asChild>{place}</TooltipTrigger>
+          <TooltipContent side={edge === "bottom" ? "top" : "bottom"}>{name}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
+    );
+    return placeTooltip(
+      <a
+        ref={ref as React.Ref<HTMLAnchorElement>}
+        data-slot="app-bar-item"
+        // Nothing inside is text, so the name is written out on both platforms — joined the way
+        // the row's is, and before `props`, so a caller's own label still wins. The tooltip says
+        // the same, so it describes nothing: see `withTooltip`.
+        aria-label={name}
+        aria-describedby={undefined}
+        // React Native has no `href` and no `aria-current`; the web has both, and needs both.
+        href={href}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          // 36px, an `icon-sm` button's square, so a place and the bar's actions are one size.
+          "cube-rn-view cube-rn-pressable",
+          "relative size-9 shrink-0 items-center justify-center rounded-md transition-colors",
+          "focus-visible:outline-none",
+          "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+          active
+            ? "bg-active/40 text-foreground hover:bg-active/60 focus-visible:bg-active/60"
+            : "text-foreground hover:bg-hover focus-visible:bg-hover",
+          className,
+        )}
+        {...(props as React.ComponentPropsWithoutRef<"a">)}
+      >
+        {inside}
+      </a>,
     );
   },
 );
