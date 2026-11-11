@@ -277,6 +277,36 @@ The write tools (`ragdown_remember`, `ragdown_write`, `ragdown_edit`, `ragdown_m
 `RAGDOWN_READ_ONLY=true`. At `/mcp` every tool but `ragdown_reindex` also takes a `folder`: see
 [Every folder at once](#every-folder-at-once).
 
+### Documents as resources
+
+Every endpoint serves its documents as MCP resources, by the template `ragdown://{folder}/{+path}`
+from `resources/templates/list`. `resources/read` answers with the file's Markdown
+(`text/markdown`), by the same rules as the web UI's `/api/doc`: only a document the index holds,
+inside the folder, and on a folder's or subfolder's endpoint only one of its own. The folder is in
+the URI even on a folder's own endpoint, and the path is the folder's, so one URI is one document
+whichever endpoint handed it out. `resources/list` is empty, and there are no subscriptions.
+
+`ragdown_remember`, `ragdown_write`, `ragdown_edit` and `ragdown_move` (for a document, at its new
+path) put a `resource_link` to the document after their text, which stays first and as it was. A
+host can collect those to show what a run wrote without reading the sentence before them:
+
+```json
+{
+  "type": "resource_link",
+  "uri": "ragdown://work/notes/2026-11-10-weekly-summary.md",
+  "name": "notes/2026-11-10-weekly-summary.md",
+  "title": "Weekly summary",
+  "mimeType": "text/markdown",
+  "annotations": { "audience": ["user", "assistant"], "lastModified": "2026-11-10T09:00:00.000Z" },
+  "_meta": { "com.cubicecho/webUrl": "http://ragdown.lan:8080/f/work?doc=notes%2F2026-11-10-weekly-summary.md" }
+}
+```
+
+`_meta["com.cubicecho/webUrl"]` is there only when `RAGDOWN_PUBLIC_URL` says where a browser
+reaches the web UI; nothing is guessed from `PORT`. Neither address carries the token: a read sits
+behind the same bearer as every other `/mcp` call, and the web link lands on the UI's token gate.
+`ragdown_delete` and `ragdown_create_folder` link nothing.
+
 Every tool an agent is offered costs it context on every turn, used or not: the twelve descriptions
 together are about 15,000 characters, and `/mcp` adds two tools and a `folder` argument to those. `RAGDOWN_DISABLED_TOOLS` leaves out the ones you name.
 `ragdown_context,ragdown_stats,ragdown_reindex` is a fair set to drop for an agent that only reads
@@ -305,6 +335,7 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `RAGDOWN_FOLLOW_LINKS` | `0` | How many of a search's best hits have the wikilinks in their own section followed: each linked document's two closest sections are placed right after the hit, within its folder and under the search's filters. `0` is off. See [Design](#design). |
 | `RAGDOWN_QUERY_LOG` | `false` | Log every search, hook call and `ragdown_read_doc` to `query-log.jsonl` in the data dir, for the web UI's **Settings → Usage**. Never sent anywhere. See [Design](#design). |
 | `RAGDOWN_LAN_ADVERTISE` | `false` | `serve` only. Announce the server on the local network over mDNS (`_mcp._tcp`). See [Network discovery](#network-discovery). |
+| `RAGDOWN_PUBLIC_URL` | — | Where a person's browser reaches the web UI, such as `http://ragdown.lan:8080`, which need not be the address an MCP client dialled. Unset, a write tool's link has no web address. See [Documents as resources](#documents-as-resources). |
 | `RAGDOWN_HOOK_TOP_K` | `4` | `ragdown_context`: most sections per prompt. |
 | `RAGDOWN_HOOK_MIN_SCORE` | the embedder's own | `ragdown_context`: lowest cosine similarity returned. Defaults to the `MIN_SCORE` of the embedder in use (`0.8` for the default one), so leave it unset unless you measured a better number. |
 | `RAGDOWN_HOOK_MIN_RATIO` | `0.95` | `ragdown_context`: lowest share of the best hit's similarity a hit may have and still be injected; `0` disables it. Being a ratio, it carries across embedders as `MIN_SCORE` does not. See [Design](#design). |
@@ -315,7 +346,7 @@ Only `RAGDOWN_DOCS_DIR` is required. See [`.env.example`](.env.example).
 | `SECURE_LOCAL_NET` | `false` | `serve` only. Skip the token on a trusted network. `serve` refuses to start with neither. |
 
 Under `serve`, the embedder, watching, the `/mcp` root, the characters per hit, the sections per
-document, the query log, advertising on the LAN and the four `ragdown_context` defaults can also be changed while the server runs, under **Settings → Server** in the web UI. What
+document, the query log, advertising on the LAN, the public address and the four `ragdown_context` defaults can also be changed while the server runs, under **Settings → Server** in the web UI. What
 is saved there is kept in `.ragdown-server.json` in the docs directory and wins over the variable of
 the same setting, at once and after every restart, until it is cleared there; the variable is the
 value it goes back to. A new embedder is loaded first (so one that cannot load changes nothing),
@@ -332,7 +363,7 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 
 | Route | Auth | |
 | --- | --- | --- |
-| `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. `settings` holds the non-secret tuning values (`RAGDOWN_EMBEDDER`, `RAGDOWN_WATCH`, `RAGDOWN_ROOT_MCP`, `RAGDOWN_TEXT_LIMIT`, `RAGDOWN_MAX_PER_DOCUMENT`, `RAGDOWN_FOLLOW_LINKS`, `RAGDOWN_QUERY_LOG`, `RAGDOWN_LAN_ADVERTISE`, `RAGDOWN_HOOK_*`) for the web UI's Settings page: the ones in effect, the ones `saved` there, and what the `env` says. |
+| `GET /api/status` | none | Liveness and index stats. `ready: false` while the model loads. `settings` holds the non-secret tuning values (`RAGDOWN_EMBEDDER`, `RAGDOWN_WATCH`, `RAGDOWN_ROOT_MCP`, `RAGDOWN_TEXT_LIMIT`, `RAGDOWN_MAX_PER_DOCUMENT`, `RAGDOWN_FOLLOW_LINKS`, `RAGDOWN_QUERY_LOG`, `RAGDOWN_LAN_ADVERTISE`, `RAGDOWN_PUBLIC_URL`, `RAGDOWN_HOOK_*`) for the web UI's Settings page: the ones in effect, the ones `saved` there, and what the `env` says. |
 | `/mcp/<folder>[/<subfolder...>]` | bearer | Streamable HTTP MCP, stateless, for a folder with MCP on. 404 otherwise. See [Folders](#folders). |
 | `/mcp` | bearer | The same over every folder with MCP on, while `RAGDOWN_ROOT_MCP` is on. 404 otherwise. See [Every folder at once](#every-folder-at-once). |
 | `GET /.well-known/ai-catalog.json` | none | The AI Catalog: one entry per MCP endpoint, each pointing at its Server Card. See [Network discovery](#network-discovery). |
@@ -341,7 +372,7 @@ image runs). Searching, indexing and stats are MCP tools, not commands.
 | `POST /api/folders` | bearer | Create a folder: JSON `{ name, title?, mcp? }`. 201; 409 when it exists, 400 for a bad name. |
 | `PATCH /api/folders/<name>` | bearer | JSON `{ title?, mcp?, hook?, name? }`: change its settings, or rename it with `name` (which re-indexes it). `hook` takes any of `top_k`, `min_score`, `min_ratio` and `max_chars`; `null` takes the folder's own value away. Unknown keys in `.ragdown.json` are kept. |
 | `DELETE /api/folders/<name>?confirm=<name>` | bearer | Delete a folder and everything in it. 400 unless `confirm` repeats the name. |
-| `PATCH /api/settings` | bearer | JSON `{ embedder?, watch?, root_mcp?, text_limit?, max_per_document?, follow_links?, query_log?, lan_advertise?, hook? }`: save server settings over their variables and apply them at once. `null` gives a value back to its variable. 400 for a value that is not valid or an embedder that cannot load, 409 when this process is not the one that owns the index. Answers with the new `settings`. |
+| `PATCH /api/settings` | bearer | JSON `{ embedder?, watch?, root_mcp?, text_limit?, max_per_document?, follow_links?, query_log?, lan_advertise?, public_url?, hook? }`: save server settings over their variables and apply them at once. `null` gives a value back to its variable. 400 for a value that is not valid or an embedder that cannot load, 409 when this process is not the one that owns the index. Answers with the new `settings`. |
 | `GET /api/query-log` | bearer | The query log summed up for **Settings → Usage**: `enabled`, and a `summary` of the searches, the `gaps` (queries whose best hit was under the minimum score), the hook's injection rate, and the documents read most with how many reads followed a search that showed them. `DELETE` empties the log, read-only or not. |
 | `DELETE /api/loose?name=` | bearer | Delete one of the `loose_files`: a Markdown file directly in the docs directory. 404 for any other name. |
 | `GET /api/docs?folder=` | bearer | The indexed files, of one folder or all: `path`, `folder`, `title`, `description`, `tags`, `aliases`, `created_by`, `session`, `superseded_by`, `mtime_ms`, `size`, `chunks`. |

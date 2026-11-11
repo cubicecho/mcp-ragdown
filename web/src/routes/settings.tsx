@@ -619,6 +619,29 @@ function IndexSettingsCard({ status, loading }: { status: Status | undefined; lo
                     </>
                   }
                 />,
+                <PropertyRow
+                  key="public-url"
+                  label="Public address"
+                  value={
+                    status.settings.public_url ? (
+                      <code className="break-all text-xs leading-5">
+                        {status.settings.public_url}
+                      </code>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  hint={
+                    <>
+                      <Env
+                        name="RAGDOWN_PUBLIC_URL"
+                        saved={status.settings.saved.public_url !== undefined}
+                      />
+                      . Where a browser reaches this page: a document an agent writes over MCP is
+                      linked to it, for the host to open.
+                    </>
+                  }
+                />,
               ]}
             />
           ) : null

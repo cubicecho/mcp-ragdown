@@ -14,7 +14,9 @@ import { type ApiRequest, allow, assertWritable, json, readJsonObject } from "./
 
 /**
  * The settings the web UI shows, read from the environment at start. Served unauthenticated with
- * the status, so only tuning numbers belong here: never the token, a key, or an endpoint URL.
+ * the status, so only tuning numbers belong here: never the token, a key, or an endpoint URL. The
+ * public URL is the one address that is: it is this server's own, which whoever reads this has
+ * already reached.
  */
 export function publicSettings(config: Config) {
   return {
@@ -26,6 +28,7 @@ export function publicSettings(config: Config) {
     follow_links: config.followLinks,
     query_log: config.queryLog,
     lan_advertise: config.lanAdvertise,
+    public_url: config.publicUrl,
     hook: {
       top_k: config.hook.topK,
       min_score: config.hook.minScore,
@@ -45,6 +48,7 @@ export function publicSettings(config: Config) {
       follow_links: config.env.followLinks,
       query_log: config.env.queryLog,
       lan_advertise: config.env.lanAdvertise,
+      public_url: config.env.publicUrl,
       hook: {
         top_k: config.env.hook.topK,
         min_score: config.env.hook.minScore,

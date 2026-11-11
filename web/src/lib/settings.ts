@@ -5,7 +5,8 @@ type Settings = Status["settings"];
 
 /**
  * The server settings as their form holds them. The embedder and the switches always show a
- * value; a number left empty is `null`, which is whatever the environment says.
+ * value; a number left empty is `null`, and the address left empty is `""`, each of which is
+ * whatever the environment says.
  */
 export type SettingsForm = {
   embedder: string;
@@ -16,6 +17,7 @@ export type SettingsForm = {
   follow_links: number | null;
   query_log: boolean;
   lan_advertise: boolean;
+  public_url: string;
   top_k: number | null;
   min_score: number | null;
   min_ratio: number | null;
@@ -31,6 +33,7 @@ export const settingsForm = (settings: Settings): SettingsForm => ({
   follow_links: settings.saved.follow_links ?? null,
   query_log: settings.query_log,
   lan_advertise: settings.lan_advertise,
+  public_url: settings.saved.public_url ?? "",
   top_k: settings.saved.hook?.top_k ?? null,
   min_score: settings.saved.hook?.min_score ?? null,
   min_ratio: settings.saved.hook?.min_ratio ?? null,
@@ -67,6 +70,10 @@ export function settingsPatch(settings: Settings, values: SettingsForm): ServerS
   if (values.lan_advertise !== settings.lan_advertise) {
     patch.lan_advertise =
       values.lan_advertise === settings.env.lan_advertise ? null : values.lan_advertise;
+  }
+  const publicUrl = values.public_url.trim();
+  if (publicUrl !== (settings.saved.public_url ?? "")) {
+    patch.public_url = publicUrl || null;
   }
   const hook: NonNullable<ServerSettingsPatch["hook"]> = {};
   for (const key of HOOK_KEYS) {

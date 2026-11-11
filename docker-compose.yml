@@ -23,6 +23,7 @@ services:
       SECURE_LOCAL_NET: ${SECURE_LOCAL_NET:-false}
       RAGDOWN_READ_ONLY: ${RAGDOWN_READ_ONLY:-false}
       RAGDOWN_LAN_ADVERTISE: ${RAGDOWN_LAN_ADVERTISE:-false}
+      RAGDOWN_PUBLIC_URL: ${RAGDOWN_PUBLIC_URL:-}
     restart: unless-stopped
 
 volumes:

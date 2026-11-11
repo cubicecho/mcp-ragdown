@@ -10,6 +10,7 @@ export interface ServerSettings {
   follow_links?: number;
   query_log?: boolean;
   lan_advertise?: boolean;
+  public_url?: string;
   hook?: HookOverrides;
 }
 
@@ -23,6 +24,7 @@ export interface ServerSettingsPatch {
   follow_links?: number | null;
   query_log?: boolean | null;
   lan_advertise?: boolean | null;
+  public_url?: string | null;
   hook?: { [K in keyof HookOverrides]?: number | null };
 }
 
@@ -48,6 +50,8 @@ export interface Status {
     query_log: boolean;
     /** On, the server announces itself on the local network over mDNS. */
     lan_advertise: boolean;
+    /** Where a person's browser reaches this UI, for the web links on MCP write results; or null. */
+    public_url: string | null;
     /** `ragdown_context`'s defaults, which a hook's own arguments override. */
     hook: {
       top_k: number;
@@ -69,6 +73,7 @@ export interface Status {
       follow_links: number;
       query_log: boolean;
       lan_advertise: boolean;
+      public_url: string | null;
       hook: { top_k: number; min_score: number | null; min_ratio: number; max_chars: number };
     };
     /** The embedders a form can offer, with each one's own floor and unrelated score. */
