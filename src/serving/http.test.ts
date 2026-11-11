@@ -1040,6 +1040,32 @@ describe("discovery documents", () => {
     expect(changes).toBe(2);
   });
 
+  it("saves public_url over RAGDOWN_PUBLIC_URL, and an empty one gives the variable back", async () => {
+    const t = await serve({ RAGDOWN_TOKEN: "secret", RAGDOWN_PUBLIC_URL: "http://nas.local:8080" });
+    const patch = (body: unknown) =>
+      fetch(`${t.url}/api/settings`, {
+        method: "PATCH",
+        headers: { ...auth("secret"), "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    for (const bad of ["ragdown.lan", "ftp://ragdown.lan", "http://ragdown.lan/?x=1", 8080]) {
+      expect((await patch({ public_url: bad })).status, String(bad)).toBe(400);
+    }
+    expect(t.config.publicUrl).toBe("http://nas.local:8080");
+
+    const saved = await patch({ public_url: "https://docs.example.org/ragdown/" });
+    expect(((await saved.json()) as { settings: unknown }).settings).toMatchObject({
+      public_url: "https://docs.example.org/ragdown",
+      saved: { public_url: "https://docs.example.org/ragdown" },
+      env: { public_url: "http://nas.local:8080" },
+    });
+    expect(t.config.publicUrl).toBe("https://docs.example.org/ragdown");
+
+    await patch({ public_url: "" });
+    expect(t.config.publicUrl).toBe("http://nas.local:8080");
+    expect(t.config.saved).toEqual({});
+  });
+
   it("starts with advertising on when RAGDOWN_LAN_ADVERTISE says so", async () => {
     const t = await serve({ SECURE_LOCAL_NET: "true", RAGDOWN_LAN_ADVERTISE: "true" });
     const status = (await (await fetch(`${t.url}/api/status`)).json()) as {

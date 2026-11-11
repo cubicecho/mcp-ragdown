@@ -76,6 +76,9 @@ is a "document" everywhere in the code; a "file" is anything on disk, attachment
     `Root`: at the root each takes a `folder`, and `ragdown_folders` and `ragdown_create_folder`
     exist. A folder endpoint's schemas must not change when the root's do. `tool-results.ts` is the
     text the document tools answer with: an agent pays for every character, so not JSON.
+  - `mcp-resources.ts`: the documents as resources (`ragdown://{folder}/{+path}`, read by
+    `/api/doc`'s rules) and the `resource_link` the write tools put after their text. The URI
+    names the folder and the folder's path on every endpoint, so it means one document anywhere.
   - `http.ts`: `serve` — the server, bearer auth, `/mcp/<folder>[/<sub...>]`, bare `/mcp` when `root_mcp` is on, and `/api/status`, and
     the dispatch to one handler per resource: `api-folders.ts` (`/api/folders`, `/api/loose`),
     `api-documents.ts` (`/api/docs`, `/api/doc`, `/api/move`, `/api/search`, `/api/resolve`,

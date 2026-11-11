@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult, ResourceLink } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { Root } from "../documents/root.ts";
 import type { Scope } from "../documents/scope.ts";
@@ -10,6 +10,7 @@ import type { Config } from "../shared/config.ts";
 import { defaults } from "../shared/defaults.ts";
 import { errorMessage } from "../shared/errors.ts";
 import { docsPath, loggedHit, loggedTrace } from "../usage/query-log.ts";
+import { documentLink, registerDocuments } from "./mcp-resources.ts";
 import {
   formatDocument,
   formatEdited,
@@ -89,6 +90,8 @@ export function createMcpServer(
         : `Search ${which}. ${recallFirst}`,
     },
   );
+  registerDocuments(server, target);
+
   /** What a path argument is relative to. */
   const base = root ? "the folder" : "the documents root";
 
@@ -412,14 +415,13 @@ export function createMcpServer(
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       (args) =>
-        inScope(args, async (rag) =>
-          formatRemembered(
-            await rag.remember(args.title, args.content, args.tags, args.name, {
-              supersedes: args.supersedes,
-              sessionId: args.session_id,
-            }),
-          ),
-        ),
+        inScope(args, async (rag) => {
+          const remembered = await rag.remember(args.title, args.content, args.tags, args.name, {
+            supersedes: args.supersedes,
+            sessionId: args.session_id,
+          });
+          return linked(rag, remembered.path, formatRemembered(remembered));
+        }),
     );
 
     register(
@@ -456,16 +458,15 @@ export function createMcpServer(
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       (args) =>
-        inScope(args, async (rag) =>
-          formatWritten(
-            await rag.write(args.path, args.text, {
-              append: args.append,
-              heading: args.heading,
-              baseHash: args.base_hash,
-              sessionId: args.session_id || undefined,
-            }),
-          ),
-        ),
+        inScope(args, async (rag) => {
+          const written = await rag.write(args.path, args.text, {
+            append: args.append,
+            heading: args.heading,
+            baseHash: args.base_hash,
+            sessionId: args.session_id || undefined,
+          });
+          return linked(rag, written.path, formatWritten(written));
+        }),
     );
 
     register(
@@ -504,19 +505,18 @@ export function createMcpServer(
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       (args) =>
-        inScope(args, async (rag) =>
-          formatEdited(
-            await rag.edit(
-              args.path,
-              args.edits.map((edit) => ({
-                oldText: edit.old_text,
-                newText: edit.new_text,
-                replaceAll: edit.replace_all,
-              })),
-              args.base_hash,
-            ),
-          ),
-        ),
+        inScope(args, async (rag) => {
+          const edited = await rag.edit(
+            args.path,
+            args.edits.map((edit) => ({
+              oldText: edit.old_text,
+              newText: edit.new_text,
+              replaceAll: edit.replace_all,
+            })),
+            args.base_hash,
+          );
+          return linked(rag, edited.path, formatEdited(edited));
+        }),
     );
 
     register(
@@ -541,7 +541,11 @@ export function createMcpServer(
         }),
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
-      (args) => inScope(args, async (rag) => formatMoved(await rag.move(args.from, args.to))),
+      (args) =>
+        inScope(args, async (rag) => {
+          const moved = await rag.move(args.from, args.to);
+          return linked(rag, moved.to, formatMoved(moved));
+        }),
     );
 
     register(
@@ -652,10 +656,34 @@ function folderOf(args: object): string | undefined {
   return "folder" in args && typeof args.folder === "string" ? args.folder : undefined;
 }
 
+/**
+ * A tool's text and, after it, the `resource_link` of the document it wrote. The text stays first
+ * and as it was, so a model that ignores links reads what it always read.
+ */
+class Linked {
+  readonly text: string;
+  readonly link: ResourceLink | undefined;
+
+  constructor(text: string, link: ResourceLink | undefined) {
+    this.text = text;
+    this.link = link;
+  }
+}
+
+/** A write's text with a link to the document at `path` (relative to the scope), if it is one. */
+async function linked(rag: Scope, path: string, text: string): Promise<Linked> {
+  return new Linked(text, await documentLink(rag, path, rag.config.publicUrl));
+}
+
 /** A tool failure is a result the model can read, never a transport error. */
 async function run(body: () => Promise<unknown>): Promise<CallToolResult> {
   try {
     const result = await body();
+    if (result instanceof Linked) {
+      return {
+        content: [{ type: "text", text: result.text }, ...(result.link ? [result.link] : [])],
+      };
+    }
     const text = typeof result === "string" ? result : JSON.stringify(result);
     return { content: [{ type: "text", text }] };
   } catch (error) {

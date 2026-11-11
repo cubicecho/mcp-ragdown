@@ -8,7 +8,7 @@ import {
   parseHookChanges,
   resolveHook,
 } from "../hook/hook-settings.ts";
-import type { Config } from "./config.ts";
+import { type Config, parsePublicUrl } from "./config.ts";
 import { errorMessage } from "./errors.ts";
 import { isRecord } from "./json.ts";
 import { Refusal } from "./refusal.ts";
@@ -30,6 +30,7 @@ export interface ServerSettings {
   follow_links?: number;
   query_log?: boolean;
   lan_advertise?: boolean;
+  public_url?: string;
   hook?: HookOverrides;
 }
 
@@ -43,6 +44,7 @@ export interface SettingsChanges {
   follow_links?: number | null;
   query_log?: boolean | null;
   lan_advertise?: boolean | null;
+  public_url?: string | null;
   hook?: HookChanges;
 }
 
@@ -147,6 +149,18 @@ export function parseChanges(body: Record<string, unknown> | undefined): Setting
     }
     out.lan_advertise = lanAdvertise;
   }
+  if (body?.public_url !== undefined) {
+    // An empty field in the form is no address, which is the variable's again.
+    if (body.public_url === null || body.public_url === "") {
+      out.public_url = null;
+    } else {
+      const url = typeof body.public_url === "string" ? parsePublicUrl(body.public_url) : undefined;
+      if (url === undefined) {
+        throw invalid("public_url must be an http or https URL");
+      }
+      out.public_url = url;
+    }
+  }
   if (body?.hook !== undefined) {
     out.hook = parseHookChanges(body.hook);
   }
@@ -196,6 +210,11 @@ export function applyChanges(saved: ServerSettings, changes: SettingsChanges): S
   } else if (changes.lan_advertise !== undefined) {
     out.lan_advertise = changes.lan_advertise;
   }
+  if (changes.public_url === null) {
+    delete out.public_url;
+  } else if (changes.public_url !== undefined) {
+    out.public_url = changes.public_url;
+  }
   if (changes.hook) {
     const hook = mergeHookChanges(saved.hook ?? {}, changes.hook);
     if (Object.keys(hook).length > 0) {
@@ -224,6 +243,7 @@ export function applySettings(config: Config, saved: ServerSettings): void {
   config.followLinks = saved.follow_links ?? env.followLinks;
   config.queryLog = saved.query_log ?? env.queryLog;
   config.lanAdvertise = saved.lan_advertise ?? env.lanAdvertise;
+  config.publicUrl = saved.public_url ?? env.publicUrl;
   config.hook = resolveHook({}, saved.hook ?? {}, {
     ...env.hook,
     // Unset everywhere, the floor is the embedder's own, so it moves when the embedder does.

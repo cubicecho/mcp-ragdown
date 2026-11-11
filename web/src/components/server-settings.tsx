@@ -1,4 +1,10 @@
-import { NumberField, SelectField, SwitchField, useAppForm } from "@/components/app-form";
+import {
+  InputField,
+  NumberField,
+  SelectField,
+  SwitchField,
+  useAppForm,
+} from "@/components/app-form";
 import { DialogLayout } from "@/components/dialog-layout";
 import { Section } from "@/components/section";
 import { Alert } from "@/components/ui/alert";
@@ -15,6 +21,20 @@ const countError = (value: number | null) =>
   value === null || (Number.isInteger(value) && value >= 0)
     ? undefined
     : "A whole number, 0 or more.";
+
+/** The server takes an http or https address with no query or fragment; the form says so first. */
+const publicUrlError = (value: string) => {
+  if (!value.trim()) return undefined;
+  try {
+    const url = new URL(value.trim());
+    if ((url.protocol === "http:" || url.protocol === "https:") && !url.search && !url.hash) {
+      return undefined;
+    }
+  } catch {
+    // Not a URL at all: the same answer.
+  }
+  return "An http:// or https:// address, such as http://ragdown.lan:8080.";
+};
 
 /**
  * The server-wide settings as one form. What is saved wins over the environment variable of the
@@ -113,6 +133,14 @@ export function EditServerSettings({
             name="lan_advertise"
             label="Advertise on the local network"
             description="Announces this server over mDNS, so tools on the same network, such as mcp-router, can find it without being given its address."
+          />
+          <InputField
+            form={form}
+            name="public_url"
+            label="Public address"
+            description="Where a browser reaches this page. A document an agent writes over MCP is linked to it here, for a host to open; empty, the link has no web address."
+            placeholder={env.public_url ?? "http://ragdown.lan:8080"}
+            validators={{ onChange: ({ value }) => publicUrlError(value) }}
           />
           <Section
             title="Search defaults"

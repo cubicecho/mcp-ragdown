@@ -47,6 +47,12 @@ export interface Config {
   queryLog: boolean;
   /** Whether `serve` announces itself on the LAN over mDNS (`_mcp._tcp`). `serve` only. */
   lanAdvertise: boolean;
+  /**
+   * `RAGDOWN_PUBLIC_URL`: where a person's browser reaches the web UI, which need not be the
+   * address an MCP client dialled. Only the web link on a write tool's `resource_link` uses it, so
+   * null — nothing is guessed from `http.port` — is a link without one.
+   */
+  publicUrl: string | null;
   http: {
     port: number;
     /** Bearer token for `/mcp` and the web UI's `/api` routes; null when unset. */
@@ -60,8 +66,8 @@ export interface Config {
   hook: HookSettings;
   /**
    * What the environment said for the settings the web UI can change. `embedder`, `watch`,
-   * `rootMcp`, `textLimit`, `maxPerDocument`, `followLinks`, `queryLog`, `lanAdvertise` and `hook`
-   * above are these with `saved` laid over them (`server-settings.ts`).
+   * `rootMcp`, `textLimit`, `maxPerDocument`, `followLinks`, `queryLog`, `lanAdvertise`,
+   * `publicUrl` and `hook` above are these with `saved` laid over them (`server-settings.ts`).
    */
   env: {
     embedder: string;
@@ -72,6 +78,7 @@ export interface Config {
     followLinks: number;
     queryLog: boolean;
     lanAdvertise: boolean;
+    publicUrl: string | null;
     /** `minScore` is null when `RAGDOWN_HOOK_MIN_SCORE` is unset and the embedder's own applies. */
     hook: { topK: number; minScore: number | null; minRatio: number; maxChars: number };
   };
@@ -135,6 +142,12 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
   const followLinks = int(env, "RAGDOWN_FOLLOW_LINKS", defaults.followLinks);
   const queryLog = bool(env, "RAGDOWN_QUERY_LOG", defaults.queryLog);
   const lanAdvertise = bool(env, "RAGDOWN_LAN_ADVERTISE", defaults.lanAdvertise);
+  const publicUrl = env.RAGDOWN_PUBLIC_URL ? parsePublicUrl(env.RAGDOWN_PUBLIC_URL) : null;
+  if (publicUrl === undefined) {
+    throw new Error(
+      `RAGDOWN_PUBLIC_URL must be an http or https URL, got "${env.RAGDOWN_PUBLIC_URL}"`,
+    );
+  }
   const explicitMinScore =
     env.RAGDOWN_HOOK_MIN_SCORE === undefined || env.RAGDOWN_HOOK_MIN_SCORE === ""
       ? null
@@ -170,6 +183,7 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
     followLinks,
     queryLog,
     lanAdvertise,
+    publicUrl,
     http: {
       port: int(env, "PORT", defaults.port),
       token: env.RAGDOWN_TOKEN || null,
@@ -189,10 +203,30 @@ export function loadConfig(env: Env = process.env, mode: Mode = "single"): Confi
       followLinks,
       queryLog,
       lanAdvertise,
+      publicUrl,
       hook: { ...hook, minScore: explicitMinScore },
     },
     saved: {},
   };
+}
+
+/**
+ * A public base URL as the web link is built from it: http or https, with no query or fragment to
+ * put a route after, and no trailing slash, so `/f/<folder>` can be appended as it is.
+ *
+ * @returns undefined for anything else.
+ */
+export function parsePublicUrl(raw: string): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return undefined;
+  }
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || url.search || url.hash) {
+    return undefined;
+  }
+  return url.href.replace(/\/+$/, "");
 }
 
 function expandHome(path: string): string {
